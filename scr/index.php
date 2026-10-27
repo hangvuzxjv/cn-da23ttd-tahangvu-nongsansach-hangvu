@@ -2,13 +2,22 @@
 
 declare(strict_types=1);
 
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
+
 define('ROOT_PATH', __DIR__);
 define('BACKEND_PATH', ROOT_PATH . DIRECTORY_SEPARATOR . 'backend');
 define('FRONTEND_PATH', ROOT_PATH . DIRECTORY_SEPARATOR . 'frontend');
 
-$composerAutoload = dirname(ROOT_PATH) . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
-if (is_file($composerAutoload)) {
-    require $composerAutoload;
+$composerAutoloads = [
+    dirname(ROOT_PATH) . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php',
+    ROOT_PATH . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php',
+];
+foreach ($composerAutoloads as $composerAutoload) {
+    if (is_file($composerAutoload)) {
+        require $composerAutoload;
+        break;
+    }
 }
 
 $scriptDirectory = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));

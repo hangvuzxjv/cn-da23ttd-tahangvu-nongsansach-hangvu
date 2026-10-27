@@ -36,6 +36,8 @@ setup/database/
 
 Hai file SQL có thể import trực tiếp sau khi đã chọn database trong phpMyAdmin. `schema.sql` xóa và tạo lại các bảng theo thứ tự phụ thuộc khóa ngoại; **không chạy lại trên CSDL có dữ liệu cần giữ**.
 
+Hướng dẫn triển khai shared hosting InfinityFree (không SSH/cron) và cấu hình production mẫu: [setup/deploy/HUONG_DAN_DEPLOY.md](./setup/deploy/HUONG_DAN_DEPLOY.md).
+
 ## Tài khoản dữ liệu mẫu
 
 Tất cả tài khoản sau dùng mật khẩu thử `password` (bcrypt). Chỉ dùng để phát triển:

@@ -6,6 +6,25 @@ $router->get('/san-pham/{slug}', [StorefrontController::class, 'product']);
 $router->get('/vung-mien/{slug}', [StorefrontController::class, 'region']);
 $router->get('/danh-muc/{slug}', [StorefrontController::class, 'category']);
 $router->get('/sitemap.xml', [StorefrontController::class, 'sitemap']);
+$router->get('/_health', static function (): Response {
+    $connected = false;
+    try {
+        Database::connection()->query('SELECT 1');
+        $connected = true;
+    } catch (PDOException) {
+        $connected = false;
+    }
+
+    return new Response(
+        json_encode([
+            'status' => 'ok',
+            'php_version' => PHP_VERSION,
+            'database_connected' => $connected,
+        ], JSON_THROW_ON_ERROR),
+        $connected ? 200 : 503,
+        ['Content-Type' => 'application/json; charset=UTF-8', 'Cache-Control' => 'no-store']
+    );
+});
 $router->get('/truy-xuat', [TraceabilityController::class, 'lookup']);
 $router->get('/truy-xuat/{code}', [TraceabilityController::class, 'show']);
 $router->get('/qr/{code}', [TraceabilityController::class, 'qr']);
