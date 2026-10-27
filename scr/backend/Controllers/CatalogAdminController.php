@@ -300,18 +300,12 @@ final class CatalogAdminController extends Controller
         $pages = max(1, (int) ceil($total / $limit));
         $page = min($page, $pages);
         $statement = Database::connection()->prepare(
-            'SELECT p.id, p.name, p.sku, p.price, p.sale_price, COALESCE(stock.quantity, 0) AS total_stock, p.status,
+            'SELECT p.id, p.name, p.sku, p.price, p.sale_price, p.total_stock, p.min_stock, p.status,
                     p.is_featured, c.name AS category_name, r.name AS region_name,
                     i.image_url
              FROM products p
              JOIN categories c ON c.id = p.category_id
              JOIN regions r ON r.id = p.region_id
-             LEFT JOIN (
-                 SELECT product_id, SUM(quantity_remaining) AS quantity
-                 FROM product_batches
-                 WHERE inspection_result <> \'failed\' AND (expires_at IS NULL OR expires_at >= CURDATE())
-                 GROUP BY product_id
-             ) stock ON stock.product_id = p.id
              LEFT JOIN (
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
                  FROM product_images GROUP BY product_id
@@ -484,6 +478,7 @@ final class CatalogAdminController extends Controller
             'status' => $this->postText('status') ?: 'draft',
             'is_featured' => $this->postChecked('is_featured') ? 1 : 0,
             'suggested_shelf_life_days' => $this->postText('suggested_shelf_life_days'),
+            'min_stock' => $this->postText('min_stock'),
         ];
         $input['slug'] = $input['slug'] !== '' ? CatalogSlug::from($input['slug']) : CatalogSlug::from($input['name']);
         $errors = [];
@@ -545,6 +540,10 @@ final class CatalogAdminController extends Controller
         if ($input['suggested_shelf_life_days'] !== '' && ($shelfLife === false || $shelfLife < 0 || $shelfLife > 65535)) {
             $errors['suggested_shelf_life_days'] = 'Hạn dùng gợi ý phải là số ngày hợp lệ.';
         }
+        $minStock = filter_var($input['min_stock'], FILTER_VALIDATE_INT);
+        if ($minStock === false || $minStock < 0 || $minStock > 4294967295) {
+            $errors['min_stock'] = 'Tồn kho tối thiểu phải là số nguyên không âm.';
+        }
         if ($errors !== []) {
             remember_form_data($input);
             flash('validation_errors', $errors);
@@ -577,6 +576,7 @@ final class CatalogAdminController extends Controller
                 'short_description' => $input['short_description'],
                 'status' => $input['status'],
                 'is_featured' => $input['is_featured'],
+                'min_stock' => $minStock,
                 'description' => $input['description'],
             ];
             if ($productId === null) {
@@ -584,11 +584,11 @@ final class CatalogAdminController extends Controller
                     'INSERT INTO products
                      (category_id, region_id, farm_id, name, slug, sku, unit, price, sale_price,
                       suggested_shelf_life_days, storage_instructions, certifications, short_description,
-                      status, is_featured, description)
+                      status, is_featured, min_stock, description)
                      VALUES
                      (:category_id, :region_id, :farm_id, :name, :slug, :sku, :unit, :price, :sale_price,
                       :suggested_shelf_life_days, :storage_instructions, :certifications, :short_description,
-                      :status, :is_featured, :description)'
+                      :status, :is_featured, :min_stock, :description)'
                 );
                 $statement->execute($values);
                 $productId = (int) $database->lastInsertId();
@@ -599,7 +599,7 @@ final class CatalogAdminController extends Controller
                         name = :name, slug = :slug, sku = :sku, unit = :unit, price = :price, sale_price = :sale_price,
                         suggested_shelf_life_days = :suggested_shelf_life_days, storage_instructions = :storage_instructions,
                         certifications = :certifications, short_description = :short_description, status = :status,
-                        is_featured = :is_featured, description = :description WHERE id = :id AND deleted_at IS NULL'
+                        is_featured = :is_featured, min_stock = :min_stock, description = :description WHERE id = :id AND deleted_at IS NULL'
                 );
                 $values['id'] = $productId;
                 $statement->execute($values);

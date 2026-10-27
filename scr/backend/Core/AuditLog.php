@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 final class AuditLog
 {
-    public static function record(?int $userId, string $action, ?string $entityType = null, ?int $entityId = null, ?string $details = null): void
+    public static function record(?int $userId, string $action, ?string $entityType = null, ?int $entityId = null, ?string $details = null, ?PDO $database = null): void
     {
-        $statement = Database::connection()->prepare(
+        $statement = ($database ?? Database::connection())->prepare(
             'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, ip_address)
              VALUES (:user_id, :action, :entity_type, :entity_id, :details, :ip_address)'
         );

@@ -18,11 +18,12 @@ $value = static function (string $key, mixed $default = '') use ($product): mixe
             'price' => ['Giá bán (VND)', 'number', 'required min="0.01" step="0.01"'],
             'sale_price' => ['Giá khuyến mãi (tùy chọn)', 'number', 'min="0.01" step="0.01"'],
             'suggested_shelf_life_days' => ['Hạn dùng gợi ý (ngày)', 'number', 'min="0" step="1"'],
+            'min_stock' => ['Tồn kho tối thiểu để cảnh báo', 'number', 'min="0" step="1" required'],
         ];
         foreach ($fields as $field => [$label, $type, $attributes]):
         ?>
             <div class="col-md-6"><label class="form-label" for="<?= e($field) ?>"><?= e($label) ?></label>
-                <input class="form-control<?= isset($errors[$field]) ? ' is-invalid' : '' ?>" id="<?= e($field) ?>" name="<?= e($field) ?>" type="<?= e($type) ?>" value="<?= e($value($field)) ?>" <?= $attributes ?>>
+                <input class="form-control<?= isset($errors[$field]) ? ' is-invalid' : '' ?>" id="<?= e($field) ?>" name="<?= e($field) ?>" type="<?= e($type) ?>" value="<?= e($value($field, $field === 'min_stock' ? 5 : '')) ?>" <?= $attributes ?>>
                 <?php if (isset($errors[$field])): ?><div class="invalid-feedback"><?= e($errors[$field]) ?></div><?php endif; ?>
             </div>
         <?php endforeach; ?>

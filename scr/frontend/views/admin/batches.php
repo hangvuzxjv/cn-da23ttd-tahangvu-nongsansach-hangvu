@@ -10,7 +10,7 @@
         <div class="col-md-4"><label class="form-label">Ngày đóng gói *</label><input class="form-control" type="date" name="packed_at" required></div>
         <div class="col-md-4"><label class="form-label">Hạn dùng *</label><input class="form-control" type="date" name="expires_at" required></div>
         <div class="col-md-3"><label class="form-label">Số lượng nhập *</label><input class="form-control" type="number" name="quantity_received" min="1" required></div>
-        <div class="col-md-3"><label class="form-label">Số lượng còn *</label><input class="form-control" type="number" name="quantity_remaining" min="0" required></div>
+        <div class="col-md-3"><div class="form-text mt-4">Tồn được ghi nhận qua movement nhập kho; không sửa trực tiếp tại đây.</div></div>
         <div class="col-md-3"><label class="form-label">Kiểm định</label><select class="form-select" name="inspection_result"><option value="pending">Đang chờ</option><option value="passed">Đạt</option><option value="failed">Không đạt</option></select></div>
         <div class="col-md-3"><label class="form-label">Trạng thái</label><select class="form-select" name="status"><option value="selling">Đang bán</option><option value="suspended">Tạm ngưng</option><option value="recalled">Thu hồi</option><option value="ended">Đã hết</option></select></div>
         <div class="col-md-6"><label class="form-label">Ghi chú kiểm định</label><textarea class="form-control" name="inspection_notes"></textarea></div>

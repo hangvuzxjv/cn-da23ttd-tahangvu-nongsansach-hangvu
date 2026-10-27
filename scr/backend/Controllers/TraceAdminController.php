@@ -213,13 +213,12 @@ final class TraceAdminController extends Controller
         $packed = trim((string) ($_POST['packed_at'] ?? ''));
         $expires = trim((string) ($_POST['expires_at'] ?? ''));
         $received = filter_var($_POST['quantity_received'] ?? null, FILTER_VALIDATE_INT);
-        $remaining = filter_var($_POST['quantity_remaining'] ?? null, FILTER_VALIDATE_INT);
         $status = (string) ($_POST['status'] ?? 'selling');
         $inspection = (string) ($_POST['inspection_result'] ?? 'pending');
         $reason = trim((string) ($_POST['recall_reason'] ?? ''));
         if (!$productId || !$farmId || !$this->validDate($harvested) || !$this->validDate($packed) || !$this->validDate($expires)
-            || $harvested > $packed || $packed > $expires             || !$received || $received < 1 || $received > 4294967295 || $remaining === false
-            || $remaining < 0 || $remaining > 4294967295 || $remaining > $received || !in_array($status, ['selling', 'suspended', 'recalled', 'ended'], true)
+            || $harvested > $packed || $packed > $expires || !$received || $received < 1 || $received > 4294967295
+            || !in_array($status, ['selling', 'suspended', 'recalled', 'ended'], true)
             || !in_array($inspection, ['pending', 'passed', 'failed'], true) || ($status === 'recalled' && $reason === '')) {
             flash('error', 'Dữ liệu lô không hợp lệ. Kiểm tra ngày thu hoạch ≤ đóng gói ≤ hết hạn, số lượng, trạng thái và lý do thu hồi.');
             redirect('/admin/batches');
@@ -237,24 +236,13 @@ final class TraceAdminController extends Controller
             if (!$product || $farmRegionId === false || (int) $product['region_id'] !== (int) $farmRegionId) {
                 throw new RuntimeException('Hãy chọn sản phẩm và nông trại cùng vùng miền đang hoạt động.');
             }
-            $prefix = 'NS-' . date('ym') . '-' . strtoupper($product['sku']) . '-';
-            $sequenceQuery = $database->prepare(
-                'SELECT MAX(CAST(SUBSTRING(batch_code, CHAR_LENGTH(:prefix_length) + 1) AS UNSIGNED))
-                 FROM product_batches
-                 WHERE LEFT(batch_code, CHAR_LENGTH(:prefix_for_length)) = :prefix_for_value'
-            );
-            $sequenceQuery->execute([
-                'prefix_length' => $prefix,
-                'prefix_for_length' => $prefix,
-                'prefix_for_value' => $prefix,
-            ]);
-            $batchCode = $prefix . str_pad((string) ((int) $sequenceQuery->fetchColumn() + 1), 3, '0', STR_PAD_LEFT);
+            $batchCode = BatchCodeGenerator::next($database, (string) $product['sku']);
             $database->prepare(
                 'INSERT INTO product_batches (product_id, farm_id, batch_code, qr_token, harvested_at, packed_at,
                     expires_at, quantity_received, quantity_remaining, inspection_result, inspection_notes,
                     status, recall_reason)
                  VALUES (:product_id, :farm_id, :batch_code, :qr_token, :harvested_at, :packed_at, :expires_at,
-                    :quantity_received, :quantity_remaining, :inspection_result, :inspection_notes, :status, :recall_reason)'
+                    0, 0, :inspection_result, :inspection_notes, \'selling\', :recall_reason)'
             )->execute([
                 'product_id' => $productId,
                 'farm_id' => $farmId,
@@ -263,14 +251,21 @@ final class TraceAdminController extends Controller
                 'harvested_at' => $harvested,
                 'packed_at' => $packed,
                 'expires_at' => $expires,
-                'quantity_received' => $received,
-                'quantity_remaining' => $remaining,
                 'inspection_result' => $inspection,
                 'inspection_notes' => trim((string) ($_POST['inspection_notes'] ?? '')) ?: null,
-                'status' => $status,
                 'recall_reason' => $status === 'recalled' ? $reason : null,
             ]);
             $batchId = (int) $database->lastInsertId();
+            (new InventoryService($database))->receive(
+                $batchId,
+                $received,
+                'Tạo lô hàng ' . $batchCode,
+                (int) Auth::user()['id'],
+                'batch_creation',
+                $batchId
+            );
+            $database->prepare('UPDATE product_batches SET status = :status WHERE id = :id')
+                ->execute(['status' => $status, 'id' => $batchId]);
             AuditLog::record((int) Auth::user()['id'], $status === 'recalled' ? 'batch_recalled' : 'batch_created', 'product_batch', $batchId, $batchCode . ($status === 'recalled' ? ': ' . $reason : ''));
             $database->commit();
         } catch (RuntimeException $exception) {
@@ -332,16 +327,12 @@ final class TraceAdminController extends Controller
         $harvested = trim((string) ($_POST['harvested_at'] ?? ''));
         $packed = trim((string) ($_POST['packed_at'] ?? ''));
         $expires = trim((string) ($_POST['expires_at'] ?? ''));
-        $received = filter_var($_POST['quantity_received'] ?? null, FILTER_VALIDATE_INT);
         $inspection = (string) ($_POST['inspection_result'] ?? '');
-        $remaining = filter_var($_POST['quantity_remaining'] ?? null, FILTER_VALIDATE_INT);
         $reason = trim((string) ($_POST['recall_reason'] ?? ''));
         if (!$farmId || !$this->validDate($harvested) || !$this->validDate($packed) || !$this->validDate($expires)
-            || $harvested > $packed || $packed > $expires || $received === false || $received < 1 || $received > 4294967295
+            || $harvested > $packed || $packed > $expires
             || !in_array($status, ['selling', 'suspended', 'recalled', 'ended'], true)
-            || !in_array($inspection, ['pending', 'passed', 'failed'], true) || $remaining === false
-            || $remaining < 0 || $remaining > 4294967295
-            || $remaining > $received || ($status === 'recalled' && $reason === '')) {
+            || !in_array($inspection, ['pending', 'passed', 'failed'], true) || ($status === 'recalled' && $reason === '')) {
             flash('error', 'Ngày, số lượng, trạng thái hoặc lý do thu hồi không hợp lệ.');
             redirect('/admin/batches/' . $batchId);
         }
@@ -365,20 +356,18 @@ final class TraceAdminController extends Controller
         try {
             $database->prepare(
             'UPDATE product_batches SET farm_id = :farm_id, harvested_at = :harvested_at, packed_at = :packed_at,
-                expires_at = :expires_at, quantity_received = :quantity_received,
+                expires_at = :expires_at,
                 status = :status, inspection_result = :inspection_result,
-                inspection_notes = :inspection_notes, quantity_remaining = :quantity_remaining, recall_reason = :recall_reason
+                inspection_notes = :inspection_notes, recall_reason = :recall_reason
              WHERE id = :id'
             )->execute([
             'farm_id' => $farmId,
             'harvested_at' => $harvested,
             'packed_at' => $packed,
             'expires_at' => $expires,
-            'quantity_received' => $received,
             'status' => $status,
             'inspection_result' => $inspection,
             'inspection_notes' => trim((string) ($_POST['inspection_notes'] ?? '')) ?: null,
-            'quantity_remaining' => $remaining,
             'recall_reason' => $status === 'recalled' ? $reason : null,
             'id' => $batchId,
             ]);

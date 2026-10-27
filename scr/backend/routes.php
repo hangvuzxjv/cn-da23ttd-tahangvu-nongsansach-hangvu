@@ -52,7 +52,21 @@ $router->get('/admin/orders', static fn () => (new AdminController())->section('
 $router->get('/admin/vouchers', static fn () => (new AdminController())->section('vouchers'), ['permission:vouchers.view']);
 $router->get('/admin/reviews', static fn () => (new AdminController())->section('reviews'), ['permission:reviews.view']);
 $router->get('/admin/customers', [AdminController::class, 'customers'], ['permission:customers.view']);
-$router->get('/admin/inventory', static fn () => (new AdminController())->section('inventory'), ['permission:inventory.view']);
+$router->get('/admin/inventory', [InventoryAdminController::class, 'index'], ['permission:inventory.view']);
+$router->post('/admin/inventory/settings', [InventoryAdminController::class, 'updateSettings'], ['permission:inventory.manage', 'csrf']);
+$router->post('/admin/inventory/expire-batches', [InventoryAdminController::class, 'endExpiredBatches'], ['permission:inventory.manage', 'csrf']);
+$router->get('/admin/inventory/stock', [InventoryAdminController::class, 'stock'], ['permission:inventory.view']);
+$router->get('/admin/inventory/stock.csv', [InventoryAdminController::class, 'exportCsv'], ['permission:inventory.view']);
+$router->post('/admin/inventory/movement', [InventoryAdminController::class, 'issueOrAdjust'], ['permission:inventory.manage', 'csrf']);
+$router->get('/admin/inventory/movements', [InventoryAdminController::class, 'movements'], ['permission:inventory.view']);
+$router->get('/admin/inventory/receipts', [InventoryAdminController::class, 'receipts'], ['permission:inventory.view']);
+$router->post('/admin/inventory/receipts', [InventoryAdminController::class, 'createReceipt'], ['permission:inventory.manage', 'csrf']);
+$router->post('/admin/inventory/receipts/{id}/confirm', [InventoryAdminController::class, 'confirmReceipt'], ['permission:inventory.manage', 'csrf']);
+$router->post('/admin/inventory/receipts/{id}/cancel', [InventoryAdminController::class, 'cancelReceipt'], ['permission:inventory.manage', 'csrf']);
+$router->get('/admin/inventory/stocktakes', [InventoryAdminController::class, 'stocktakes'], ['permission:inventory.view']);
+$router->post('/admin/inventory/stocktakes', [InventoryAdminController::class, 'createStocktake'], ['permission:inventory.manage', 'csrf']);
+$router->post('/admin/inventory/stocktakes/{id}/counts', [InventoryAdminController::class, 'updateStocktakeCounts'], ['permission:inventory.manage', 'csrf']);
+$router->post('/admin/inventory/stocktakes/{id}/confirm', [InventoryAdminController::class, 'confirmStocktake'], ['permission:inventory.manage', 'csrf']);
 $router->get('/admin/batches', [TraceAdminController::class, 'batches'], ['permission:batches.view']);
 $router->post('/admin/batches', [TraceAdminController::class, 'storeBatch'], ['permission:batches.manage', 'csrf']);
 $router->get('/admin/batches/{id}', [TraceAdminController::class, 'showBatch'], ['permission:batches.view']);
@@ -87,6 +101,7 @@ $router->get('/products/{slug}', [StorefrontController::class, 'product']);
 $router->get('/users/{id}', [HomeController::class, 'user']);
 
 if (($config['app']['debug'] ?? false) === true) {
+    $router->post('/_dev/inventory-test/issue', [InventoryAdminController::class, 'testIssue']);
     $router->get('/_dev/db-check', static function () use ($config): Response {
         $database = Database::connection();
         $tableQuery = $database->prepare(

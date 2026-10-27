@@ -198,13 +198,30 @@ INSERT INTO trace_events (batch_id, event_type, event_at, location, description)
 SELECT id, 'transport', CONCAT(DATE_ADD(harvested_at, INTERVAL 2 DAY), ' 08:00:00'), 'Kho Nông Sản Sạch', CONCAT('Vận chuyển về kho lô ', batch_code, '.')
 FROM product_batches;
 
-INSERT INTO warehouse_receipts (id, receipt_no, supplier_name, received_by, received_at, status, notes)
-VALUES (1, 'PN-2026-001', 'Các nông trại trong danh sách mẫu', 4, NOW(), 'received', 'Phiếu nhập mẫu cho 30 lô hàng.');
+INSERT INTO warehouse_receipts (id, receipt_no, supplier_name, received_by, received_at, status, confirmed_at, notes)
+VALUES (1, 'PN-2026-001', 'Các nông trại trong danh sách mẫu', 4, NOW(), 'received', NOW(), 'Phiếu nhập mẫu cho các lô hàng.');
 INSERT INTO warehouse_receipt_items (receipt_id, batch_id, quantity, unit_cost)
 SELECT 1, id, quantity_received, 0 FROM product_batches;
 INSERT INTO inventory_movements (product_id, batch_id, movement_type, quantity, reference_type, reference_id, performed_by, notes)
 SELECT product_id, id, 'in', quantity_received, 'warehouse_receipt', 1, 4, 'Nhập kho dữ liệu mẫu'
 FROM product_batches;
+UPDATE product_batches SET quantity_remaining = 0, status = 'ended' WHERE product_id = 20;
+UPDATE product_batches
+SET quantity_remaining = CASE WHEN id = (SELECT first_batch_id FROM (SELECT MIN(id) AS first_batch_id FROM product_batches WHERE product_id = 19) AS selected_batch) THEN 3 ELSE 0 END,
+    status = CASE WHEN id = (SELECT first_batch_id FROM (SELECT MIN(id) AS first_batch_id FROM product_batches WHERE product_id = 19) AS selected_batch) THEN 'selling' ELSE 'ended' END
+WHERE product_id = 19;
+INSERT INTO inventory_movements (product_id, batch_id, movement_type, quantity, reference_type, performed_by, notes)
+SELECT product_id, id, 'adjustment',
+       CAST(quantity_remaining AS SIGNED) - CAST(quantity_received AS SIGNED),
+       'seed_balance', 4, 'Điều chỉnh mẫu để sổ cái khớp tồn thực tế theo lô.'
+FROM product_batches
+WHERE quantity_remaining <> quantity_received;
+UPDATE products p
+SET p.total_stock = (
+    SELECT COALESCE(SUM(b.quantity_remaining), 0)
+    FROM product_batches b
+    WHERE b.product_id = p.id
+);
 
 INSERT INTO addresses (id, user_id, recipient_name, phone, region_id, address_line, ward, is_default)
 VALUES (1, 1, 'Nguyễn Minh An', '0901000001', 10, '12 Đường Đồng Khởi', 'Phường An Hội', 1);
@@ -253,6 +270,7 @@ INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
 VALUES (2, 'seed_imported', 'database', 1, 'Tạo dữ liệu mẫu ban đầu.');
 INSERT INTO settings (setting_key, setting_value, description) VALUES
 ('store_name', 'Nông Sản Sạch', 'Tên hiển thị cửa hàng'),
-('currency', 'VND', 'Đơn vị tiền tệ');
+('currency', 'VND', 'Đơn vị tiền tệ'),
+('expiry_warning_days', '7', 'Số ngày cảnh báo lô sắp hết hạn');
 
 COMMIT;

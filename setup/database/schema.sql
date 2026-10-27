@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS vouchers;
 DROP TABLE IF EXISTS payments;
 DROP TABLE IF EXISTS order_status_history;
 DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS stock_reservations;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS cart_items;
 DROP TABLE IF EXISTS carts;
@@ -24,6 +25,9 @@ DROP TABLE IF EXISTS warehouse_receipt_items;
 DROP TABLE IF EXISTS warehouse_receipts;
 DROP TABLE IF EXISTS trace_events;
 DROP TABLE IF EXISTS trace_scans;
+DROP TABLE IF EXISTS stocktake_items;
+DROP TABLE IF EXISTS stocktakes;
+DROP TABLE IF EXISTS document_sequences;
 DROP TABLE IF EXISTS product_batches;
 DROP TABLE IF EXISTS product_images;
 DROP TABLE IF EXISTS products;
@@ -183,6 +187,7 @@ CREATE TABLE products (
     status ENUM('draft','active','inactive') NOT NULL DEFAULT 'draft',
     is_featured TINYINT(1) NOT NULL DEFAULT 0,
     total_stock INT UNSIGNED NOT NULL DEFAULT 0,
+    min_stock INT UNSIGNED NOT NULL DEFAULT 5,
     description TEXT DEFAULT NULL,
     deleted_at DATETIME DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -225,6 +230,7 @@ CREATE TABLE product_batches (
     expires_at DATE DEFAULT NULL,
     quantity_received INT UNSIGNED NOT NULL,
     quantity_remaining INT UNSIGNED NOT NULL,
+    average_unit_cost DECIMAL(12,2) UNSIGNED NOT NULL DEFAULT 0,
     inspection_result ENUM('pending','passed','failed') NOT NULL DEFAULT 'pending',
     inspection_notes TEXT DEFAULT NULL,
     status ENUM('selling','suspended','recalled','ended') NOT NULL DEFAULT 'selling',
@@ -277,15 +283,21 @@ CREATE TABLE warehouse_receipts (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     receipt_no VARCHAR(80) NOT NULL,
     supplier_name VARCHAR(180) NOT NULL,
+    supplier_farm_id BIGINT UNSIGNED DEFAULT NULL,
     received_by BIGINT UNSIGNED DEFAULT NULL,
     received_at DATETIME NOT NULL,
     status ENUM('draft','received','cancelled') NOT NULL DEFAULT 'draft',
+    confirmed_at DATETIME DEFAULT NULL,
+    cancelled_at DATETIME DEFAULT NULL,
+    cancellation_reason VARCHAR(500) DEFAULT NULL,
     notes TEXT DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_warehouse_receipts_no (receipt_no),
     KEY idx_warehouse_receipts_received_at (received_at),
-    CONSTRAINT fk_warehouse_receipts_user FOREIGN KEY (received_by) REFERENCES users (id) ON DELETE SET NULL
+    KEY idx_warehouse_receipts_supplier_farm (supplier_farm_id),
+    CONSTRAINT fk_warehouse_receipts_user FOREIGN KEY (received_by) REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT fk_warehouse_receipts_farm FOREIGN KEY (supplier_farm_id) REFERENCES farms (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE warehouse_receipt_items (
@@ -311,6 +323,8 @@ CREATE TABLE inventory_movements (
     reference_id BIGINT UNSIGNED DEFAULT NULL,
     performed_by BIGINT UNSIGNED DEFAULT NULL,
     notes VARCHAR(500) DEFAULT NULL,
+    unit_cost DECIMAL(12,2) UNSIGNED NOT NULL DEFAULT 0,
+    balance_after INT UNSIGNED NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_inventory_product_date (product_id, created_at),
@@ -320,6 +334,41 @@ CREATE TABLE inventory_movements (
     CONSTRAINT fk_inventory_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE RESTRICT,
     CONSTRAINT fk_inventory_batch FOREIGN KEY (batch_id) REFERENCES product_batches (id) ON DELETE RESTRICT,
     CONSTRAINT fk_inventory_user FOREIGN KEY (performed_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE stocktakes (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    stocktake_no VARCHAR(80) NOT NULL,
+    status ENUM('draft','confirmed','cancelled') NOT NULL DEFAULT 'draft',
+    notes TEXT DEFAULT NULL,
+    created_by BIGINT UNSIGNED DEFAULT NULL,
+    confirmed_by BIGINT UNSIGNED DEFAULT NULL,
+    confirmed_at DATETIME DEFAULT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_stocktakes_no (stocktake_no),
+    KEY idx_stocktakes_status (status, created_at),
+    CONSTRAINT fk_stocktakes_created_by FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE SET NULL,
+    CONSTRAINT fk_stocktakes_confirmed_by FOREIGN KEY (confirmed_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE stocktake_items (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    stocktake_id BIGINT UNSIGNED NOT NULL,
+    batch_id BIGINT UNSIGNED NOT NULL,
+    system_quantity INT UNSIGNED NOT NULL,
+    counted_quantity INT UNSIGNED DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_stocktake_batch (stocktake_id, batch_id),
+    KEY idx_stocktake_items_batch (batch_id),
+    CONSTRAINT fk_stocktake_items_stocktake FOREIGN KEY (stocktake_id) REFERENCES stocktakes (id) ON DELETE CASCADE,
+    CONSTRAINT fk_stocktake_items_batch FOREIGN KEY (batch_id) REFERENCES product_batches (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE document_sequences (
+    sequence_key VARCHAR(40) NOT NULL,
+    next_value INT UNSIGNED NOT NULL DEFAULT 1,
+    PRIMARY KEY (sequence_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE carts (
@@ -392,6 +441,21 @@ CREATE TABLE order_items (
     CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
     CONSTRAINT fk_order_items_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE SET NULL,
     CONSTRAINT fk_order_items_batch FOREIGN KEY (batch_id) REFERENCES product_batches (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE stock_reservations (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    order_id BIGINT UNSIGNED NOT NULL,
+    batch_id BIGINT UNSIGNED NOT NULL,
+    quantity INT UNSIGNED NOT NULL,
+    expires_at DATETIME NOT NULL,
+    status ENUM('reserved','consumed','released','expired') NOT NULL DEFAULT 'reserved',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_stock_reservations_batch_active (batch_id, status, expires_at),
+    KEY idx_stock_reservations_order (order_id, status),
+    CONSTRAINT fk_stock_reservations_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
+    CONSTRAINT fk_stock_reservations_batch FOREIGN KEY (batch_id) REFERENCES product_batches (id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE order_status_history (

@@ -65,6 +65,7 @@ erDiagram
         enum status
         tinyint is_featured
         int total_stock
+        int min_stock
         datetime deleted_at
     }
     farms {
@@ -91,6 +92,7 @@ erDiagram
         date expires_at
         int quantity_received
         int quantity_remaining
+        decimal average_unit_cost
         enum inspection_result
         enum status
         text recall_reason
@@ -109,6 +111,55 @@ erDiagram
         datetime scanned_at
         char ip_hash
         varchar user_agent
+    }
+    warehouse_receipts {
+        bigint id PK
+        varchar receipt_no UK
+        bigint supplier_farm_id FK
+        enum status
+        datetime confirmed_at
+    }
+    warehouse_receipt_items {
+        bigint id PK
+        bigint receipt_id FK
+        bigint batch_id FK
+        int quantity
+        decimal unit_cost
+    }
+    inventory_movements {
+        bigint id PK
+        bigint product_id FK
+        bigint batch_id FK
+        enum movement_type
+        int quantity
+        decimal unit_cost
+        int balance_after
+        varchar reference_type
+        bigint reference_id
+    }
+    stock_reservations {
+        bigint id PK
+        bigint order_id FK
+        bigint batch_id FK
+        int quantity
+        datetime expires_at
+        enum status
+    }
+    stocktakes {
+        bigint id PK
+        varchar stocktake_no UK
+        enum status
+    }
+    stocktake_items {
+        bigint id PK
+        bigint stocktake_id FK
+        bigint batch_id FK
+        int system_quantity
+        int counted_quantity
+    }
+    document_sequences {
+        varchar sequence_key PK
+        int next_value
     }
 
     users ||--o{ addresses : has
@@ -148,6 +199,10 @@ erDiagram
     product_batches o|--o{ order_items : allocated
 
     warehouse_receipts ||--|{ warehouse_receipt_items : contains
+    farms o|--o{ warehouse_receipts : supplies
+    orders ||--o{ stock_reservations : reserves
+    product_batches ||--o{ stock_reservations : held_from
+    stocktakes ||--|{ stocktake_items : counts
     carts ||--|{ cart_items : contains
     orders ||--|{ order_items : contains
     orders ||--o{ order_status_history : changes
@@ -177,17 +232,20 @@ erDiagram
 
 ### Sản phẩm và truy xuất
 
-- `products`: danh mục, nguồn vùng/nông trại, slug/SKU, đơn vị, giá gốc/khuyến mãi, mô tả, hướng dẫn bảo quản, chứng nhận, cờ nổi bật và tồn kho tổng; `deleted_at` dùng cho xóa mềm. Các index hỗ trợ lọc theo trạng thái, danh mục, vùng, giá và sản phẩm mới/nổi bật.
+- `products`: danh mục, nguồn vùng/nông trại, slug/SKU, đơn vị, giá gốc/khuyến mãi, mô tả, hướng dẫn bảo quản, chứng nhận, cờ nổi bật, tồn kho tổng và ngưỡng cảnh báo `min_stock`; `deleted_at` dùng cho xóa mềm. Các index hỗ trợ lọc theo trạng thái, danh mục, vùng, giá và sản phẩm mới/nổi bật.
 - `product_images`: nhiều ảnh cho một sản phẩm, có thứ tự và cờ ảnh chính.
-- `product_batches`: mã lô bất biến và QR token duy nhất; liên kết sản phẩm/nông trại, ngày thu hoạch/đóng gói/hết hạn, số lượng nhập/còn, kiểm định, trạng thái và lý do thu hồi.
+- `product_batches`: mã lô bất biến và QR token duy nhất; liên kết sản phẩm/nông trại, ngày thu hoạch/đóng gói/hết hạn, số lượng nhập/còn, giá nhập bình quân, kiểm định, trạng thái và lý do thu hồi.
 - `trace_events`: nhật ký theo thứ tự của từng lô: gieo trồng, chăm sóc, thu hoạch, sơ chế, đóng gói và vận chuyển; có mô tả, ngày, địa điểm và ảnh tùy chọn.
 - `trace_scans`: lượt xem trang truy xuất, ghi thời điểm, hash SHA-256 của IP và user-agent tối đa 200 ký tự; ứng dụng loại lượt trùng cùng IP/lô trong cửa sổ 10 phút.
 
 ### Kho
 
-- `warehouse_receipts`: phiếu nhập kho, người nhận, thời điểm và trạng thái.
+- `warehouse_receipts`: phiếu nhập kho nháp/đã xác nhận/đã hủy, nông trại cung cấp, người nhận, thời điểm và thông tin hủy; xác nhận cộng tồn qua `InventoryService`, hủy tạo movement điều chỉnh đảo chứ không sửa lịch sử.
 - `warehouse_receipt_items`: các lô/số lượng trong một phiếu nhập; mỗi lô chỉ xuất hiện một lần trong cùng phiếu.
-- `inventory_movements`: sổ nhập, xuất, điều chỉnh và hoàn theo sản phẩm/lô; lưu người thao tác và tham chiếu chứng từ/đơn.
+- `inventory_movements`: sổ cái nhập, xuất, điều chỉnh và hoàn theo sản phẩm/lô; số lượng signed, kèm giá nhập và số dư sau movement, người thao tác, lý do và tham chiếu. Ứng dụng chỉ INSERT qua `InventoryService`; không cung cấp thao tác sửa/xóa movement.
+- `stock_reservations`: lượng giữ chỗ theo đơn/lô và thời hạn. Không dùng cron/Redis; mọi lần đọc tồn khả dụng đánh dấu giữ chỗ hết hạn thành `expired` một cách lazy và khả dụng được tính bằng tồn vật lý trừ giữ chỗ còn hạn.
+- `stocktakes` và `stocktake_items`: đợt kiểm kê cùng tồn hệ thống lúc tạo và số đếm; khi xác nhận, `InventoryService` ghi movement cho từng chênh lệch.
+- `document_sequences`: bộ đếm khóa dòng trong InnoDB để cấp mã phiếu nhập, kiểm kê và lô duy nhất an toàn khi có yêu cầu đồng thời.
 
 ### Giỏ hàng và đơn hàng
 
@@ -217,6 +275,7 @@ erDiagram
 ## Ghi chú triển khai
 
 - Index tập trung vào khóa ngoại, trạng thái/thời gian, slug/SKU/mã đơn và mã lô để hỗ trợ tra cứu thường dùng.
-- Tồn kho tổng ở `products.total_stock` và tồn theo `product_batches.quantity_remaining` là dữ liệu cần cập nhật cùng giao dịch kho/đặt hàng trong tầng ứng dụng; schema không tự đồng bộ hai giá trị.
+- Tồn kho chỉ được cập nhật theo lô qua `InventoryService` trong giao dịch InnoDB có khóa dòng; service đồng bộ `products.total_stock` với tổng `product_batches.quantity_remaining`. Tổng signed movement của mỗi lô phải bằng `quantity_remaining`; migration kho chỉ thêm movement cân bằng, không sửa/xóa movement cũ.
+- Khả dụng bán hàng chỉ tính lô `selling`, chưa hết hạn, không lỗi kiểm định; lượng giữ chỗ còn hạn được trừ khỏi số lượng. Sự kiện hết hạn được dọn lazy khi có truy cập, phù hợp shared hosting không có cron.
 - Trên MySQL 5.7, các ràng buộc `CHECK` cho số lượng lô, hạn mức Flash Sale và điểm đánh giá có thể không được thực thi. Tầng ứng dụng phải kiểm tra các điều kiện này trước khi ghi.
 - Dữ liệu SQL mẫu có thông tin chứng nhận minh họa, không thay thế giấy tờ kiểm định thực tế.

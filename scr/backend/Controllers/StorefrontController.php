@@ -6,6 +6,7 @@ final class StorefrontController extends Controller
 {
     public function home(): void
     {
+        (new InventoryService())->expireReservations();
         $database = Database::connection();
         $banners = $database->query(
             "SELECT title, image_url, link_url FROM banners
@@ -81,6 +82,7 @@ final class StorefrontController extends Controller
 
     public function product(string $slug): void
     {
+        (new InventoryService())->expireReservations();
         $statement = Database::connection()->prepare(
             "SELECT p.*, c.name AS category_name, c.slug AS category_slug,
                     r.name AS region_name, r.slug AS region_slug, parent.name AS parent_region_name,
@@ -91,13 +93,7 @@ final class StorefrontController extends Controller
              JOIN regions r ON r.id = p.region_id AND r.is_active = 1
              LEFT JOIN regions parent ON parent.id = r.parent_id
              JOIN farms f ON f.id = p.farm_id AND f.status = 'active'
-             LEFT JOIN (
-                 SELECT product_id, SUM(quantity_remaining) AS quantity
-                 FROM product_batches
-                 WHERE status = 'selling' AND inspection_result <> 'failed'
-                   AND (expires_at IS NULL OR expires_at >= CURDATE())
-                 GROUP BY product_id
-             ) stock ON stock.product_id = p.id
+             LEFT JOIN " . $this->availableStockSubquery() . " stock ON stock.product_id = p.id
              WHERE p.slug = :slug AND p.status = 'active' AND p.deleted_at IS NULL
              LIMIT 1"
         );
@@ -119,11 +115,17 @@ final class StorefrontController extends Controller
             4
         );
         $batchQuery = Database::connection()->prepare(
-            "SELECT id, batch_code, harvested_at, packed_at, expires_at, quantity_remaining
-             FROM product_batches
-             WHERE product_id = :product_id AND status = 'selling' AND inspection_result <> 'failed' AND quantity_remaining > 0
-               AND (expires_at IS NULL OR expires_at >= CURDATE())
-             ORDER BY expires_at IS NULL, expires_at, harvested_at, id"
+            "SELECT b.id, b.batch_code, b.harvested_at, b.packed_at, b.expires_at,
+                    GREATEST(0, b.quantity_remaining - COALESCE(r.quantity, 0)) AS quantity_remaining
+             FROM product_batches b
+             LEFT JOIN (
+                 SELECT batch_id, SUM(quantity) AS quantity FROM stock_reservations
+                 WHERE status = 'reserved' AND expires_at > NOW() GROUP BY batch_id
+             ) r ON r.batch_id = b.id
+             WHERE b.product_id = :product_id AND b.status = 'selling' AND b.inspection_result <> 'failed'
+               AND b.quantity_remaining > COALESCE(r.quantity, 0)
+               AND (b.expires_at IS NULL OR b.expires_at >= CURDATE())
+             ORDER BY b.expires_at IS NULL, b.expires_at, b.harvested_at, b.id"
         );
         $batchQuery->execute(['product_id' => $product['id']]);
         $stock = (int) $product['actual_stock'];
@@ -134,7 +136,7 @@ final class StorefrontController extends Controller
             'images' => $images->fetchAll(),
             'related' => $related,
             'traceBatches' => $batchQuery->fetchAll(),
-            'stockStatus' => $stock <= 0 ? 'Hết hàng' : ($stock <= 5 ? 'Sắp hết hàng' : 'Còn hàng'),
+            'stockStatus' => $stock <= 0 ? 'Hết hàng' : ($stock <= (int) $product['min_stock'] ? 'Sắp hết hàng' : 'Còn hàng'),
             'breadcrumbs' => [
                 ['name' => 'Sản phẩm', 'url' => '/san-pham'],
                 ['name' => $product['category_name'], 'url' => '/danh-muc/' . $product['category_slug']],
@@ -168,6 +170,7 @@ final class StorefrontController extends Controller
 
     private function listing(array $scope = [], string $scopeType = ''): void
     {
+        (new InventoryService())->expireReservations();
         $filterErrors = [];
         $queryInput = $_GET['q'] ?? '';
         $query = is_scalar($queryInput) ? trim((string) $queryInput) : '';
@@ -263,19 +266,14 @@ final class StorefrontController extends Controller
             default => 'p.created_at DESC, p.id DESC',
         };
         $statement = Database::connection()->prepare(
-            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.short_description,
+            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock, p.short_description,
                     COALESCE(stock.quantity, 0) AS actual_stock,
                     COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url,
                     COALESCE(sales.sold, 0) AS sold_quantity
              FROM products p
              JOIN regions r ON r.id = p.region_id AND r.is_active = 1
              JOIN categories c ON c.id = p.category_id AND c.is_active = 1
-             LEFT JOIN (
-                 SELECT product_id, SUM(quantity_remaining) AS quantity
-                 FROM product_batches
-                 WHERE inspection_result <> \'failed\' AND (expires_at IS NULL OR expires_at >= CURDATE())
-                 GROUP BY product_id
-             ) stock ON stock.product_id = p.id
+             LEFT JOIN ' . $this->availableStockSubquery() . ' stock ON stock.product_id = p.id
              LEFT JOIN (
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
                  FROM product_images GROUP BY product_id
@@ -336,16 +334,11 @@ final class StorefrontController extends Controller
     private function fetchProducts(string $extraCondition, array $parameters, string $order, int $limit): array
     {
         $statement = Database::connection()->prepare(
-            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.short_description,
+            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock, p.short_description,
                     COALESCE(stock.quantity, 0) AS actual_stock,
                     COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url
              FROM products p
-             LEFT JOIN (
-                 SELECT product_id, SUM(quantity_remaining) AS quantity
-                 FROM product_batches
-                 WHERE inspection_result <> \'failed\' AND (expires_at IS NULL OR expires_at >= CURDATE())
-                 GROUP BY product_id
-             ) stock ON stock.product_id = p.id
+             LEFT JOIN ' . $this->availableStockSubquery() . ' stock ON stock.product_id = p.id
              LEFT JOIN (
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
                  FROM product_images GROUP BY product_id
@@ -370,6 +363,23 @@ final class StorefrontController extends Controller
         }
         $price = filter_var($value, FILTER_VALIDATE_FLOAT);
         return $price !== false && $price >= 0 ? (float) $price : null;
+    }
+
+    private function availableStockSubquery(): string
+    {
+        return '(SELECT b.product_id,
+                       SUM(GREATEST(0, b.quantity_remaining - COALESCE(r.quantity, 0))) AS quantity
+                FROM product_batches b
+                LEFT JOIN (
+                    SELECT batch_id, SUM(quantity) AS quantity
+                    FROM stock_reservations
+                    WHERE status = \'reserved\' AND expires_at > NOW()
+                    GROUP BY batch_id
+                ) r ON r.batch_id = b.id
+                WHERE b.status = \'selling\' AND b.inspection_result <> \'failed\'
+                  AND b.quantity_remaining > 0
+                  AND (b.expires_at IS NULL OR b.expires_at >= CURDATE())
+                GROUP BY b.product_id)';
     }
 
     private function categoryAndDescendantIds(int $categoryId): array

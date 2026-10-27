@@ -11,6 +11,7 @@ return [
         'reviews.view',
         'reviews.manage',
         'customers.view',
+        'inventory.view',
         'regions.view',
         'categories.view',
         'products.view',
@@ -18,6 +19,7 @@ return [
     'staff_warehouse' => [
         'dashboard.view',
         'inventory.view',
+        'inventory.manage',
         'batches.view',
         'batches.manage',
         'farms.view',

@@ -65,7 +65,7 @@ WHERE r.slug = 'ben-tre'
 ORDER BY p.id;
 ```
 
-Kết quả: `Bưởi da xanh Bến Tre` (`NS-TRAICAY-007`, 78.000, tồn 50) và `Dừa xiêm xanh Bến Tre` (`NS-TRAICAY-012`, 25.000, tồn 30).
+Kết quả trên seed Step 6: `Bưởi da xanh Bến Tre` (`NS-TRAICAY-007`, 78.000, tồn 69) và `Dừa xiêm xanh Bến Tre` (`NS-TRAICAY-012`, 25.000, tồn 49).
 
 **2. Tồn kho theo lô hàng:**
 
@@ -250,3 +250,42 @@ ORDER BY scans DESC;
 - Qua form admin đã tạo/sửa/xóa nông trại; tạo lô với mã tự sinh, tạo nhanh đủ sáu sự kiện, thu hồi lô và xác nhận trang công khai hiển thị cảnh báo; ba lượt mở từ cùng IP chỉ ghi một scan trong 10 phút. In tem QR SVG hoạt động; không cho xóa lô có lịch sử. Bản ghi QA và các sự kiện phụ thuộc đã được xóa sau kiểm tra.
 - Upload PNG hợp lệ cho hồ sơ nông trại và dọn tệp khi xóa hồ sơ: **đạt**. Môi trường XAMPP không bật GD nên nhánh thu nhỏ ảnh khi extension có sẵn chưa được kiểm chứng.
 - PHP lint cho controller/view/router và `git diff --check`: **đạt**.
+
+## Bước 6: Quản lý kho theo lô
+
+### Cập nhật cơ sở dữ liệu
+
+- Cài mới: import `setup/database/schema.sql`, sau đó `setup/database/seed.sql`. Seed có 130 lô/780 sự kiện, movement khớp tồn lô, sản phẩm #19 dưới ngưỡng và sản phẩm #20 hết hàng; có lô còn hạn, sắp hết hạn, hết hạn và thu hồi.
+- Database đã có dữ liệu: sao lưu trước, rồi import duy nhất `setup/database/migrations/20261028_inventory_management.sql` trong phpMyAdmin. Migration thêm `min_stock`, giá nhập bình quân, thông tin phiếu nhập, giữ chỗ, kiểm kê và bộ cấp số chứng từ; cuối cùng **chỉ thêm** movement điều chỉnh để cân bằng sổ cái với tồn lô hiện tại và đồng bộ tổng tồn sản phẩm. Không chạy lại `schema.sql` hoặc `seed.sql`.
+- Migration không dùng `CHECK` mới của MySQL 8; mọi thay đổi kho chạy trên InnoDB qua `InventoryService`. Không sửa/xóa `inventory_movements`; hủy phiếu nhập tạo movement đảo. Giữ chỗ hết hạn được giải phóng lazy khi tính tồn, không cần cron.
+
+### URL quản trị
+
+- `/admin/inventory` — dashboard kho, cảnh báo, cấu hình ngưỡng sắp hết hạn và chuyển lô quá hạn sang đã hết.
+- `/admin/inventory/stock` — tồn theo lô, lọc, CSV, xuất thủ công và điều chỉnh sau kiểm kê.
+- `/admin/inventory/receipts` — phiếu nhập nháp nhiều dòng, tạo lô mới ngay trong phiếu, xác nhận hoặc hủy bằng movement đảo.
+- `/admin/inventory/stocktakes` — tạo đợt kiểm kê, nhập số đếm và xác nhận chênh lệch.
+- `/admin/inventory/movements` — sổ cái có lọc, phân trang và số dư sau movement.
+- Staff kho và admin được quản lý; staff bán hàng chỉ có quyền xem các trang tồn/sổ cái; customer không có quyền truy cập.
+
+### Kiểm thử kho
+
+Chạy trên CSDL MySQL/MariaDB **riêng có tên kết thúc `_test`**, không chạy trên database sản xuất. Đặt các biến môi trường `INVENTORY_TEST_DB_HOST=127.0.0.1`, `INVENTORY_TEST_DB_PORT=3306`, `INVENTORY_TEST_DB_NAME=nongsan_step6_test`, `INVENTORY_TEST_DB_USERNAME` và `INVENTORY_TEST_DB_PASSWORD` theo local MySQL (`__EMPTY__` biểu thị mật khẩu rỗng); import schema và seed vào CSDL thử đó.
+
+1. FEFO: `php setup/tests/fefo.php <product_id> <so_luong>`.
+2. Sổ cái/tổng tồn: `php setup/tests/reconcile.php`.
+3. Đồng thời 200 lần xuất một đơn vị từ cùng lô:
+   - Chạy ứng dụng qua Apache local với `app.debug=true` trong `scr/backend/config/config.php`; endpoint thử nghiệm chỉ được đăng ký khi debug bật, giới hạn loopback, cần token ngẫu nhiên tạm thời và chỉ chấp nhận lô `NS-TEST-*`.
+   - Đặt `INVENTORY_TEST_BASE_URL` thành URL local của ứng dụng (ví dụ `http://localhost` hoặc `http://localhost/nongsan/scr` theo cấu hình Apache), rồi chạy `php setup/tests/concurrency.php`. Chế độ `php setup/tests/concurrency.php --cli` gọi service trực tiếp từ 200 worker CLI theo nhóm song song, không cần bật HTTP route.
+   - Kỳ vọng: `issued=20`, `unavailable=180`, tồn cuối `0`, tổng movement `0`, không có tồn âm. Script tự xóa token tạm; lô test và movement được giữ lại để bảo toàn sổ cái nên hãy dùng CSDL thử riêng.
+
+### Kết quả kiểm tra Bước 6
+
+- Import mới `schema.sql` + `seed.sql` vào MySQL 8.4.3: **đạt**; 20 sản phẩm, 130 lô, 780 sự kiện; sản phẩm #19 tồn 3 dưới ngưỡng 5, sản phẩm #20 tồn 0.
+- Import schema/seed phiên bản trước Bước 6 rồi áp dụng migration `20261028_inventory_management.sql`: **đạt**; không mất dữ liệu lô/sự kiện, tổng `inventory_movements` theo lô và `products.total_stock` khớp số tồn.
+- `setup/tests/reconcile.php`: **đạt** trên cả CSDL seed mới và CSDL sau migration; 0 lô lệch ledger, 0 sản phẩm lệch tổng tồn, 0 tồn âm.
+- `setup/tests/fefo.php 1 4`: **đạt**; lô gần hết hạn nhất được phân bổ trước.
+- Kiểm tra đồng thời qua 200 worker gọi `InventoryService` (40 worker đồng thời theo từng nhóm): **đạt**; 20 xuất thành công, 180 thiếu hàng, tồn cuối 0, tổng movement 0. Script `concurrency.php` cũng có chế độ `curl_multi` 200 HTTP request; chế độ HTTP chưa chạy trong môi trường này vì app config hiện tắt debug.
+- Kiểm tra nghiệp vụ trực tiếp trên CSDL thử: giữ chỗ giảm tồn khả dụng; `deductForOrder` và `restoreForOrder` idempotent; giữ chỗ được tách đúng phần đã dùng và phần giải phóng khi đơn chỉ trừ một phần; xác nhận/hủy phiếu nhập và chốt kiểm kê ghi movement; sau các bước vẫn reconcile.
+- Sinh hai mã lô trong cùng SKU/tháng cho thấy bộ cấp số dùng chung không tạo mã trùng giữa luồng tạo lô và phiếu nhập.
+- PHP syntax lint cho toàn bộ 222 tệp PHP và `git diff --check`: **đạt**.
