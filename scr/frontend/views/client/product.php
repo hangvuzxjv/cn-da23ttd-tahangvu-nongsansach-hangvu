@@ -25,7 +25,23 @@
 <section class="mb-5"><h2 class="h4">Mô tả sản phẩm</h2><div class="product-description"><?= nl2br(e($product['description'] ?: 'Thông tin sản phẩm đang được cập nhật.')) ?></div>
     <?php if ($product['storage_instructions']): ?><h3 class="h5 mt-4">Hướng dẫn bảo quản</h3><p><?= nl2br(e($product['storage_instructions'])) ?></p><?php endif; ?>
 </section>
-<section class="mb-5"><h2 class="h4">Truy xuất nguồn gốc</h2><p class="text-secondary">Thông tin truy xuất theo lô hàng sẽ được hiển thị tại đây.</p></section>
+<section class="mb-5"><h2 class="h4">Truy xuất nguồn gốc</h2>
+    <?php if ($traceBatches): ?>
+        <p class="text-secondary">Các lô còn hàng, sắp xếp theo hạn dùng gần nhất để ưu tiên xuất lô cũ trước.</p>
+        <div class="table-responsive"><table class="table table-bordered align-middle">
+            <thead><tr><th>Mã lô</th><th>Ngày thu hoạch</th><th>Hạn dùng</th><th>Còn</th><th></th></tr></thead>
+            <tbody><?php foreach ($traceBatches as $batch): ?><tr>
+                <td><?= e($batch['batch_code']) ?></td>
+                <td><?= e($batch['harvested_at']) ?></td>
+                <td><?= e($batch['expires_at'] ?: 'Không có hạn') ?></td>
+                <td><?= (int) $batch['quantity_remaining'] ?></td>
+                <td><a class="btn btn-sm btn-outline-success" href="<?= e(url('/truy-xuat/' . $batch['batch_code'])) ?>">Xem nguồn gốc</a></td>
+            </tr><?php endforeach; ?></tbody>
+        </table></div>
+    <?php else: ?>
+        <p class="text-secondary">Hiện chưa có lô còn hàng và còn hạn để hiển thị.</p>
+    <?php endif; ?>
+</section>
 <section class="mb-5"><h2 class="h4">Đánh giá</h2><p class="text-secondary">Đánh giá sản phẩm sẽ được hiển thị tại đây.</p></section>
 <section><h2 class="h4 mb-3">Sản phẩm liên quan</h2><?php $products = $related; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
 <script>

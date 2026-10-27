@@ -16,9 +16,17 @@ final class AdminController extends Controller
 
     public function index(): void
     {
+        $topScanned = Database::connection()->query(
+            'SELECT b.id, b.batch_code, p.name AS product_name, COUNT(s.id) AS scan_count
+             FROM trace_scans s JOIN product_batches b ON b.id = s.batch_id
+             JOIN products p ON p.id = b.product_id
+             GROUP BY b.id, b.batch_code, p.name
+             ORDER BY scan_count DESC, b.id DESC LIMIT 10'
+        )->fetchAll();
         $this->view('admin/dashboard', [
             'title' => 'Quản trị',
             'user' => Auth::user(),
+            'topScanned' => $topScanned,
             'menu' => $this->menu(),
         ], 'admin');
     }
@@ -152,6 +160,7 @@ final class AdminController extends Controller
             ['permission' => 'customers.view', 'label' => 'Khách hàng', 'url' => '/admin/customers'],
             ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
             ['permission' => 'batches.view', 'label' => 'Lô hàng', 'url' => '/admin/batches'],
+            ['permission' => 'farms.view', 'label' => 'Nông trại', 'url' => '/admin/farms'],
             ['permission' => 'regions.view', 'label' => 'Vùng miền', 'url' => '/admin/regions'],
             ['permission' => 'categories.view', 'label' => 'Danh mục', 'url' => '/admin/categories'],
             ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],

@@ -72,3 +72,148 @@ pre {
     height: 100%;
     object-fit: cover;
 }
+
+.trace-lookup-card {
+    max-width: 640px;
+    margin: 2rem auto;
+    padding: clamp(1.25rem, 5vw, 3rem);
+    border: 1px solid #dee2e6;
+    border-radius: 1rem;
+    background: #fff;
+    box-shadow: 0 .25rem 1rem rgba(0, 0, 0, .06);
+}
+
+.trace-product-image {
+    width: 100%;
+    height: 100%;
+    min-height: 260px;
+    object-fit: cover;
+}
+
+.farm-profile-image {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+}
+
+.trace-timeline {
+    position: relative;
+    margin: 0;
+    padding: 0 0 0 1.75rem;
+    list-style: none;
+}
+
+.trace-timeline::before {
+    position: absolute;
+    top: .5rem;
+    bottom: .5rem;
+    left: .45rem;
+    width: 2px;
+    background: #cfe2cf;
+    content: "";
+}
+
+.trace-timeline-item {
+    position: relative;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    border: 1px solid #e5e9e5;
+    border-radius: .75rem;
+    background: #fff;
+}
+
+.trace-timeline-item::before {
+    position: absolute;
+    top: 1.2rem;
+    left: -1.72rem;
+    width: .8rem;
+    height: .8rem;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #198754;
+    box-shadow: 0 0 0 1px #198754;
+    content: "";
+}
+
+.trace-event-date {
+    margin-bottom: .35rem;
+    color: #647067;
+    font-size: .875rem;
+}
+
+.trace-event-image {
+    max-height: 320px;
+}
+
+.farm-admin-thumb {
+    width: 88px;
+    height: 64px;
+    object-fit: cover;
+}
+
+.trace-edit-form {
+    min-width: 280px;
+}
+
+.label-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8mm;
+}
+
+.trace-label {
+    display: flex;
+    min-height: 42mm;
+    align-items: center;
+    gap: 5mm;
+    padding: 4mm;
+    border: 1px dashed #adb5bd;
+    break-inside: avoid;
+}
+
+.trace-label img {
+    width: 32mm;
+    height: 32mm;
+}
+
+.trace-label p {
+    margin: .25rem 0;
+}
+
+@media print {
+    @page {
+        size: A4;
+        margin: 10mm;
+    }
+
+    body {
+        min-height: 0;
+        background: #fff !important;
+    }
+
+    .navbar,
+    aside,
+    .label-screen-controls,
+    .container-fluid > .row > aside,
+    .container-fluid > .row > main > h1,
+    .container-fluid > .row > main > .alert {
+        display: none !important;
+    }
+
+    .container-fluid,
+    .container-fluid > .row,
+    .container-fluid > .row > main {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .label-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 5mm;
+    }
+
+    .trace-label {
+        border: 1px solid #adb5bd;
+    }
+}

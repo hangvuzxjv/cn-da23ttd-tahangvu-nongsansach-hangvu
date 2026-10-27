@@ -67,6 +67,49 @@ erDiagram
         int total_stock
         datetime deleted_at
     }
+    farms {
+        bigint id PK
+        bigint region_id FK
+        varchar name
+        varchar address
+        text certifications
+        varchar certification_number
+        date certification_expires_at
+        varchar certificate_image_url
+        decimal latitude
+        decimal longitude
+        enum status
+    }
+    product_batches {
+        bigint id PK
+        bigint product_id FK
+        bigint farm_id FK
+        varchar batch_code UK
+        char qr_token UK
+        date harvested_at
+        date packed_at
+        date expires_at
+        int quantity_received
+        int quantity_remaining
+        enum inspection_result
+        enum status
+        text recall_reason
+    }
+    trace_events {
+        bigint id PK
+        bigint batch_id FK
+        enum event_type
+        datetime event_at
+        varchar image_url
+        int sort_order
+    }
+    trace_scans {
+        bigint id PK
+        bigint batch_id FK
+        datetime scanned_at
+        char ip_hash
+        varchar user_agent
+    }
 
     users ||--o{ addresses : has
     users ||--o{ password_resets : requests
@@ -87,6 +130,7 @@ erDiagram
     categories o|--o{ categories : contains
     categories ||--o{ products : classifies
     farms ||--o{ products : supplies
+    farms ||--o{ product_batches : harvested_at
 
     products ||--o{ product_images : displays
     products ||--o{ product_batches : tracked_as
@@ -98,6 +142,7 @@ erDiagram
     products ||--o{ flash_sale_items : discounted
 
     product_batches ||--o{ trace_events : traced_by
+    product_batches ||--o{ trace_scans : scanned
     product_batches ||--o{ warehouse_receipt_items : received
     product_batches o|--o{ inventory_movements : moved
     product_batches o|--o{ order_items : allocated
@@ -128,14 +173,15 @@ erDiagram
 - `login_attempts`: số lần đăng nhập sai và thời gian khóa theo cặp SHA-256 email/IP; không có khóa ngoại để giữ bộ đếm độc lập với việc tài khoản có tồn tại hay không.
 - `regions`: cây địa lý hai cấp; `parent_id` trỏ tới miền cha và `level` xác định miền hay tỉnh/vùng; có mô tả và trạng thái hiển thị.
 - `categories`: danh mục nhiều cấp qua `parent_id`.
-- `farms`: nông trại/nhà cung cấp, địa chỉ, vùng và thông tin chứng nhận dạng văn bản.
+- `farms`: nông trại/nhà cung cấp, vùng, địa chỉ, tọa độ, ảnh hồ sơ và giấy chứng nhận, số/ngày hết hạn chứng nhận, trạng thái.
 
 ### Sản phẩm và truy xuất
 
 - `products`: danh mục, nguồn vùng/nông trại, slug/SKU, đơn vị, giá gốc/khuyến mãi, mô tả, hướng dẫn bảo quản, chứng nhận, cờ nổi bật và tồn kho tổng; `deleted_at` dùng cho xóa mềm. Các index hỗ trợ lọc theo trạng thái, danh mục, vùng, giá và sản phẩm mới/nổi bật.
 - `product_images`: nhiều ảnh cho một sản phẩm, có thứ tự và cờ ảnh chính.
-- `product_batches`: mã lô và QR token duy nhất; lưu ngày thu hoạch/đóng gói/hết hạn, số lượng nhập/còn và kiểm định.
-- `trace_events`: nhật ký theo thời gian của từng lô: gieo trồng, chăm sóc, thu hoạch, sơ chế, đóng gói và vận chuyển.
+- `product_batches`: mã lô bất biến và QR token duy nhất; liên kết sản phẩm/nông trại, ngày thu hoạch/đóng gói/hết hạn, số lượng nhập/còn, kiểm định, trạng thái và lý do thu hồi.
+- `trace_events`: nhật ký theo thứ tự của từng lô: gieo trồng, chăm sóc, thu hoạch, sơ chế, đóng gói và vận chuyển; có mô tả, ngày, địa điểm và ảnh tùy chọn.
+- `trace_scans`: lượt xem trang truy xuất, ghi thời điểm, hash SHA-256 của IP và user-agent tối đa 200 ký tự; ứng dụng loại lượt trùng cùng IP/lô trong cửa sổ 10 phút.
 
 ### Kho
 

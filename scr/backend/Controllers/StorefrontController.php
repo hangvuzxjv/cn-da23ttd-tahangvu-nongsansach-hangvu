@@ -94,7 +94,8 @@ final class StorefrontController extends Controller
              LEFT JOIN (
                  SELECT product_id, SUM(quantity_remaining) AS quantity
                  FROM product_batches
-                 WHERE inspection_result <> 'failed' AND (expires_at IS NULL OR expires_at >= CURDATE())
+                 WHERE status = 'selling' AND inspection_result <> 'failed'
+                   AND (expires_at IS NULL OR expires_at >= CURDATE())
                  GROUP BY product_id
              ) stock ON stock.product_id = p.id
              WHERE p.slug = :slug AND p.status = 'active' AND p.deleted_at IS NULL
@@ -117,6 +118,14 @@ final class StorefrontController extends Controller
             'p.is_featured DESC, p.created_at DESC',
             4
         );
+        $batchQuery = Database::connection()->prepare(
+            "SELECT id, batch_code, harvested_at, packed_at, expires_at, quantity_remaining
+             FROM product_batches
+             WHERE product_id = :product_id AND status = 'selling' AND inspection_result <> 'failed' AND quantity_remaining > 0
+               AND (expires_at IS NULL OR expires_at >= CURDATE())
+             ORDER BY expires_at IS NULL, expires_at, harvested_at, id"
+        );
+        $batchQuery->execute(['product_id' => $product['id']]);
         $stock = (int) $product['actual_stock'];
         $this->view('client/product', [
             'title' => $product['name'],
@@ -124,6 +133,7 @@ final class StorefrontController extends Controller
             'product' => $product,
             'images' => $images->fetchAll(),
             'related' => $related,
+            'traceBatches' => $batchQuery->fetchAll(),
             'stockStatus' => $stock <= 0 ? 'Hết hàng' : ($stock <= 5 ? 'Sắp hết hàng' : 'Còn hàng'),
             'breadcrumbs' => [
                 ['name' => 'Sản phẩm', 'url' => '/san-pham'],

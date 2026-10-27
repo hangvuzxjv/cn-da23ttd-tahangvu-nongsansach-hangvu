@@ -61,8 +61,11 @@ final class Router
 
     private function match(string $routePath, string $requestPath): ?array
     {
-        $pattern = preg_replace_callback('/\{(id|slug)\}/', static function (array $matches): string {
-            return $matches[1] === 'id' ? '(?P<id>\d+)' : '(?P<slug>[A-Za-z0-9_-]+)';
+        $pattern = preg_replace_callback('/\{(id|slug|code)\}/', static function (array $matches): string {
+            if ($matches[1] === 'id') {
+                return '(?P<id>\d+)';
+            }
+            return $matches[1] === 'code' ? '(?P<code>[A-Za-z0-9._-]+)' : '(?P<slug>[A-Za-z0-9_-]+)';
         }, $routePath);
 
         if (!preg_match('#^' . $pattern . '/?$#', $requestPath, $matches)) {

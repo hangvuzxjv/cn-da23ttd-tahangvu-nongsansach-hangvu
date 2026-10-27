@@ -51,6 +51,13 @@ INSERT INTO farms (id, name, slug, region_id, address, contact_name, phone, cert
 (8, 'HTX xoài Hòa Lộc', 'htx-xoai-hoa-loc', 11, 'Cái Bè, Tiền Giang', 'Phạm Thị Xoài', '02733800008', 'VietGAP (dữ liệu mẫu)', 'Vùng xoài cát Hòa Lộc.'),
 (9, 'HTX sen Đồng Tháp', 'htx-sen-dong-thap', 12, 'Tháp Mười, Đồng Tháp', 'Võ Văn Sen', '02773800009', 'OCOP (dữ liệu mẫu)', 'Sản phẩm từ vùng sen Đồng Tháp.'),
 (10, 'Vườn trái cây Cần Thơ', 'vuon-trai-cay-can-tho', 13, 'Phong Điền, Cần Thơ', 'Đặng Minh Vườn', '02923800010', 'VietGAP (dữ liệu mẫu)', 'Vườn cây ăn trái miền Tây.');
+UPDATE farms SET
+    certification_number = CONCAT('DEMO-', LPAD(id, 4, '0')),
+    certification_expires_at = DATE_ADD(CURDATE(), INTERVAL 365 DAY),
+    image_url = '/img/product-placeholder.svg',
+    certificate_image_url = '/img/product-placeholder.svg',
+    latitude = CASE id WHEN 1 THEN 21.5600 WHEN 4 THEN 12.6800 WHEN 7 THEN 10.2400 WHEN 8 THEN 10.3500 ELSE NULL END,
+    longitude = CASE id WHEN 1 THEN 105.8400 WHEN 4 THEN 108.0400 WHEN 7 THEN 106.3800 WHEN 8 THEN 105.9600 ELSE NULL END;
 
 INSERT INTO products
 (id, category_id, region_id, farm_id, name, slug, sku, unit, price, suggested_shelf_life_days, storage_instructions, certifications, status, total_stock, description)
@@ -136,6 +143,41 @@ VALUES
 (28,8,'LO-20261028',SHA2('qr-LO-20261028',256),'2026-10-20','2026-10-20','2026-10-30',30,20,'passed','Kiểm định mẫu đạt.'),
 (29,9,'LO-20261029',SHA2('qr-LO-20261029',256),'2026-10-10','2026-10-11','2027-04-09',30,20,'passed','Kiểm định mẫu đạt.'),
 (30,10,'LO-20261030',SHA2('qr-LO-20261030',256),'2026-10-22','2026-10-22','2026-10-27',30,20,'passed','Kiểm định mẫu đạt.');
+
+UPDATE product_batches b
+JOIN products p ON p.id = b.product_id
+SET b.farm_id = p.farm_id,
+    b.status = CASE
+        WHEN b.expires_at IS NOT NULL AND b.expires_at < CURDATE() THEN 'ended'
+        WHEN b.quantity_remaining = 0 THEN 'ended'
+        ELSE 'selling'
+    END;
+
+INSERT INTO product_batches
+(product_id, farm_id, batch_code, qr_token, harvested_at, packed_at, expires_at, quantity_received, quantity_remaining, inspection_result, inspection_notes, status, recall_reason)
+SELECT p.id, p.farm_id,
+       CONCAT('NS-', DATE_FORMAT(CURDATE(), '%y%m'), '-', p.sku, '-', LPAD(batch_kind.kind, 2, '0')),
+       SHA2(CONCAT('qr-', DATE_FORMAT(CURDATE(), '%y%m'), '-', p.sku, '-', batch_kind.kind), 256),
+       DATE_SUB(CURDATE(), INTERVAL 10 DAY),
+       DATE_SUB(CURDATE(), INTERVAL 9 DAY),
+       CASE batch_kind.kind
+           WHEN 1 THEN DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+           WHEN 2 THEN DATE_ADD(CURDATE(), INTERVAL 3 DAY)
+           WHEN 3 THEN DATE_ADD(CURDATE(), INTERVAL 6 DAY)
+           WHEN 4 THEN DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+           ELSE DATE_ADD(CURDATE(), INTERVAL 20 DAY)
+       END,
+       10,
+       CASE batch_kind.kind WHEN 1 THEN 10 WHEN 2 THEN 5 WHEN 3 THEN 4 ELSE 0 END,
+       'passed',
+       CASE batch_kind.kind WHEN 5 THEN 'Thu hồi mẫu để kiểm thử cảnh báo công khai.' ELSE 'Lô mẫu kiểm định đạt.' END,
+       CASE batch_kind.kind WHEN 4 THEN 'ended' WHEN 5 THEN 'recalled' ELSE 'selling' END,
+       CASE batch_kind.kind WHEN 5 THEN 'Thu hồi mẫu để kiểm thử cảnh báo công khai.' ELSE NULL END
+FROM products p
+CROSS JOIN (
+    SELECT 1 AS kind UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5
+) batch_kind
+ORDER BY p.id, batch_kind.kind;
 
 INSERT INTO trace_events (batch_id, event_type, event_at, location, description)
 SELECT id, 'planting', DATE_SUB(CONCAT(harvested_at, ' 08:00:00'), INTERVAL 90 DAY), 'Nông trại', CONCAT('Ghi nhận vùng trồng cho lô ', batch_code, '.')

@@ -16,6 +16,14 @@
     </section>
 <?php endif; ?>
 
+<section class="card card-body border-success mb-5">
+    <h2 class="h5">Tra cứu nguồn gốc nông sản</h2>
+    <form class="row g-2" method="get" action="<?= e(url('/truy-xuat')) ?>">
+        <div class="col"><label class="visually-hidden" for="traceLookupHome">Mã lô hàng</label><input class="form-control" id="traceLookupHome" name="batch_code" placeholder="Nhập mã lô in trên nhãn" required></div>
+        <div class="col-auto"><button class="btn btn-success" type="submit">Tra cứu</button></div>
+    </form>
+</section>
+
 <section class="mb-5">
     <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h3 mb-0">Khám phá vùng miền</h2><a href="<?= e(url('/san-pham')) ?>">Xem tất cả</a></div>
     <div class="row row-cols-1 row-cols-md-3 g-3"><?php foreach ($regions as $region): ?>

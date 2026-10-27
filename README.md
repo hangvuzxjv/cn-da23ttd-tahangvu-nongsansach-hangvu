@@ -47,7 +47,7 @@ Tất cả tài khoản sau dùng mật khẩu thử `password` (bcrypt). Chỉ 
 | staff_sales | `sales@example.com` |
 | staff_warehouse | `warehouse@example.com` |
 
-Seed có 3 miền, 10 tỉnh/vùng, 6 danh mục, 10 nông trại, 20 sản phẩm, 30 lô hàng (mỗi lô có 6 sự kiện truy xuất), một phiếu nhập, một đơn hàng mẫu, 3 voucher, phí ship, và một Flash Sale có thời gian bắt đầu/kết thúc tương đối với lúc import. Các chứng nhận và hồ sơ nông trại trong seed là dữ liệu minh họa, không phải xác nhận chứng nhận thực tế.
+Seed có 3 miền, 10 tỉnh/vùng, 6 danh mục, 10 nông trại, 20 sản phẩm, 130 lô hàng (mỗi lô có 6 sự kiện truy xuất), một phiếu nhập, một đơn hàng mẫu, 3 voucher, phí ship, và một Flash Sale có thời gian bắt đầu/kết thúc tương đối với lúc import. Các chứng nhận và hồ sơ nông trại trong seed là dữ liệu minh họa, không phải xác nhận chứng nhận thực tế.
 
 ## Kiểm tra dữ liệu sau import
 
@@ -119,7 +119,7 @@ Kết quả: đơn `DH-2026-0001`, trạng thái `confirmed`, tạm tính 78.000
 
 ## Routes và middleware
 
-Các route ứng dụng được khai báo tập trung trong `scr/backend/routes.php`. Router hỗ trợ GET/POST, tham số `{id}` (chữ số) và `{slug}`, cùng middleware `auth`, `role:<tên-vai-trò>` và `csrf`. Các form POST phải gửi token bằng helper `csrf_field()`.
+Các route ứng dụng được khai báo tập trung trong `scr/backend/routes.php`. Router hỗ trợ GET/POST, tham số `{id}` (chữ số), `{slug}` và `{code}` (mã lô có dấu chấm, gạch nối), cùng middleware `auth`, `role:<tên-vai-trò>` và `csrf`. Các form POST phải gửi token bằng helper `csrf_field()`.
 
 Ứng dụng ghi log vào `scr/backend/storage/logs/app.log`. Tài khoản và quyền truy cập được kiểm tra từ bảng `users`; xem các luồng xác thực bên dưới.
 
@@ -186,3 +186,65 @@ Route `/_dev/db-check` và link demo chỉ nên dùng trong môi trường phát
 - Đăng nhập bằng bốn tài khoản seed: admin và staff kho vào được trang xem/quản lý catalog; staff bán hàng xem được catalog nhưng `/admin/products/new` trả 403; customer vào các trang catalog admin trả 403: **đạt**.
 - CRUD vùng miền/danh mục và sản phẩm, tìm kiếm SKU, xóa mềm sản phẩm, chặn xóa danh mục còn sản phẩm, và từ chối POST thiếu CSRF: **đạt**. Các bản ghi QA tạo trong lúc kiểm tra đã được dọn khỏi CSDL.
 - Tải PNG hợp lệ qua form admin, xác nhận bản ghi/tệp ảnh, rồi xóa ảnh để dọn cả DB lẫn tệp: **đạt**. Môi trường XAMPP hiện không bật GD; nhánh thu nhỏ ảnh khi có GD chưa chạy trong môi trường này. Đã kiểm tra trang cửa hàng hiển thị bằng browser và ảnh SVG placeholder cục bộ.
+
+## Bước 5: Truy xuất nguồn gốc và QR
+
+### Cập nhật cơ sở dữ liệu
+
+- Cài mới: import `schema.sql` rồi `seed.sql`; seed tạo 130 lô/780 bước truy xuất. Mỗi sản phẩm có thêm một lô còn hạn, hai lô sắp hết hạn, một lô đã hết hạn và một lô thu hồi. Ngày các lô kiểm thử này tính tương đối theo ngày import.
+- Đã có dữ liệu từ các bước trước: **không chạy lại schema.sql hoặc seed.sql**. Chọn CSDL trong phpMyAdmin → **Import** → chạy một lần `setup/database/migrations/20261027_traceability.sql`. Migration bổ sung hồ sơ/chứng nhận/tọa độ nông trại, nông trại và trạng thái cho lô, ảnh/thứ tự sự kiện, index mới và bảng `trace_scans`; dữ liệu lô hiện tại được gắn với nông trại của sản phẩm khi có thể. `farm_id` có thể để NULL cho dữ liệu cũ không có liên kết; lô mới qua giao diện luôn phải chọn nông trại.
+- Sao lưu database trước khi áp dụng migration trên hosting. Migration không xóa bảng/dữ liệu, nhưng cần chạy đúng một lần; chạy lại sẽ báo lỗi do các cột/index đã tồn tại.
+
+### Tính năng và URL kiểm thử
+
+- Tra cứu công khai: `/truy-xuat` (nhập mã lô), `/truy-xuat/{mã_lô}`. Có cảnh báo đỏ cho lô thu hồi, trạng thái hạn sử dụng, kết quả kiểm định, thông tin nông trại/chứng nhận/vùng, liên kết bản đồ, timeline và ảnh bước truy xuất. Trang chủ và menu có ô tra cứu.
+- Trang sản phẩm `/san-pham/{slug}` liệt kê lô còn hàng, còn hạn và chưa kiểm định lỗi theo hạn dùng gần nhất trước (FEFO).
+- Admin và nhân viên kho: `/admin/farms` quản lý nông trại/ảnh/chứng nhận; `/admin/batches` tạo lô, quản lý trạng thái/thu hồi, in tem; `/admin/batches/{id}` quản lý sự kiện, tạo nhanh sáu bước, xem lượt quét; `/admin/labels?ids[]=1&ids[]=2` in tem đã chọn. Nhân viên bán hàng và khách hàng không được quyền quản lý lô/nông trại.
+- Trong chi tiết lô có thể cập nhật nông trại cùng vùng, các mốc ngày, số lượng, kiểm định và trạng thái; SKU/sản phẩm và mã lô giữ cố định để không làm sai mã truy xuất đã phát hành.
+- Ảnh tải lên được xác minh bằng MIME `finfo`, chỉ JPEG/PNG/WebP, tối đa 2 MB; tên ngẫu nhiên, GD thu nhỏ cạnh dài còn tối đa 1000 px nếu extension có sẵn.
+- `/qr/{mã_lô}` xuất QR SVG động, không dùng dịch vụ QR bên ngoài và không cần GD/Imagick. URL đích lấy từ `app.url` đã cấu hình, không lấy host từ request.
+- `trace_scans` chỉ ghi hash SHA-256 của IP, user-agent tối đa 200 ký tự và thời điểm. Cùng lô/IP chỉ ghi một lượt trong mỗi cửa sổ 10 phút. Không lưu IP thô.
+
+### Đưa thư viện QR lên hosting không có SSH
+
+Trong môi trường phát triển, chạy `composer install --no-dev --optimize-autoloader` tại thư mục gốc dự án, sau đó tải toàn bộ thư mục `vendor/` cùng mã nguồn lên hosting bằng FTP/cPanel. Giữ `composer.json` và `composer.lock` đồng bộ. QR dùng `bacon/bacon-qr-code` với backend SVG thuần; không cần chạy Composer trên hosting, GD hoặc Imagick.
+
+### Truy vấn kiểm tra truy xuất
+
+```sql
+-- Mỗi sản phẩm có đủ các loại lô seed
+SELECT p.id, p.name,
+       SUM(b.status = 'selling' AND b.expires_at > CURDATE() + INTERVAL 7 DAY) AS valid_lots,
+       SUM(b.status = 'selling' AND b.expires_at BETWEEN CURDATE() AND CURDATE() + INTERVAL 7 DAY) AS near_expiry_lots,
+       SUM(b.expires_at < CURDATE()) AS expired_lots,
+       SUM(b.status = 'recalled') AS recalled_lots
+FROM products p
+JOIN product_batches b ON b.product_id = p.id
+GROUP BY p.id, p.name
+ORDER BY p.id;
+
+-- Timeline một mã lô
+SELECT b.batch_code, p.name, t.event_type, t.event_at, t.description
+FROM product_batches b
+JOIN products p ON p.id = b.product_id
+JOIN trace_events t ON t.batch_id = b.id
+WHERE b.batch_code = 'LO-20261001'
+ORDER BY t.sort_order, t.event_at, t.id;
+
+-- Lô được quét nhiều nhất
+SELECT b.batch_code, COUNT(s.id) AS scans
+FROM product_batches b
+LEFT JOIN trace_scans s ON s.batch_id = b.id
+GROUP BY b.id, b.batch_code
+ORDER BY scans DESC;
+```
+
+### Kiểm tra Bước 5
+
+- Fresh import `schema.sql` + `seed.sql` trên MySQL 8.4: **đạt**; 20 sản phẩm, 130 lô, 780 sự kiện, 0 sản phẩm thiếu các loại lô cần kiểm thử và 0 lô thiếu đủ sáu sự kiện.
+- Áp dụng migration một lần lên database `nongsan` đang có: **đạt**; giữ nguyên 30 lô/180 sự kiện cũ, 0 lô thiếu liên kết nông trại và tạo bảng `trace_scans`.
+- PHP development server: trang sản phẩm, truy xuất lô, nông trại/lô admin, chi tiết lô và in tem trả HTTP 200; mã lô không tồn tại trả 404. Endpoint QR trả `image/svg+xml` với SVG hợp lệ.
+- Đăng nhập thử với admin và staff kho vào được `/admin/batches`; staff bán hàng và customer nhận 403. POST thiếu CSRF nhận 419.
+- Qua form admin đã tạo/sửa/xóa nông trại; tạo lô với mã tự sinh, tạo nhanh đủ sáu sự kiện, thu hồi lô và xác nhận trang công khai hiển thị cảnh báo; ba lượt mở từ cùng IP chỉ ghi một scan trong 10 phút. In tem QR SVG hoạt động; không cho xóa lô có lịch sử. Bản ghi QA và các sự kiện phụ thuộc đã được xóa sau kiểm tra.
+- Upload PNG hợp lệ cho hồ sơ nông trại và dọn tệp khi xóa hồ sơ: **đạt**. Môi trường XAMPP không bật GD nên nhánh thu nhỏ ảnh khi extension có sẵn chưa được kiểm chứng.
+- PHP lint cho controller/view/router và `git diff --check`: **đạt**.

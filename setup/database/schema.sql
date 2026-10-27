@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS inventory_movements;
 DROP TABLE IF EXISTS warehouse_receipt_items;
 DROP TABLE IF EXISTS warehouse_receipts;
 DROP TABLE IF EXISTS trace_events;
+DROP TABLE IF EXISTS trace_scans;
 DROP TABLE IF EXISTS product_batches;
 DROP TABLE IF EXISTS product_images;
 DROP TABLE IF EXISTS products;
@@ -149,6 +150,12 @@ CREATE TABLE farms (
     contact_name VARCHAR(150) DEFAULT NULL,
     phone VARCHAR(30) DEFAULT NULL,
     certifications TEXT DEFAULT NULL,
+    certification_number VARCHAR(120) DEFAULT NULL,
+    certification_expires_at DATE DEFAULT NULL,
+    certificate_image_url VARCHAR(500) DEFAULT NULL,
+    image_url VARCHAR(500) DEFAULT NULL,
+    latitude DECIMAL(10,7) DEFAULT NULL,
+    longitude DECIMAL(10,7) DEFAULT NULL,
     description TEXT DEFAULT NULL,
     status ENUM('active','inactive') NOT NULL DEFAULT 'active',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -162,7 +169,7 @@ CREATE TABLE products (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     category_id BIGINT UNSIGNED NOT NULL,
     region_id BIGINT UNSIGNED NOT NULL,
-    farm_id BIGINT UNSIGNED NOT NULL,
+    farm_id BIGINT UNSIGNED DEFAULT NULL,
     name VARCHAR(200) NOT NULL,
     slug VARCHAR(220) NOT NULL,
     sku VARCHAR(80) NOT NULL,
@@ -210,6 +217,7 @@ CREATE TABLE product_images (
 CREATE TABLE product_batches (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     product_id BIGINT UNSIGNED NOT NULL,
+    farm_id BIGINT UNSIGNED DEFAULT NULL,
     batch_code VARCHAR(100) NOT NULL,
     qr_token CHAR(64) NOT NULL,
     harvested_at DATE NOT NULL,
@@ -219,13 +227,18 @@ CREATE TABLE product_batches (
     quantity_remaining INT UNSIGNED NOT NULL,
     inspection_result ENUM('pending','passed','failed') NOT NULL DEFAULT 'pending',
     inspection_notes TEXT DEFAULT NULL,
+    status ENUM('selling','suspended','recalled','ended') NOT NULL DEFAULT 'selling',
+    recall_reason TEXT DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_product_batches_code (batch_code),
     UNIQUE KEY uq_product_batches_qr (qr_token),
     KEY idx_product_batches_product_expiry (product_id, expires_at),
+    KEY idx_product_batches_farm (farm_id),
+    KEY idx_product_batches_public (status, expires_at, quantity_remaining),
     KEY idx_product_batches_inspection (inspection_result),
     CONSTRAINT fk_product_batches_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_product_batches_farm FOREIGN KEY (farm_id) REFERENCES farms (id) ON DELETE RESTRICT,
     CONSTRAINT chk_product_batches_remaining CHECK (quantity_remaining <= quantity_received)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -236,13 +249,28 @@ CREATE TABLE trace_events (
     event_at DATETIME NOT NULL,
     location VARCHAR(200) DEFAULT NULL,
     description TEXT NOT NULL,
+    image_url VARCHAR(500) DEFAULT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
     recorded_by BIGINT UNSIGNED DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_trace_events_batch_time (batch_id, event_at),
+    KEY idx_trace_events_batch_order (batch_id, sort_order, event_at),
     KEY idx_trace_events_recorded_by (recorded_by),
     CONSTRAINT fk_trace_events_batch FOREIGN KEY (batch_id) REFERENCES product_batches (id) ON DELETE CASCADE,
     CONSTRAINT fk_trace_events_user FOREIGN KEY (recorded_by) REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE trace_scans (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    batch_id BIGINT UNSIGNED NOT NULL,
+    scanned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ip_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    user_agent VARCHAR(200) DEFAULT NULL,
+    PRIMARY KEY (id),
+    KEY idx_trace_scans_batch_date (batch_id, scanned_at),
+    KEY idx_trace_scans_batch_ip_date (batch_id, ip_hash, scanned_at),
+    CONSTRAINT fk_trace_scans_batch FOREIGN KEY (batch_id) REFERENCES product_batches (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE warehouse_receipts (
