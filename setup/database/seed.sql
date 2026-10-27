@@ -21,6 +21,16 @@ INSERT INTO regions (id, parent_id, name, level, slug) VALUES
 (11, 3, 'Tiền Giang', 2, 'tien-giang'),
 (12, 3, 'Đồng Tháp', 2, 'dong-thap'),
 (13, 3, 'Cần Thơ', 2, 'can-tho');
+UPDATE regions SET description = CASE id
+    WHEN 1 THEN 'Đặc sản và nông sản theo mùa từ các tỉnh miền Bắc.'
+    WHEN 2 THEN 'Nông sản vùng duyên hải miền Trung và cao nguyên.'
+    WHEN 3 THEN 'Trái cây, rau củ và đặc sản từ miền Nam.'
+    WHEN 4 THEN 'Chè xanh nổi tiếng từ vùng Tân Cương, Thái Nguyên.'
+    WHEN 7 THEN 'Cà phê và nông sản từ vùng đất đỏ Tây Nguyên.'
+    WHEN 10 THEN 'Bưởi da xanh và dừa xiêm từ vùng đất Bến Tre.'
+    WHEN 11 THEN 'Xoài cát Hòa Lộc và trái cây đặc sản Tiền Giang.'
+    ELSE CONCAT('Nông sản đặc trưng vùng ', name, '.')
+END;
 
 INSERT INTO categories (id, parent_id, name, slug, description, sort_order) VALUES
 (1, NULL, 'Rau củ', 'rau-cu', 'Rau củ tươi theo mùa.', 1),
@@ -66,11 +76,32 @@ VALUES
 (19, 5, 7, 4, 'Cà phê Arabica Tây Nguyên', 'ca-phe-arabica-tay-nguyen', 'NS-CAFE-019', 'gói 500g', 165000, 365, 'Đậy kín sau khi mở gói.', '4C (dữ liệu mẫu)', 'active', 30, 'Cà phê Arabica rang xay từ vùng Tây Nguyên.'),
 (20, 1, 8, 5, 'Bắp cải Đà Lạt', 'bap-cai-da-lat', 'NS-RAUCU-020', 'kg', 24000, 14, 'Bảo quản ngăn mát.', 'VietGAP (dữ liệu mẫu)', 'active', 30, 'Bắp cải tươi theo mùa.');
 
+UPDATE products SET
+    short_description = CONCAT(name, ' - nông sản sạch theo mùa từ vùng nguyên liệu.'),
+    is_featured = IF(id IN (1, 4, 7, 8, 10, 14), 1, 0),
+    sale_price = IF(id IN (1, 8), ROUND(price * 0.9, 0), NULL);
+
 INSERT INTO product_images (product_id, image_url, alt_text, sort_order, is_primary) VALUES
-(1, 'https://example.com/images/che-tan-cuong.jpg', 'Chè Tân Cương', 1, 1),
-(7, 'https://example.com/images/buoi-da-xanh.jpg', 'Bưởi da xanh Bến Tre', 1, 1),
-(8, 'https://example.com/images/xoai-cat-hoa-loc.jpg', 'Xoài cát Hòa Lộc', 1, 1),
-(4, 'https://example.com/images/ca-phe-buon-ma-thuot.jpg', 'Cà phê Buôn Ma Thuột', 1, 1);
+(1, '/img/placeholder-tea-coffee.svg', 'Chè Tân Cương - hình minh họa', 1, 1),
+(2, '/img/placeholder-fruit.svg', 'Cam sành Hà Giang - hình minh họa', 1, 1),
+(3, '/img/placeholder-fruit.svg', 'Mận hậu Sơn La - hình minh họa', 1, 1),
+(4, '/img/placeholder-tea-coffee.svg', 'Cà phê Buôn Ma Thuột - hình minh họa', 1, 1),
+(5, '/img/placeholder-vegetables.svg', 'Khoai tây Đà Lạt - hình minh họa', 1, 1),
+(6, '/img/placeholder-spices.svg', 'Quế thanh Trà My - hình minh họa', 1, 1),
+(7, '/img/placeholder-fruit.svg', 'Bưởi da xanh Bến Tre - hình minh họa', 1, 1),
+(8, '/img/placeholder-fruit.svg', 'Xoài cát Hòa Lộc - hình minh họa', 1, 1),
+(9, '/img/placeholder-dry-goods.svg', 'Hạt sen sấy Đồng Tháp - hình minh họa', 1, 1),
+(10, '/img/placeholder-fruit.svg', 'Sầu riêng Ri6 Cần Thơ - hình minh họa', 1, 1),
+(11, '/img/placeholder-vegetables.svg', 'Cà rốt Đà Lạt - hình minh họa', 1, 1),
+(12, '/img/placeholder-fruit.svg', 'Dừa xiêm xanh Bến Tre - hình minh họa', 1, 1),
+(13, '/img/placeholder-fruit.svg', 'Thanh long Tiền Giang - hình minh họa', 1, 1),
+(14, '/img/placeholder-grains.svg', 'Gạo tím than Đồng Tháp - hình minh họa', 1, 1),
+(15, '/img/placeholder-fruit.svg', 'Mít Thái Cần Thơ - hình minh họa', 1, 1),
+(16, '/img/placeholder-tea-coffee.svg', 'Trà xanh Thái Nguyên - hình minh họa', 1, 1),
+(17, '/img/placeholder-fruit.svg', 'Lê Hà Giang - hình minh họa', 1, 1),
+(18, '/img/placeholder-fruit.svg', 'Nhãn Sơn La - hình minh họa', 1, 1),
+(19, '/img/placeholder-tea-coffee.svg', 'Cà phê Arabica Tây Nguyên - hình minh họa', 1, 1),
+(20, '/img/placeholder-vegetables.svg', 'Bắp cải Đà Lạt - hình minh họa', 1, 1);
 
 INSERT INTO product_batches
 (id, product_id, batch_code, qr_token, harvested_at, packed_at, expires_at, quantity_received, quantity_remaining, inspection_result, inspection_notes)
@@ -169,7 +200,7 @@ INSERT INTO reviews (user_id, product_id, order_id, rating, title, content, stat
 VALUES (1, 7, 1, 5, 'Sản phẩm mẫu', 'Đánh giá mẫu cho dữ liệu phát triển.', 'published');
 INSERT INTO wishlists (user_id, product_id) VALUES (1, 8);
 INSERT INTO banners (title, image_url, link_url, sort_order, status)
-VALUES ('Nông sản sạch theo mùa', 'https://example.com/images/banner-nong-san.jpg', '/products/xoai-cat-hoa-loc', 1, 'active');
+VALUES ('Nông sản sạch theo mùa', '/img/banner-fresh.svg', '/san-pham/xoai-cat-hoa-loc', 1, 'active');
 INSERT INTO pages (title, slug, content, status, published_at)
 VALUES ('Giới thiệu', 'gioi-thieu', '<p>Trang giới thiệu mẫu.</p>', 'published', NOW());
 INSERT INTO contacts (name, email, subject, message, status)

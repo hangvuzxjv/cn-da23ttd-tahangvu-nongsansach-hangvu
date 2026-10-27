@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700">
+  <rect width="1000" height="700" fill="#fff3e0"/><circle cx="500" cy="300" r="155" fill="#ffb74d"/>
+  <path d="M500 144c-10-60 25-92 78-96" fill="none" stroke="#795548" stroke-width="18" stroke-linecap="round"/>
+  <path d="M520 116c48-55 106-42 130 1-49 37-96 37-130-1z" fill="#66bb6a"/>
+  <text x="500" y="550" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="700" fill="#7a4b16">TRÁI CÂY TƯƠI</text>
+  <text x="500" y="596" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="#8d6e63">Hình minh họa</text>
+</svg>

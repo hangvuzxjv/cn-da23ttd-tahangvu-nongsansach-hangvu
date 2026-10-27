@@ -3,7 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><?= e($title ?? 'Nông Sản Sạch') ?></title>
+    <title><?= e($title ?? 'Nông Sản Sạch') ?> - Nông Sản Sạch</title>
+    <meta name="description" content="<?= e($metaDescription ?? 'Nông sản sạch theo mùa, minh bạch nguồn gốc từ các vùng miền Việt Nam.') ?>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="<?= e(asset('/css/app.css')) ?>" rel="stylesheet">
 </head>
@@ -17,6 +18,7 @@
         <div class="collapse navbar-collapse" id="clientNavigation">
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="<?= e(url('/')) ?>">Trang chủ</a>
+                <a class="nav-link" href="<?= e(url('/san-pham')) ?>">Sản phẩm</a>
                 <?php if (Auth::check()): ?>
                     <a class="nav-link" href="<?= e(url('/profile')) ?>">Hồ sơ</a>
                     <a class="nav-link" href="<?= e(url('/addresses')) ?>">Sổ địa chỉ</a>

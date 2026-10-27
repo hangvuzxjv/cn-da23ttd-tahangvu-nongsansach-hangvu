@@ -6,17 +6,20 @@ final class HomeController extends Controller
 {
     public function index(): void
     {
-        $this->view('client/home', ['title' => 'Trang chủ']);
+        (new StorefrontController())->home();
     }
 
     public function product(string $slug): void
     {
-        http_response_code(404);
-        View::renderError(404);
+        (new StorefrontController())->product($slug);
     }
 
     public function user(string $id): void
     {
-        $this->view('client/home', ['title' => 'Thông tin người dùng', 'message' => 'Mã người dùng: ' . $id]);
+        $this->view('client/user', [
+            'title' => 'Thông tin người dùng',
+            'metaDescription' => 'Thông tin người dùng trong ứng dụng.',
+            'message' => 'Mã người dùng: ' . $id,
+        ]);
     }
 }

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700">
+  <rect width="1000" height="700" fill="#e8f5e9"/><path d="M500 150c-130 25-190 165-150 270 35 90 125 120 150 120s115-30 150-120c40-105-20-245-150-270z" fill="#81c784"/>
+  <path d="M500 195v310m0-230c-60-45-105-48-145-30m145 115c60-45 105-48 145-30" fill="none" stroke="#388e3c" stroke-width="18" stroke-linecap="round"/>
+  <text x="500" y="600" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="700" fill="#2e6032">RAU CỦ TƯƠI</text>
+</svg>

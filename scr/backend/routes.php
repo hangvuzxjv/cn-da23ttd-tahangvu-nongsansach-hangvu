@@ -1,6 +1,11 @@
 <?php
 
 $router->get('/', [HomeController::class, 'index']);
+$router->get('/san-pham', [StorefrontController::class, 'shop']);
+$router->get('/san-pham/{slug}', [StorefrontController::class, 'product']);
+$router->get('/vung-mien/{slug}', [StorefrontController::class, 'region']);
+$router->get('/danh-muc/{slug}', [StorefrontController::class, 'category']);
+$router->get('/sitemap.xml', [StorefrontController::class, 'sitemap']);
 $router->get('/login', [AuthController::class, 'showLogin']);
 $router->post('/login', [AuthController::class, 'login'], ['csrf']);
 $router->get('/register', [AuthController::class, 'showRegister']);
@@ -27,8 +32,23 @@ $router->get('/admin/reviews', static fn () => (new AdminController())->section(
 $router->get('/admin/customers', [AdminController::class, 'customers'], ['permission:customers.view']);
 $router->get('/admin/inventory', static fn () => (new AdminController())->section('inventory'), ['permission:inventory.view']);
 $router->get('/admin/batches', static fn () => (new AdminController())->section('batches'), ['permission:batches.view']);
-$router->get('/admin/products', static fn () => (new AdminController())->section('products'), ['permission:products.view']);
-$router->get('/products/{slug}', [HomeController::class, 'product']);
+$router->get('/admin/regions', [CatalogAdminController::class, 'regions'], ['permission:regions.view']);
+$router->post('/admin/regions', [CatalogAdminController::class, 'storeRegion'], ['permission:regions.manage', 'csrf']);
+$router->post('/admin/regions/{id}/update', [CatalogAdminController::class, 'updateRegion'], ['permission:regions.manage', 'csrf']);
+$router->post('/admin/regions/{id}/delete', [CatalogAdminController::class, 'deleteRegion'], ['permission:regions.manage', 'csrf']);
+$router->get('/admin/categories', [CatalogAdminController::class, 'categories'], ['permission:categories.view']);
+$router->post('/admin/categories', [CatalogAdminController::class, 'storeCategory'], ['permission:categories.manage', 'csrf']);
+$router->post('/admin/categories/{id}/update', [CatalogAdminController::class, 'updateCategory'], ['permission:categories.manage', 'csrf']);
+$router->post('/admin/categories/{id}/delete', [CatalogAdminController::class, 'deleteCategory'], ['permission:categories.manage', 'csrf']);
+$router->get('/admin/products', [CatalogAdminController::class, 'products'], ['permission:products.view']);
+$router->get('/admin/products/new', [CatalogAdminController::class, 'newProduct'], ['permission:products.manage']);
+$router->post('/admin/products', [CatalogAdminController::class, 'storeProduct'], ['permission:products.manage', 'csrf']);
+$router->get('/admin/products/{id}/edit', [CatalogAdminController::class, 'editProduct'], ['permission:products.manage']);
+$router->post('/admin/products/{id}/edit', [CatalogAdminController::class, 'updateProduct'], ['permission:products.manage', 'csrf']);
+$router->post('/admin/products/{id}/delete', [CatalogAdminController::class, 'deleteProduct'], ['permission:products.manage', 'csrf']);
+$router->post('/admin/products/{id}/images/reorder', [CatalogAdminController::class, 'reorderImages'], ['permission:products.manage', 'csrf']);
+$router->post('/admin/products/images/{id}/delete', [CatalogAdminController::class, 'deleteImage'], ['permission:products.manage', 'csrf']);
+$router->get('/products/{slug}', [StorefrontController::class, 'product']);
 $router->get('/users/{id}', [HomeController::class, 'user']);
 
 if (($config['app']['debug'] ?? false) === true) {

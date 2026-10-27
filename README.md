@@ -140,7 +140,7 @@ Driver `smtp` dùng PHPMailer. Chạy `composer install`, sau đó điền `mail
 
 ### Quyền quản trị
 
-Ma trận quyền có tại `scr/backend/config/permissions.php`. `admin` có toàn quyền; `staff_sales` có dashboard, đơn hàng, voucher, đánh giá và danh sách khách hàng; `staff_warehouse` có dashboard, kho, lô hàng và chỉ xem sản phẩm; `customer` không có quyền quản trị. Các route `/admin/*` được bảo vệ bằng middleware `permission:<tên-quyền>`. Menu ẩn mục không được phép, nhưng route vẫn được kiểm tra server-side và trả trang 403. Người chưa đăng nhập được chuyển tới `/login`, sau đó trở lại URL nội bộ ban đầu.
+Ma trận quyền có tại `scr/backend/config/permissions.php`. `admin` có toàn quyền; `staff_sales` có dashboard, đơn hàng, voucher, đánh giá, khách hàng và quyền xem vùng miền/danh mục/sản phẩm; `staff_warehouse` có dashboard, kho, lô hàng và quyền quản lý vùng miền/danh mục/sản phẩm; `customer` không có quyền quản trị. Các route `/admin/*` được bảo vệ bằng middleware `permission:<tên-quyền>`. Menu ẩn mục không được phép, nhưng route vẫn được kiểm tra server-side và trả trang 403. Người chưa đăng nhập được chuyển tới `/login`, sau đó trở lại URL nội bộ ban đầu.
 
 `/admin/users` cho phép admin tìm kiếm/lọc tài khoản, đổi vai trò và khóa/mở tài khoản; không thể tự đổi vai trò hay trạng thái của chính tài khoản đang đăng nhập. `/admin/customers` chỉ hiển thị danh sách khách hàng cho nhân viên bán hàng.
 
@@ -161,3 +161,28 @@ Ma trận quyền có tại `scr/backend/config/permissions.php`. `admin` có to
 - Bốn tài khoản seed dùng hash bcrypt `$2y$` dài 60 ký tự. PHP lint toàn bộ 42 file PHP và `git diff --check`: **đạt**.
 
 Route `/_dev/db-check` và link demo chỉ nên dùng trong môi trường phát triển. Đặt `app.debug=false` và cấu hình thông tin DB/email riêng trước khi triển khai.
+
+## Bước 4: Danh mục, vùng miền và sản phẩm
+
+### Cập nhật cơ sở dữ liệu
+
+- Cài mới: import `setup/database/schema.sql`, sau đó `setup/database/seed.sql` như hướng dẫn ở trên. Seed hiện có mô tả vùng, giá khuyến mãi/mô tả ngắn, cờ nổi bật và 20 ảnh SVG minh họa cục bộ.
+- CSDL đã có từ Bước 2/3: chọn đúng CSDL trong phpMyAdmin và import `setup/database/migrations/20261027_catalog_fields.sql` **một lần**. Migration thêm `regions.description`, các trường catalog/index cho `products`, và chuyển trạng thái cũ `out_of_stock` sang `inactive` trước khi điều chỉnh ENUM. Không import lại `schema.sql` vì thao tác đó xóa các bảng/dữ liệu.
+- Nếu đã import seed cũ, không chạy lại toàn bộ `seed.sql` trên database đang dùng vì seed chứa các ID mẫu cố định. Ảnh SVG cục bộ sẽ có trong database seed mới; ảnh sản phẩm chưa có ảnh vẫn dùng `/img/product-placeholder.svg`.
+
+### Chức năng đã nối
+
+- Admin: `/admin/regions` CRUD cây hai cấp, tự sinh slug không dấu, bật/tắt hiển thị và chặn xóa khi còn tham chiếu; `/admin/categories` CRUD danh mục cha/con, thứ tự và slug, chặn xóa khi còn sản phẩm/con; `/admin/products` tìm kiếm tên/SKU, lọc và phân trang 15 dòng. Tạo/sửa sản phẩm có kiểm tra slug/SKU duy nhất, danh mục/vùng/nông trại, giá và trạng thái. Xóa sản phẩm là xóa mềm. Các thao tác ghi có CSRF và audit log.
+- Nhân viên kho có thể quản lý catalog; nhân viên bán hàng chỉ xem; admin có toàn quyền. Product form tải nhiều JPG/PNG/WebP (MIME được kiểm tra bằng `finfo`, tối đa 2 MB/tệp), tên file ngẫu nhiên, GD thu nhỏ cạnh dài tối đa 1000 px khi hỗ trợ. Có thể xóa ảnh và đổi thứ tự; ảnh đầu tiên làm ảnh đại diện.
+- Cửa hàng tại `/san-pham` có lọc/tìm/sắp xếp/phân trang 12 sản phẩm; `/vung-mien/{slug}`, `/danh-muc/{slug}` và `/san-pham/{slug}` là trang vùng, danh mục và chi tiết. Trang chủ lấy banner/sản phẩm/Flash Sale từ DB. Tồn kho hiển thị được tính từ lô còn hạn, chưa kiểm định lỗi; giỏ hàng, truy xuất chi tiết và đánh giá hiện là placeholder cho bước tiếp theo. `/sitemap.xml` được dựng từ sản phẩm, danh mục và vùng đang hiển thị.
+- Tệp hình minh họa cục bộ nằm trong `scr/img/`; không phụ thuộc hotlink ảnh sản phẩm bên ngoài. Query catalog dùng PDO prepared statements và tổng hợp ảnh/tồn/bán chạy trong subquery để không phát sinh N+1.
+
+### Kiểm tra Bước 4
+
+- Đã áp dụng migration catalog lên database `nongsan` hiện có; xác nhận các cột `products.sale_price`, `regions.description` và giữ nguyên 20 sản phẩm.
+- PHP lint toàn bộ backend và view: **đạt**; `git diff --check`: **đạt**.
+- Import mới `schema.sql` và `seed.sql` vào database kiểm thử riêng trên MySQL 8.4: **đạt**; xác nhận 20 sản phẩm/20 ảnh cục bộ, 30 lô/180 sự kiện truy xuất, 3 miền, 6 danh mục, 10 nông trại và Flash Sale còn hiệu lực. Database kiểm thử đã được xóa sau khi xác nhận.
+- Qua PHP development server, trang chủ, cửa hàng, lọc query, trang miền, tỉnh/vùng, danh mục, chi tiết và sitemap trả HTTP 200. Cửa hàng trả đúng 12 sản phẩm trang 1, 8 sản phẩm trang 2; lọc Bến Tre/danh mục trái cây cho đúng tập sản phẩm seed: **đạt**.
+- Đăng nhập bằng bốn tài khoản seed: admin và staff kho vào được trang xem/quản lý catalog; staff bán hàng xem được catalog nhưng `/admin/products/new` trả 403; customer vào các trang catalog admin trả 403: **đạt**.
+- CRUD vùng miền/danh mục và sản phẩm, tìm kiếm SKU, xóa mềm sản phẩm, chặn xóa danh mục còn sản phẩm, và từ chối POST thiếu CSRF: **đạt**. Các bản ghi QA tạo trong lúc kiểm tra đã được dọn khỏi CSDL.
+- Tải PNG hợp lệ qua form admin, xác nhận bản ghi/tệp ảnh, rồi xóa ảnh để dọn cả DB lẫn tệp: **đạt**. Môi trường XAMPP hiện không bật GD; nhánh thu nhỏ ảnh khi có GD chưa chạy trong môi trường này. Đã kiểm tra trang cửa hàng hiển thị bằng browser và ảnh SVG placeholder cục bộ.

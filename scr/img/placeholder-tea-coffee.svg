@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700">
+  <rect width="1000" height="700" fill="#efebe9"/><path d="M380 260h230v200c0 65-48 110-115 110s-115-45-115-110z" fill="#8d6e63"/><path d="M610 300h55c72 0 72 120 0 120h-55" fill="none" stroke="#6d4c41" stroke-width="24"/><path d="M420 205c-32-50 38-54 8-104m88 104c-32-50 38-54 8-104m74 104c-32-50 38-54 8-104" fill="none" stroke="#78909c" stroke-width="12" stroke-linecap="round"/>
+  <text x="500" y="600" text-anchor="middle" font-family="Arial,sans-serif" font-size="40" font-weight="700" fill="#4e342e">TRÀ &amp; CÀ PHÊ</text>
+</svg>

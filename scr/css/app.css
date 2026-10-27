@@ -6,3 +6,69 @@ pre {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+
+.catalog-card-image {
+    display: block;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+    background: #f3f6f1;
+}
+
+.catalog-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.catalog-thumb {
+    width: 56px;
+    height: 56px;
+    flex: 0 0 56px;
+    object-fit: cover;
+    border-radius: .25rem;
+}
+
+.catalog-preview {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+}
+
+.home-banner {
+    max-height: 480px;
+    object-fit: cover;
+}
+
+.home-hero {
+    background: #e8f4e5 url("../img/banner-fresh.svg") center / cover no-repeat;
+}
+
+.region-card {
+    min-height: 160px;
+    color: #174e2a;
+    background: linear-gradient(135deg, #eaf5e8, #fff);
+    border: 1px solid #d5e8d0;
+}
+
+.region-card:hover {
+    background: #dcedd8;
+}
+
+.product-detail-image {
+    max-height: 560px;
+    object-fit: contain;
+    background: #f8f9fa;
+}
+
+.product-gallery-thumb {
+    flex: 0 0 76px;
+    width: 76px;
+    height: 76px;
+    background: #fff;
+}
+
+.product-gallery-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}

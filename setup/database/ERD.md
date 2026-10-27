@@ -35,6 +35,38 @@ erDiagram
         tinyint failed_attempts
         datetime locked_until
     }
+    regions {
+        bigint id PK
+        bigint parent_id FK
+        varchar name
+        tinyint level
+        varchar slug UK
+        text description
+        tinyint is_active
+    }
+    categories {
+        bigint id PK
+        bigint parent_id FK
+        varchar name
+        varchar slug UK
+        int sort_order
+        tinyint is_active
+    }
+    products {
+        bigint id PK
+        bigint category_id FK
+        bigint region_id FK
+        bigint farm_id FK
+        varchar slug UK
+        varchar sku UK
+        decimal price
+        decimal sale_price
+        varchar short_description
+        enum status
+        tinyint is_featured
+        int total_stock
+        datetime deleted_at
+    }
 
     users ||--o{ addresses : has
     users ||--o{ password_resets : requests
@@ -94,13 +126,13 @@ erDiagram
 - `password_resets`: token băm, hạn sử dụng và trạng thái dùng lại của yêu cầu đặt lại mật khẩu.
 - `email_verifications`: token xác minh email có thời hạn, lưu dạng băm.
 - `login_attempts`: số lần đăng nhập sai và thời gian khóa theo cặp SHA-256 email/IP; không có khóa ngoại để giữ bộ đếm độc lập với việc tài khoản có tồn tại hay không.
-- `regions`: cây địa lý hai cấp; `parent_id` trỏ tới miền cha và `level` xác định miền hay tỉnh/vùng.
+- `regions`: cây địa lý hai cấp; `parent_id` trỏ tới miền cha và `level` xác định miền hay tỉnh/vùng; có mô tả và trạng thái hiển thị.
 - `categories`: danh mục nhiều cấp qua `parent_id`.
 - `farms`: nông trại/nhà cung cấp, địa chỉ, vùng và thông tin chứng nhận dạng văn bản.
 
 ### Sản phẩm và truy xuất
 
-- `products`: danh mục, nguồn vùng/nông trại, slug/SKU, đơn vị, giá, hướng dẫn bảo quản, chứng nhận và tồn kho tổng.
+- `products`: danh mục, nguồn vùng/nông trại, slug/SKU, đơn vị, giá gốc/khuyến mãi, mô tả, hướng dẫn bảo quản, chứng nhận, cờ nổi bật và tồn kho tổng; `deleted_at` dùng cho xóa mềm. Các index hỗ trợ lọc theo trạng thái, danh mục, vùng, giá và sản phẩm mới/nổi bật.
 - `product_images`: nhiều ảnh cho một sản phẩm, có thứ tự và cờ ảnh chính.
 - `product_batches`: mã lô và QR token duy nhất; lưu ngày thu hoạch/đóng gói/hết hạn, số lượng nhập/còn và kiểm định.
 - `trace_events`: nhật ký theo thời gian của từng lô: gieo trồng, chăm sóc, thu hoạch, sơ chế, đóng gói và vận chuyển.

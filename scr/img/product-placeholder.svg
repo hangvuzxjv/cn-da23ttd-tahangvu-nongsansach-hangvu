@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700">
+  <rect width="1000" height="700" fill="#eef5e9"/>
+  <circle cx="500" cy="275" r="150" fill="#c8e6c9"/>
+  <path d="M500 390c-108-45-120-160-32-201 27 30 39 61 39 94 13-59 50-100 112-108 27 111-21 185-119 215z" fill="#4caf50"/>
+  <path d="M500 375c-22-75-11-142 32-201" fill="none" stroke="#347a3d" stroke-width="14" stroke-linecap="round"/>
+  <text x="500" y="540" text-anchor="middle" font-family="Arial,sans-serif" font-size="44" font-weight="700" fill="#315c35">NÔNG SẢN SẠCH</text>
+  <text x="500" y="590" text-anchor="middle" font-family="Arial,sans-serif" font-size="24" fill="#55745a">Ảnh minh họa sản phẩm</text>
+</svg>
