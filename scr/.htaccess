@@ -1,0 +1,22 @@
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule (^|/)\.(env|git) - [F,L,NC]
+    RewriteRule \.(sql|log)$ - [F,L,NC]
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [QSA,L]
+</IfModule>
+
+<IfModule mod_authz_core.c>
+<FilesMatch "(^\.env|\.sql$|\.log$)">
+    Require all denied
+</FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+<FilesMatch "(^\.env|\.sql$|\.log$)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+</IfModule>

@@ -1,0 +1,5 @@
+/scr/backend/config/config.php
+/scr/backend/storage/logs/*
+!/scr/backend/storage/logs/.gitkeep
+/scr/uploads/*
+!/scr/uploads/.gitkeep
