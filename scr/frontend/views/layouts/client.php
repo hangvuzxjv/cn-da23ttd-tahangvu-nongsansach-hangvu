@@ -17,11 +17,25 @@
         <div class="collapse navbar-collapse" id="clientNavigation">
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="<?= e(url('/')) ?>">Trang chủ</a>
-                <a class="nav-link" href="<?= e(url('/admin')) ?>">Quản trị</a>
+                <?php if (Auth::check()): ?>
+                    <a class="nav-link" href="<?= e(url('/profile')) ?>">Hồ sơ</a>
+                    <a class="nav-link" href="<?= e(url('/addresses')) ?>">Sổ địa chỉ</a>
+                    <?php if (Auth::can('dashboard.view')): ?><a class="nav-link" href="<?= e(url('/admin')) ?>">Quản trị</a><?php endif; ?>
+                    <form class="d-inline" method="post" action="<?= e(url('/logout')) ?>">
+                        <?= csrf_field() ?>
+                        <button class="nav-link btn btn-link" type="submit">Đăng xuất</button>
+                    </form>
+                <?php else: ?>
+                    <a class="nav-link" href="<?= e(url('/login')) ?>">Đăng nhập</a>
+                    <a class="nav-link" href="<?= e(url('/register')) ?>">Đăng ký</a>
+                <?php endif; ?>
             </div>
         </div>
     </div>
 </nav>
+<?php if ($mailLink = flash('mail_link')): ?>
+    <div class="container pt-3"><div class="alert alert-info mb-0">Liên kết email thử nghiệm (debug): <a href="<?= e($mailLink) ?>">Mở liên kết</a></div></div>
+<?php endif; ?>
 <main class="container py-5">
     <?= $content ?? '' ?>
 </main>

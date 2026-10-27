@@ -89,6 +89,11 @@ final class Router
             return;
         }
 
+        if (str_starts_with($middleware, 'permission:')) {
+            Auth::requirePermission(substr($middleware, 11));
+            return;
+        }
+
         throw new RuntimeException('Middleware không được hỗ trợ: ' . $middleware);
     }
 }

@@ -28,6 +28,13 @@ erDiagram
         varchar setting_key PK
         text setting_value
     }
+    login_attempts {
+        bigint id PK
+        char email_hash
+        char ip_hash
+        tinyint failed_attempts
+        datetime locked_until
+    }
 
     users ||--o{ addresses : has
     users ||--o{ password_resets : requests
@@ -86,6 +93,7 @@ erDiagram
 - `addresses`: địa chỉ nhận hàng gắn với người dùng; giữ tỉnh/vùng tham chiếu để chọn phí vận chuyển.
 - `password_resets`: token băm, hạn sử dụng và trạng thái dùng lại của yêu cầu đặt lại mật khẩu.
 - `email_verifications`: token xác minh email có thời hạn, lưu dạng băm.
+- `login_attempts`: số lần đăng nhập sai và thời gian khóa theo cặp SHA-256 email/IP; không có khóa ngoại để giữ bộ đếm độc lập với việc tài khoản có tồn tại hay không.
 - `regions`: cây địa lý hai cấp; `parent_id` trỏ tới miền cha và `level` xác định miền hay tỉnh/vùng.
 - `categories`: danh mục nhiều cấp qua `parent_id`.
 - `farms`: nông trại/nhà cung cấp, địa chỉ, vùng và thông tin chứng nhận dạng văn bản.

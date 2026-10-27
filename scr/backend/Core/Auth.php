@@ -7,7 +7,22 @@ final class Auth
     public static function check(): bool
     {
         Session::start();
-        return isset($_SESSION['user']) && is_array($_SESSION['user']);
+        if (!isset($_SESSION['user']['id'])) {
+            return false;
+        }
+
+        $statement = Database::connection()->prepare(
+            "SELECT id, name, email, phone, role, status FROM users WHERE id = :id LIMIT 1"
+        );
+        $statement->execute(['id' => $_SESSION['user']['id']]);
+        $user = $statement->fetch();
+        if (!$user || $user['status'] !== 'active') {
+            unset($_SESSION['user']);
+            return false;
+        }
+
+        $_SESSION['user'] = $user;
+        return true;
     }
 
     public static function user(): ?array
@@ -19,19 +34,65 @@ final class Auth
     {
         Session::start();
         session_regenerate_id(true);
-        $_SESSION['user'] = $user;
+        $_SESSION['user'] = [
+            'id' => (int) $user['id'],
+            'name' => $user['name'],
+            'email' => $user['email'],
+            'phone' => $user['phone'],
+            'role' => $user['role'],
+            'status' => $user['status'],
+        ];
+        $_SESSION['_last_activity'] = time();
     }
 
     public static function logout(): void
     {
         Session::start();
-        unset($_SESSION['user']);
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $params = session_get_cookie_params();
+            setcookie(session_name(), '', [
+                'expires' => time() - 42000,
+                'path' => $params['path'],
+                'domain' => $params['domain'],
+                'secure' => $params['secure'],
+                'httponly' => $params['httponly'],
+                'samesite' => 'Lax',
+            ]);
+        }
+        session_destroy();
     }
 
     public static function requireLogin(): void
     {
         if (!self::check()) {
+            Session::start();
+            $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
+            if (str_starts_with($requestUri, '/') && !str_starts_with($requestUri, '//')) {
+                $_SESSION['_intended_url'] = $requestUri;
+            }
             redirect('/login');
+        }
+    }
+
+    public static function can(string $permission): bool
+    {
+        $user = self::user();
+        if ($user === null) {
+            return false;
+        }
+
+        $permissions = require BACKEND_PATH . '/config/permissions.php';
+        $rolePermissions = $permissions[$user['role']] ?? [];
+        return in_array('*', $rolePermissions, true) || in_array($permission, $rolePermissions, true);
+    }
+
+    public static function requirePermission(string $permission): void
+    {
+        self::requireLogin();
+        if (!self::can($permission)) {
+            View::renderError(403);
+            exit;
         }
     }
 
@@ -39,8 +100,7 @@ final class Auth
     {
         self::requireLogin();
         if ((self::user()['role'] ?? null) !== $role) {
-            http_response_code(403);
-            echo '403 - Bạn không có quyền truy cập.';
+            View::renderError(403);
             exit;
         }
     }

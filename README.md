@@ -121,4 +121,43 @@ Kết quả: đơn `DH-2026-0001`, trạng thái `confirmed`, tạm tính 78.000
 
 Các route ứng dụng được khai báo tập trung trong `scr/backend/routes.php`. Router hỗ trợ GET/POST, tham số `{id}` (chữ số) và `{slug}`, cùng middleware `auth`, `role:<tên-vai-trò>` và `csrf`. Các form POST phải gửi token bằng helper `csrf_field()`.
 
-Ứng dụng ghi log vào `scr/backend/storage/logs/app.log`. Trang `/admin` yêu cầu đăng nhập giả lập tại `/login`; đây là luồng demo hiện tại, chưa phải xác thực người dùng production.
+Ứng dụng ghi log vào `scr/backend/storage/logs/app.log`. Tài khoản và quyền truy cập được kiểm tra từ bảng `users`; xem các luồng xác thực bên dưới.
+
+## Xác thực và phân quyền
+
+- Đăng ký tại `/register`; server kiểm tra họ tên, email duy nhất, điện thoại, mật khẩu tối thiểu 8 ký tự có chữ/số và xác nhận mật khẩu. Mật khẩu lưu bằng bcrypt.
+- Đăng nhập tại `/login`, đăng xuất chỉ qua POST có CSRF. Email/mật khẩu sai dùng chung thông báo; năm lần sai liên tiếp theo cặp email/IP khóa cặp đó trong 15 phút. Bảng mới `login_attempts` chỉ lưu SHA-256 email/IP, số lần và thời hạn khóa.
+- `/forgot-password` tạo token ngẫu nhiên; DB chỉ lưu SHA-256 token, hết hạn sau 60 phút và chỉ dùng một lần. `/reset-password/{token}` nhận mật khẩu mới. Email xác thực tùy chọn tại `/verify-email/{token}`; thay đổi email trong hồ sơ sẽ yêu cầu xác thực lại.
+- `/profile` cho phép cập nhật họ tên/email/điện thoại và đổi mật khẩu với mật khẩu hiện tại. `/addresses` cung cấp CRUD sổ địa chỉ và địa chỉ mặc định.
+- Session ID được đổi khi đăng nhập; cookie có `HttpOnly`, `SameSite=Lax`, bật `Secure` khi HTTPS. Session hết hạn sau hai giờ không hoạt động.
+- Các thay đổi đăng nhập/đăng xuất, đổi mật khẩu, đổi vai trò và khóa/mở tài khoản được ghi vào `audit_logs`.
+
+### Cấu hình email
+
+`scr/backend/config/config.php` có cấu hình `mailer.driver` là `log` (mặc định) hoặc `smtp`. Đặt `app.url` thành URL chuẩn của ứng dụng để tạo liên kết email chính xác (không lấy domain từ HTTP Host của request). Driver `log` ghi email và liên kết vào `scr/backend/storage/logs/mail.log`; nếu `app.debug=true`, link demo cũng hiện trên trang sau thao tác tương ứng. Thư mục log bị Apache chặn truy cập trực tiếp.
+
+Driver `smtp` dùng PHPMailer. Chạy `composer install`, sau đó điền `mailer.smtp.host`, `port`, `username`, `password`, `encryption` và `mailer.from_address` trong cấu hình riêng. Tệp cấu hình thực tế không được commit. `Mailer` là interface và `MailerFactory` chọn driver; có thể thêm driver HTTP API sau này mà không đổi các luồng xác thực.
+
+### Quyền quản trị
+
+Ma trận quyền có tại `scr/backend/config/permissions.php`. `admin` có toàn quyền; `staff_sales` có dashboard, đơn hàng, voucher, đánh giá và danh sách khách hàng; `staff_warehouse` có dashboard, kho, lô hàng và chỉ xem sản phẩm; `customer` không có quyền quản trị. Các route `/admin/*` được bảo vệ bằng middleware `permission:<tên-quyền>`. Menu ẩn mục không được phép, nhưng route vẫn được kiểm tra server-side và trả trang 403. Người chưa đăng nhập được chuyển tới `/login`, sau đó trở lại URL nội bộ ban đầu.
+
+`/admin/users` cho phép admin tìm kiếm/lọc tài khoản, đổi vai trò và khóa/mở tài khoản; không thể tự đổi vai trò hay trạng thái của chính tài khoản đang đăng nhập. `/admin/customers` chỉ hiển thị danh sách khách hàng cho nhân viên bán hàng.
+
+### Cập nhật schema đã có
+
+`setup/database/schema.sql` có thêm bảng `login_attempts` cho cài đặt mới. Nếu đã tạo CSDL ở Bước 2 và cần giữ dữ liệu, import riêng `setup/database/migrations/20261027_auth_login_attempts.sql` vào database đã chọn trong phpMyAdmin. Migration dùng `CREATE TABLE IF NOT EXISTS`, không xóa dữ liệu hiện có.
+
+### Kiểm tra xác thực đã chạy
+
+Đã kiểm tra qua PHP development server và MySQL cục bộ:
+
+- Đăng ký khách hàng, bcrypt, mail xác thực ghi vào `mail.log`, sau đó vào hồ sơ: **đạt**.
+- Năm mật khẩu sai liên tiếp rồi thử đúng trong thời gian khóa: bị từ chối với thông báo chung; bảng `login_attempts` lưu khóa theo email/IP: **đạt**.
+- Quên mật khẩu: link từ `mail.log`/debug đặt lại được mật khẩu; mở lại token trả lỗi hết hạn/đã dùng: **đạt**.
+- Đăng nhập customer, admin, staff_sales, staff_warehouse và kiểm tra route quản trị cho phép/từ chối theo quyền: **đạt**; customer vào `/admin` nhận HTTP 403.
+- POST `/logout` thiếu CSRF nhận HTTP 419; thao tác quản trị không thể tự đổi vai trò/trạng thái và các thay đổi tài khoản được ghi audit: **đạt**.
+- Xác thực email cập nhật `email_verified_at`; CRUD địa chỉ mặc định: **đạt**.
+- Bốn tài khoản seed dùng hash bcrypt `$2y$` dài 60 ký tự. PHP lint toàn bộ 42 file PHP và `git diff --check`: **đạt**.
+
+Route `/_dev/db-check` và link demo chỉ nên dùng trong môi trường phát triển. Đặt `app.debug=false` và cấu hình thông tin DB/email riêng trước khi triển khai.

@@ -1,4 +1,5 @@
 /scr/backend/config/config.php
+/vendor/
 /scr/backend/storage/logs/*
 !/scr/backend/storage/logs/.gitkeep
 /scr/uploads/*

@@ -6,6 +6,11 @@ define('ROOT_PATH', __DIR__);
 define('BACKEND_PATH', ROOT_PATH . DIRECTORY_SEPARATOR . 'backend');
 define('FRONTEND_PATH', ROOT_PATH . DIRECTORY_SEPARATOR . 'frontend');
 
+$composerAutoload = dirname(ROOT_PATH) . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'autoload.php';
+if (is_file($composerAutoload)) {
+    require $composerAutoload;
+}
+
 $scriptDirectory = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
 $baseUrl = rtrim($scriptDirectory, '/');
 define('BASE_URL', $baseUrl === '.' ? '' : $baseUrl);
@@ -23,6 +28,12 @@ spl_autoload_register(static function (string $class): void {
     $controllerPath = BACKEND_PATH . DIRECTORY_SEPARATOR . 'Controllers' . DIRECTORY_SEPARATOR . $class . '.php';
     if (is_file($controllerPath)) {
         require $controllerPath;
+        return;
+    }
+
+    $mailerPath = BACKEND_PATH . DIRECTORY_SEPARATOR . 'Mailers' . DIRECTORY_SEPARATOR . $class . '.php';
+    if (is_file($mailerPath)) {
+        require $mailerPath;
     }
 });
 

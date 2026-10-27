@@ -21,8 +21,7 @@ final class Csrf
 
         $submittedToken = $request->input('_token');
         if (!is_string($submittedToken) || !hash_equals(self::token(), $submittedToken)) {
-            http_response_code(419);
-            echo '419 - Phiên biểu mẫu không hợp lệ hoặc đã hết hạn.';
+            View::renderError(419);
             exit;
         }
     }

@@ -11,12 +11,29 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container">
         <a class="navbar-brand" href="<?= e(url('/admin')) ?>">Quản trị Nông Sản Sạch</a>
-        <a class="btn btn-outline-light btn-sm" href="<?= e(url('/')) ?>">Xem trang chủ</a>
+        <div class="d-flex gap-2 align-items-center">
+            <a class="btn btn-outline-light btn-sm" href="<?= e(url('/')) ?>">Trang chủ</a>
+            <form method="post" action="<?= e(url('/logout')) ?>">
+                <?= csrf_field() ?>
+                <button class="btn btn-outline-light btn-sm" type="submit">Đăng xuất</button>
+            </form>
+        </div>
     </div>
 </nav>
-<main class="container py-5">
-    <?= $content ?? '' ?>
-</main>
+<div class="container-fluid py-4">
+    <div class="row g-4">
+        <aside class="col-12 col-md-3 col-lg-2">
+            <nav class="nav nav-pills flex-column bg-white border rounded p-2" aria-label="Menu quản trị">
+                <?php foreach (($menu ?? []) as $item): ?>
+                    <a class="nav-link" href="<?= e(url($item['url'])) ?>"><?= e($item['label']) ?></a>
+                <?php endforeach; ?>
+            </nav>
+        </aside>
+        <main class="col-12 col-md-9 col-lg-10">
+            <?= $content ?? '' ?>
+        </main>
+    </div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
