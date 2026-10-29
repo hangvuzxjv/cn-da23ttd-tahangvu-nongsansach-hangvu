@@ -63,9 +63,12 @@ final class Auth
         session_destroy();
     }
 
-    public static function requireLogin(): void
+    public static function requireLogin(?Request $request = null): void
     {
         if (!self::check()) {
+            if ($request !== null && $request->expectsJson()) {
+                throw new HttpException(401, 'Vui lòng đăng nhập để tiếp tục.');
+            }
             Session::start();
             $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
             if (str_starts_with($requestUri, '/') && !str_starts_with($requestUri, '//')) {
@@ -87,19 +90,25 @@ final class Auth
         return in_array('*', $rolePermissions, true) || in_array($permission, $rolePermissions, true);
     }
 
-    public static function requirePermission(string $permission): void
+    public static function requirePermission(string $permission, ?Request $request = null): void
     {
-        self::requireLogin();
+        self::requireLogin($request);
         if (!self::can($permission)) {
+            if ($request !== null && $request->expectsJson()) {
+                throw new HttpException(403, 'Bạn không có quyền thực hiện thao tác này.');
+            }
             View::renderError(403);
             exit;
         }
     }
 
-    public static function requireRole(string $role): void
+    public static function requireRole(string $role, ?Request $request = null): void
     {
-        self::requireLogin();
+        self::requireLogin($request);
         if ((self::user()['role'] ?? null) !== $role) {
+            if ($request !== null && $request->expectsJson()) {
+                throw new HttpException(403, 'Bạn không có quyền thực hiện thao tác này.');
+            }
             View::renderError(403);
             exit;
         }

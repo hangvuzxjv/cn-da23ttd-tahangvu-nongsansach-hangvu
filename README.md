@@ -49,11 +49,11 @@ Tất cả tài khoản sau dùng mật khẩu thử `password` (bcrypt). Chỉ 
 | staff_sales | `sales@example.com` |
 | staff_warehouse | `warehouse@example.com` |
 
-Seed có 3 miền, 10 tỉnh/vùng, 6 danh mục, 10 nông trại, 20 sản phẩm, 130 lô hàng (mỗi lô có 6 sự kiện truy xuất), một phiếu nhập, một đơn hàng mẫu, 3 voucher, phí ship, và một Flash Sale có thời gian bắt đầu/kết thúc tương đối với lúc import. Các chứng nhận và hồ sơ nông trại trong seed là dữ liệu minh họa, không phải xác nhận chứng nhận thực tế.
+Seed có 3 miền, 10 tỉnh/vùng, 6 danh mục, 10 nông trại, 20 sản phẩm, 130 lô hàng (mỗi lô có 6 sự kiện truy xuất), một phiếu nhập, 6 đơn hàng mẫu, 6 voucher, phí ship, và một Flash Sale có thời gian bắt đầu/kết thúc tương đối với lúc import. Các chứng nhận và hồ sơ nông trại trong seed là dữ liệu minh họa, không phải xác nhận chứng nhận thực tế.
 
 ## Kiểm tra dữ liệu sau import
 
-Đã import schema và seed, sau đó chạy 5 truy vấn dưới đây trên MySQL 8.4. Kết quả ghi lại tương ứng với seed chưa bị chỉnh sửa; đơn vị giá là VND.
+Đã import schema và seed, sau đó chạy 5 truy vấn dưới đây trên MySQL 8.4. Kết quả ghi lại tương ứng với seed mới cài đặt; đơn vị giá là VND.
 
 **1. Sản phẩm theo tỉnh/vùng (Bến Tre):**
 
@@ -65,7 +65,7 @@ WHERE r.slug = 'ben-tre'
 ORDER BY p.id;
 ```
 
-Kết quả trên seed Step 6: `Bưởi da xanh Bến Tre` (`NS-TRAICAY-007`, 78.000, tồn 69) và `Dừa xiêm xanh Bến Tre` (`NS-TRAICAY-012`, 25.000, tồn 49).
+Kết quả: `Bưởi da xanh Bến Tre` (`NS-TRAICAY-007`, 78.000, tồn 62) và `Dừa xiêm xanh Bến Tre` (`NS-TRAICAY-012`, 25.000, tồn 49).
 
 **2. Tồn kho theo lô hàng:**
 
@@ -113,7 +113,7 @@ WHERE u.email = 'customer@example.com'
 ORDER BY o.placed_at DESC;
 ```
 
-Kết quả: đơn `DH-2026-0001`, trạng thái `confirmed`, tạm tính 78.000, phí ship 25.000, tổng 103.000.
+Kết quả: 6 đơn mẫu (`DH-261027-0001` đến `DH-261027-0006`) ở các trạng thái xác nhận, đang đóng gói, đang giao, đã giao, chờ xác nhận và đã hủy. Đơn mới nhất `DH-261027-0006`: tạm tính 78.000, phí ship 25.000, tổng 103.000.
 
 ## Route kiểm tra kết nối
 
@@ -289,3 +289,43 @@ Chạy trên CSDL MySQL/MariaDB **riêng có tên kết thúc `_test`**, không 
 - Kiểm tra nghiệp vụ trực tiếp trên CSDL thử: giữ chỗ giảm tồn khả dụng; `deductForOrder` và `restoreForOrder` idempotent; giữ chỗ được tách đúng phần đã dùng và phần giải phóng khi đơn chỉ trừ một phần; xác nhận/hủy phiếu nhập và chốt kiểm kê ghi movement; sau các bước vẫn reconcile.
 - Sinh hai mã lô trong cùng SKU/tháng cho thấy bộ cấp số dùng chung không tạo mã trùng giữa luồng tạo lô và phiếu nhập.
 - PHP syntax lint cho toàn bộ 222 tệp PHP và `git diff --check`: **đạt**.
+
+## Bước 7A: Giỏ hàng, voucher và đơn COD
+
+### Cập nhật cơ sở dữ liệu
+
+- Cài mới: import `setup/database/schema.sql`, sau đó `setup/database/seed.sql`.
+- Đã có dữ liệu từ Bước 6: sao lưu trước, rồi import một lần `setup/database/migrations/20261029_orders_checkout.sql` trong phpMyAdmin. Migration chỉ bổ sung snapshot giá giỏ hàng, vùng nhận hàng và token idempotency cho đơn, giới hạn voucher theo người, trạng thái lượt voucher cùng hai bảng phạm vi sản phẩm/danh mục; không xóa hoặc tạo lại dữ liệu hiện có. Không chạy lại `schema.sql` hoặc `seed.sql`.
+- Banner mẫu dùng `/img/banner-fresh.svg` cục bộ. Nếu dữ liệu cũ còn URL `example.com` hoặc URL banner trống, sao lưu database rồi chạy một lần `setup/database/migrations/20261029_banner_local_assets.sql`; migration chỉ thay URL mẫu lỗi bằng ảnh SVG đã có trong `scr/img`.
+- Seed mới có 6 đơn mẫu ở các trạng thái, voucher còn hiệu lực/hết hạn/hết lượt, phí ship, lịch sử trạng thái và movement tương ứng để tổng tồn theo lô vẫn đối soát được.
+- Đã kiểm thử migration trên một schema Step 6 mô phỏng: áp dụng thành công, giữ nguyên 6 đơn và xác nhận đủ 4 cột bổ sung. Bản cài mới không chạy migration này.
+
+### Luồng và URL
+
+- `/gio-hang`: giỏ session cho khách; giỏ DB cho tài khoản. Giá và tồn khả dụng được làm mới từ DB, số lượng vượt tồn được điều chỉnh; dòng sản phẩm hết hàng/ngừng bán hiển thị lý do và không thể đặt. Các thao tác thêm/sửa/xóa dùng `fetch` + CSRF; menu hiển thị số lượng và tạm tính.
+- Endpoint AJAX gửi `Accept: application/json` trả envelope `{ success, message, data }` cho cả thành công lẫn lỗi HTTP/SQL; JavaScript hiển thị thông báo dễ hiểu và ghi phản hồi không phải JSON vào console để chẩn đoán.
+- `/thanh-toan`: bắt buộc đăng nhập; chọn địa chỉ đã lưu hoặc nhập địa chỉ mới, xem trước voucher/phí ship và đặt COD. Máy chủ tính lại bằng `PricingService`, khóa và kiểm tra voucher trong cùng transaction; mọi trừ/hoàn kho qua `InventoryService`. Token một lần cùng unique key bảo vệ gửi lặp; transaction được thử lại tối đa hai lần khi MySQL báo deadlock/lock timeout.
+- `/dat-hang-thanh-cong/{id}` và `/tai-khoan/don-hang`: xác nhận, danh sách/chi tiết đơn, lịch sử, hủy đơn đang chờ, truy xuất theo lô đã giao và mua lại sản phẩm còn bán.
+- `/admin/orders`: danh sách/lọc/xuất CSV; `/admin/orders/{id}`: chi tiết, in và chuyển trạng thái. Admin/nhân viên bán hàng quản lý đơn; nhân viên kho chỉ chuyển các bước đóng gói/giao hàng. `/admin/vouchers` quản lý voucher; `/admin/shipping` cấu hình phí theo tỉnh/miền (chỉ admin).
+
+### Kiểm thử đã chạy
+
+Các bài kiểm thử chạy trên CSDL riêng `nongsan_step7_commerce_test` tại MySQL 8.4.3; không dùng dữ liệu hosting:
+
+- `php setup/tests/checkout-invariants.php`: **đạt** — mã idempotency tạo đúng một đơn; tạm tính 333.000đ, tổng 362.000đ khớp dòng đơn + voucher + ship; hủy hoàn đúng tồn khả dụng và lượt voucher.
+- `php setup/tests/checkout-concurrency.php`: **đạt** — hai người mua một đơn vị tồn: 1 thành công/1 bị từ chối, tồn cuối 0; 20 người dùng voucher còn 1 lượt: đúng 1 thành công/19 bị từ chối, `used_count=1`.
+- `php setup/tests/reconcile.php`: **đạt** — 0 lô lệch tổng movement, 0 sản phẩm lệch tồn lô, 0 tồn âm.
+- PHP lint: **đạt**, 91 tệp không lỗi cú pháp; `git diff --check`: **đạt**.
+- Luồng được kiểm tra trực tiếp qua service/DB, chưa thực hiện browser E2E trong phiên này. Đăng nhập bằng tài khoản seed trong phần “Tài khoản dữ liệu mẫu”; mật khẩu demo `password` chỉ dùng local.
+
+### Cách chạy bài kiểm thử
+
+Import schema và seed vào CSDL thử riêng có tên kết thúc `_test`, sau đó đặt biến môi trường `INVENTORY_TEST_DB_HOST`, `INVENTORY_TEST_DB_PORT`, `INVENTORY_TEST_DB_NAME`, `INVENTORY_TEST_DB_USERNAME`, `INVENTORY_TEST_DB_PASSWORD` theo local MySQL (`__EMPTY__` là mật khẩu rỗng). Chạy:
+
+```text
+php setup/tests/checkout-invariants.php
+php setup/tests/checkout-concurrency.php
+php setup/tests/reconcile.php
+```
+
+Script concurrency khởi chạy worker PHP độc lập; không dùng dịch vụ ngoài. Chỉ chạy trên database thử riêng, vì các worker tạo đơn và dữ liệu kiểm thử.

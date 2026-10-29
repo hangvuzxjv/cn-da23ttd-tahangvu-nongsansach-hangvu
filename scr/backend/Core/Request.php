@@ -42,4 +42,10 @@ final class Request
     {
         return $this->body[$key] ?? $this->query[$key] ?? $default;
     }
+
+    public function expectsJson(): bool
+    {
+        return stripos((string) ($_SERVER['HTTP_ACCEPT'] ?? ''), 'json') !== false
+            || strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+    }
 }

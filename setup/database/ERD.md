@@ -161,6 +161,74 @@ erDiagram
         varchar sequence_key PK
         int next_value
     }
+    carts {
+        bigint id PK
+        bigint user_id FK
+        varchar session_key UK
+        enum status
+    }
+    cart_items {
+        bigint id PK
+        bigint cart_id FK
+        bigint product_id FK
+        int quantity
+        decimal price_snapshot
+    }
+    orders {
+        bigint id PK
+        bigint user_id FK
+        bigint region_id FK
+        char idempotency_token UK
+        varchar order_no UK
+        enum status
+        decimal total_amount
+    }
+    order_items {
+        bigint id PK
+        bigint order_id FK
+        bigint product_id FK
+        bigint batch_id FK
+        decimal unit_price
+        int quantity
+        decimal line_total
+    }
+    order_status_history {
+        bigint id PK
+        bigint order_id FK
+        bigint changed_by FK
+        enum status
+        text note
+    }
+    payments {
+        bigint id PK
+        bigint order_id FK
+        varchar method
+        decimal amount
+        enum status
+    }
+    vouchers {
+        bigint id PK
+        varchar code UK
+        int usage_limit
+        int per_user_limit
+        int used_count
+        enum status
+    }
+    voucher_usages {
+        bigint id PK
+        bigint voucher_id FK
+        bigint user_id FK
+        bigint order_id FK
+        enum status
+    }
+    voucher_categories {
+        bigint voucher_id FK
+        bigint category_id FK
+    }
+    voucher_products {
+        bigint voucher_id FK
+        bigint product_id FK
+    }
 
     users ||--o{ addresses : has
     users ||--o{ password_resets : requests
@@ -208,6 +276,10 @@ erDiagram
     orders ||--o{ order_status_history : changes
     orders ||--o{ payments : paid_by
     orders ||--o{ voucher_usages : applies
+    vouchers ||--o{ voucher_categories : scopes
+    categories ||--o{ voucher_categories : eligible
+    vouchers ||--o{ voucher_products : scopes
+    products ||--o{ voucher_products : eligible
     orders o|--o{ flash_sale_purchases : fulfills
 
     vouchers ||--o{ voucher_usages : redeemed
@@ -249,14 +321,14 @@ erDiagram
 
 ### Giỏ hàng và đơn hàng
 
-- `carts`: giỏ theo tài khoản hoặc session khách; `cart_items` lưu sản phẩm và số lượng duy nhất trong mỗi giỏ.
-- `orders`: đơn hàng thuộc người dùng, trạng thái thanh toán/đơn, snapshot người nhận/địa chỉ và tổng tiền tại thời điểm đặt.
+- `carts`: giỏ theo tài khoản hoặc session khách; `cart_items` lưu sản phẩm/số lượng duy nhất trong mỗi giỏ cùng `price_snapshot` để nhận biết giá đổi. Giá hiển thị và tồn được làm mới từ DB trước khi thanh toán.
+- `orders`: đơn hàng thuộc người dùng, trạng thái thanh toán/đơn, snapshot người nhận/địa chỉ/vùng và tổng tiền tại thời điểm đặt. `idempotency_token` duy nhất theo request ngăn gửi lặp khi người dùng bấm nhiều lần hoặc trình duyệt retry.
 - `order_items`: snapshot tên, SKU, đơn vị, đơn giá và thành tiền; có thể gắn lô được phân bổ.
 - `order_status_history`: lịch sử trạng thái đơn cùng người thay đổi và ghi chú.
 - `payments`: phương thức, số tiền, trạng thái và mã giao dịch của thanh toán.
 - `shipping_fees`: phí và ngưỡng miễn phí theo tỉnh/vùng.
-- `vouchers`: mã giảm giá cố định hoặc phần trăm, điều kiện tối thiểu, hạn mức và thời gian hiệu lực.
-- `voucher_usages`: liên kết voucher, người dùng và đơn đã sử dụng; có index duy nhất chống ghi trùng một lượt dùng trên cùng đơn.
+- `vouchers`: mã giảm giá cố định hoặc phần trăm, điều kiện tối thiểu, hạn mức tổng/per-user và thời gian hiệu lực; `voucher_categories`/`voucher_products` giới hạn phạm vi áp dụng tùy chọn.
+- `voucher_usages`: liên kết voucher, người dùng và đơn; `status=reversed` giữ dấu vết khi hủy/hoàn đơn, trong khi `used_count` được giảm trong cùng transaction. Khi đặt đơn, hàng voucher khóa và lượt tổng được tăng có điều kiện nguyên tử để không vượt hạn mức đồng thời.
 
 ### Flash Sale, nội dung và vận hành
 
@@ -278,4 +350,6 @@ erDiagram
 - Tồn kho chỉ được cập nhật theo lô qua `InventoryService` trong giao dịch InnoDB có khóa dòng; service đồng bộ `products.total_stock` với tổng `product_batches.quantity_remaining`. Tổng signed movement của mỗi lô phải bằng `quantity_remaining`; migration kho chỉ thêm movement cân bằng, không sửa/xóa movement cũ.
 - Khả dụng bán hàng chỉ tính lô `selling`, chưa hết hạn, không lỗi kiểm định; lượng giữ chỗ còn hạn được trừ khỏi số lượng. Sự kiện hết hạn được dọn lazy khi có truy cập, phù hợp shared hosting không có cron.
 - Trên MySQL 5.7, các ràng buộc `CHECK` cho số lượng lô, hạn mức Flash Sale và điểm đánh giá có thể không được thực thi. Tầng ứng dụng phải kiểm tra các điều kiện này trước khi ghi.
+- Với đơn COD, `PricingService` dùng phép tính số nguyên VND cho tạm tính/giảm giá/phí ship/tổng; `OrderService` tạo snapshot đơn, voucher, lịch sử và thông báo trong một transaction. Mọi phân bổ/hoàn hàng gọi `InventoryService`; không cập nhật tồn trực tiếp tại controller.
+- Dữ liệu Step 7A trên CSDL đã có: sao lưu rồi áp dụng một lần `migrations/20261029_orders_checkout.sql`; không chạy lại schema/seed trên dữ liệu cần giữ.
 - Dữ liệu SQL mẫu có thông tin chứng nhận minh họa, không thay thế giấy tờ kiểm định thực tế.

@@ -6,6 +6,17 @@ $router->get('/san-pham/{slug}', [StorefrontController::class, 'product']);
 $router->get('/vung-mien/{slug}', [StorefrontController::class, 'region']);
 $router->get('/danh-muc/{slug}', [StorefrontController::class, 'category']);
 $router->get('/sitemap.xml', [StorefrontController::class, 'sitemap']);
+$router->get('/gio-hang', [CheckoutController::class, 'cart']);
+$router->post('/gio-hang/them', [CheckoutController::class, 'addToCart'], ['csrf']);
+$router->post('/gio-hang/cap-nhat', [CheckoutController::class, 'updateCart'], ['csrf']);
+$router->get('/thanh-toan', [CheckoutController::class, 'checkout'], ['auth']);
+$router->post('/thanh-toan/xem-voucher', [CheckoutController::class, 'previewVoucher'], ['auth', 'csrf']);
+$router->post('/thanh-toan/dat-hang', [CheckoutController::class, 'placeOrder'], ['auth', 'csrf']);
+$router->get('/dat-hang-thanh-cong/{id}', [CheckoutController::class, 'success'], ['auth']);
+$router->get('/tai-khoan/don-hang', [CheckoutController::class, 'myOrders'], ['auth']);
+$router->get('/tai-khoan/don-hang/{id}', [CheckoutController::class, 'myOrder'], ['auth']);
+$router->post('/tai-khoan/don-hang/{id}/huy', [CheckoutController::class, 'cancelMyOrder'], ['auth', 'csrf']);
+$router->post('/tai-khoan/don-hang/{id}/mua-lai', [CheckoutController::class, 'reorder'], ['auth', 'csrf']);
 $router->get('/_health', static function (): Response {
     $connected = false;
     try {
@@ -48,8 +59,17 @@ $router->post('/addresses/{id}/delete', [ProfileController::class, 'deleteAddres
 $router->get('/admin', [AdminController::class, 'index'], ['permission:dashboard.view']);
 $router->get('/admin/users', [AdminController::class, 'users'], ['permission:users.view']);
 $router->post('/admin/users/{id}/update', [AdminController::class, 'updateUser'], ['permission:users.manage', 'csrf']);
-$router->get('/admin/orders', static fn () => (new AdminController())->section('orders'), ['permission:orders.view']);
-$router->get('/admin/vouchers', static fn () => (new AdminController())->section('vouchers'), ['permission:vouchers.view']);
+$router->get('/admin/orders', [CommerceAdminController::class, 'orders'], ['permission:orders.view']);
+$router->get('/admin/orders.csv', [CommerceAdminController::class, 'exportOrders'], ['permission:orders.view']);
+$router->get('/admin/orders/{id}', [CommerceAdminController::class, 'order'], ['permission:orders.view']);
+$router->post('/admin/orders/{id}/status', [CommerceAdminController::class, 'updateOrder'], ['permission_any:orders.manage,orders.fulfill', 'csrf']);
+$router->get('/admin/vouchers', [CommerceAdminController::class, 'vouchers'], ['permission:vouchers.view']);
+$router->post('/admin/vouchers', [CommerceAdminController::class, 'saveVoucher'], ['permission:vouchers.manage', 'csrf']);
+$router->post('/admin/vouchers/{id}', [CommerceAdminController::class, 'saveVoucher'], ['permission:vouchers.manage', 'csrf']);
+$router->get('/admin/shipping', [CommerceAdminController::class, 'shipping'], ['permission:shipping.view']);
+$router->post('/admin/shipping', [CommerceAdminController::class, 'saveShipping'], ['permission:shipping.manage', 'csrf']);
+$router->post('/admin/shipping/{id}', [CommerceAdminController::class, 'saveShipping'], ['permission:shipping.manage', 'csrf']);
+$router->post('/admin/shipping/{id}/delete', [CommerceAdminController::class, 'deleteShipping'], ['permission:shipping.manage', 'csrf']);
 $router->get('/admin/reviews', static fn () => (new AdminController())->section('reviews'), ['permission:reviews.view']);
 $router->get('/admin/customers', [AdminController::class, 'customers'], ['permission:customers.view']);
 $router->get('/admin/inventory', [InventoryAdminController::class, 'index'], ['permission:inventory.view']);

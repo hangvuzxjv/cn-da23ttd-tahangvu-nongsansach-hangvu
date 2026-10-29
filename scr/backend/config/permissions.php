@@ -20,6 +20,8 @@ return [
         'dashboard.view',
         'inventory.view',
         'inventory.manage',
+        'orders.view',
+        'orders.fulfill',
         'batches.view',
         'batches.manage',
         'farms.view',

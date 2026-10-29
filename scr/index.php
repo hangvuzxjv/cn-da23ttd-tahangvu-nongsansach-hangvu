@@ -46,22 +46,35 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
+$request = null;
 try {
+    $request = Request::capture();
     $config = require BACKEND_PATH . '/config/config.php';
     Session::start();
 
     $router = new Router();
     require BACKEND_PATH . '/routes.php';
-    $router->dispatch(Request::capture());
+    $router->dispatch($request);
 } catch (Throwable $exception) {
-    error_log(sprintf(
-        "[%s] %s in %s:%d\n%s\n",
-        date(DATE_ATOM),
-        $exception->getMessage(),
-        $exception->getFile(),
-        $exception->getLine(),
-        $exception->getTraceAsString()
-    ), 3, BACKEND_PATH . '/storage/logs/app.log');
+    if (!($exception instanceof HttpException) || $exception->status() >= 500) {
+        error_log(sprintf(
+            "[%s] %s in %s:%d\n%s\n",
+            date(DATE_ATOM),
+            $exception->getMessage(),
+            $exception->getFile(),
+            $exception->getLine(),
+            $exception->getTraceAsString()
+        ), 3, BACKEND_PATH . '/storage/logs/app.log');
+    }
+
+    if ($request !== null && $request->expectsJson()) {
+        $status = $exception instanceof HttpException ? $exception->status() : 500;
+        $message = $status === 500
+            ? 'Đã xảy ra lỗi máy chủ. Vui lòng thử lại sau.'
+            : $exception->getMessage();
+        Response::json(false, $message, [], $status)->send();
+        return;
+    }
 
     http_response_code(500);
     try {

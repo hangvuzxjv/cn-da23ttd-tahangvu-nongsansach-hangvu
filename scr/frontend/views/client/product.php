@@ -18,8 +18,20 @@
             <?php if ($product['certifications'] || $product['farm_certifications']): ?><dt class="col-sm-4">Chứng nhận</dt><dd class="col-sm-8"><?= e(implode(' · ', array_filter([$product['certifications'], $product['farm_certifications']]))) ?></dd><?php endif; ?>
             <?php if ($product['suggested_shelf_life_days']): ?><dt class="col-sm-4">Hạn dùng gợi ý</dt><dd class="col-sm-8"><?= (int) $product['suggested_shelf_life_days'] ?> ngày</dd><?php endif; ?>
         </dl>
-        <button class="btn btn-success btn-lg" type="button" disabled title="Chức năng giỏ hàng sẽ được triển khai ở bước tiếp theo">Thêm vào giỏ</button>
-        <p class="small text-secondary mt-2">Chức năng đặt hàng đang được hoàn thiện.</p>
+        <?php if ((int) $product['actual_stock'] > 0): ?>
+            <form class="mt-3" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
+                <?= csrf_field() ?>
+                <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+                <div class="input-group" style="max-width: 22rem">
+                    <input class="form-control" type="number" name="quantity" value="1" min="1" max="<?= (int) $product['actual_stock'] ?>" aria-label="Số lượng sản phẩm">
+                    <span class="input-group-text"><?= e($product['unit']) ?></span>
+                    <button class="btn btn-success" type="submit">Thêm vào giỏ</button>
+                </div>
+                <div data-cart-message aria-live="polite"></div>
+            </form>
+        <?php else: ?>
+            <button class="btn btn-secondary btn-lg" type="button" disabled>Hết hàng</button>
+        <?php endif; ?>
     </div>
 </div>
 <section class="mb-5"><h2 class="h4">Mô tả sản phẩm</h2><div class="product-description"><?= nl2br(e($product['description'] ?: 'Thông tin sản phẩm đang được cập nhật.')) ?></div>

@@ -18,6 +18,19 @@
                         <?php if ($item['sale_price'] !== null): ?><del class="small text-secondary"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</del><div class="fw-bold text-danger"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫</div>
                         <?php else: ?><div class="fw-bold text-success"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</div><?php endif; ?>
                         <?php if (isset($item['unit'])): ?><span class="small text-secondary">/ <?= e($item['unit']) ?></span><?php endif; ?>
+                        <?php if ((int) ($item['actual_stock'] ?? 0) > 0): ?>
+                            <form class="mt-2" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="product_id" value="<?= (int) $item['id'] ?>">
+                                <div class="input-group input-group-sm">
+                                    <input class="form-control" type="number" name="quantity" value="1" min="1" max="<?= (int) $item['actual_stock'] ?>" aria-label="Số lượng <?= e($item['name']) ?>">
+                                    <button class="btn btn-success" type="submit">Thêm giỏ</button>
+                                </div>
+                                <div data-cart-message aria-live="polite"></div>
+                            </form>
+                        <?php else: ?>
+                            <button class="btn btn-sm btn-outline-secondary mt-2" type="button" disabled>Hết hàng</button>
+                        <?php endif; ?>
                     </div>
                 </div>
             </article>

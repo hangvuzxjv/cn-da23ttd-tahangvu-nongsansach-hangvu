@@ -54,8 +54,13 @@ final class Router
             return;
         }
 
-        http_response_code(404);
         error_log(sprintf("[%s] 404 %s\n", date(DATE_ATOM), $request->path()), 3, BACKEND_PATH . '/storage/logs/app.log');
+        if ($request->expectsJson()) {
+            Response::json(false, 'Không tìm thấy tài nguyên.', [], 404)->send();
+            return;
+        }
+
+        http_response_code(404);
         View::renderError(404);
     }
 
@@ -83,18 +88,33 @@ final class Router
         }
 
         if ($middleware === 'auth') {
-            Auth::requireLogin();
+            Auth::requireLogin($request);
             return;
         }
 
         if (str_starts_with($middleware, 'role:')) {
-            Auth::requireRole(substr($middleware, 5));
+            Auth::requireRole(substr($middleware, 5), $request);
             return;
         }
 
         if (str_starts_with($middleware, 'permission:')) {
-            Auth::requirePermission(substr($middleware, 11));
+            Auth::requirePermission(substr($middleware, 11), $request);
             return;
+        }
+
+        if (str_starts_with($middleware, 'permission_any:')) {
+            Auth::requireLogin($request);
+            $permissions = explode(',', substr($middleware, 15));
+            foreach ($permissions as $permission) {
+                if (Auth::can(trim($permission))) {
+                    return;
+                }
+            }
+            if ($request->expectsJson()) {
+                throw new HttpException(403, 'Bạn không có quyền thực hiện thao tác này.');
+            }
+            View::renderError(403);
+            exit;
         }
 
         throw new RuntimeException('Middleware không được hỗ trợ: ' . $middleware);

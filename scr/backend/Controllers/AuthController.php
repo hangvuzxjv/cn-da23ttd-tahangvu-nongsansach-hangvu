@@ -80,6 +80,7 @@ final class AuthController extends Controller
             "Xin chào {$input['name']},\n\nXác thực email của bạn tại:\n{$verifyUrl}\n\nLiên kết có hiệu lực trong 60 phút."
         );
         Auth::login($this->findUserById($userId));
+        (new CartService())->mergeSessionCart($userId);
         flash('success', 'Tạo tài khoản thành công. Bạn có thể mua hàng ngay; email xác thực là tùy chọn.');
         $this->exposeDemoLink($mailerConfig, $verifyUrl);
         redirect('/profile');
@@ -123,6 +124,7 @@ final class AuthController extends Controller
         );
         $clearAttempts->execute(['email_hash' => $emailHash, 'ip_hash' => $ipHash]);
         Auth::login($user);
+        (new CartService())->mergeSessionCart((int) $user['id']);
         AuditLog::record((int) $user['id'], 'login', 'user', (int) $user['id']);
         $intended = $this->takeIntendedUrl();
         redirect($intended ?? (($user['role'] === 'customer') ? '/' : '/admin'));

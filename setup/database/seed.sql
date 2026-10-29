@@ -230,25 +230,60 @@ INSERT INTO carts (id, user_id, status) VALUES (1, 1, 'active');
 INSERT INTO cart_items (cart_id, product_id, quantity) VALUES (1, 7, 1);
 
 INSERT INTO orders
-(id, user_id, order_no, status, payment_status, recipient_name, recipient_phone, shipping_address, region_name, subtotal, shipping_fee, discount_amount, total_amount, placed_at)
+(id, user_id, order_no, status, payment_status, recipient_name, recipient_phone, shipping_address, region_name, subtotal, shipping_fee, discount_amount, total_amount, voucher_code, region_id, placed_at)
 VALUES
-(1, 1, 'DH-2026-0001', 'confirmed', 'unpaid', 'Nguyễn Minh An', '0901000001', '12 Đường Đồng Khởi, Bến Tre', 'Bến Tre', 78000, 25000, 0, 103000, NOW());
-INSERT INTO order_items (order_id, product_id, batch_id, product_name, sku, unit, unit_price, quantity, line_total)
-VALUES (1, 7, 7, 'Bưởi da xanh Bến Tre', 'NS-TRAICAY-007', 'trái', 78000, 1, 78000);
-INSERT INTO order_status_history (order_id, status, note, changed_by)
-VALUES (1, 'confirmed', 'Đơn hàng mẫu đã được xác nhận.', 3);
-INSERT INTO payments (order_id, method, amount, status)
-VALUES (1, 'cod', 103000, 'pending');
+(1, 1, 'DH-261027-0001', 'confirmed', 'unpaid', 'Nguyễn Minh An', '0901000001', '12 Đường Đồng Khởi, Phường An Hội, Bến Tre', 'Bến Tre', 78000, 25000, 0, 103000, NULL, 10, NOW() - INTERVAL 3 DAY),
+(2, 1, 'DH-261027-0002', 'processing', 'unpaid', 'Nguyễn Minh An', '0901000001', '12 Đường Đồng Khởi, Phường An Hội, Bến Tre', 'Bến Tre', 156000, 25000, 0, 181000, NULL, 10, NOW() - INTERVAL 2 DAY),
+(3, 1, 'DH-261027-0003', 'shipping', 'unpaid', 'Nguyễn Minh An', '0901000001', '12 Đường Đồng Khởi, Phường An Hội, Bến Tre', 'Bến Tre', 78000, 25000, 0, 103000, NULL, 10, NOW() - INTERVAL 1 DAY),
+(4, 1, 'DH-261027-0004', 'completed', 'paid', 'Nguyễn Minh An', '0901000001', '12 Đường Đồng Khởi, Phường An Hội, Bến Tre', 'Bến Tre', 156000, 25000, 15600, 165400, 'CHAOMUNG', 10, NOW() - INTERVAL 12 HOUR),
+(5, 1, 'DH-261027-0005', 'pending', 'unpaid', 'Nguyễn Minh An', '0901000001', '12 Đường Đồng Khởi, Phường An Hội, Bến Tre', 'Bến Tre', 78000, 25000, 0, 103000, NULL, 10, NOW() - INTERVAL 2 HOUR),
+(6, 1, 'DH-261027-0006', 'cancelled', 'unpaid', 'Nguyễn Minh An', '0901000001', '12 Đường Đồng Khởi, Phường An Hội, Bến Tre', 'Bến Tre', 78000, 25000, 0, 103000, NULL, 10, NOW() - INTERVAL 1 HOUR);
+INSERT INTO order_items (order_id, product_id, batch_id, product_name, sku, unit, unit_price, quantity, line_total) VALUES
+(1, 7, 7, 'Bưởi da xanh Bến Tre', 'NS-TRAICAY-007', 'trái', 78000, 1, 78000),
+(2, 7, 7, 'Bưởi da xanh Bến Tre', 'NS-TRAICAY-007', 'trái', 78000, 2, 156000),
+(3, 7, 7, 'Bưởi da xanh Bến Tre', 'NS-TRAICAY-007', 'trái', 78000, 1, 78000),
+(4, 7, 7, 'Bưởi da xanh Bến Tre', 'NS-TRAICAY-007', 'trái', 78000, 2, 156000),
+(5, 7, 7, 'Bưởi da xanh Bến Tre', 'NS-TRAICAY-007', 'trái', 78000, 1, 78000),
+(6, 7, 7, 'Bưởi da xanh Bến Tre', 'NS-TRAICAY-007', 'trái', 78000, 1, 78000);
+UPDATE product_batches SET quantity_remaining = quantity_remaining - 7 WHERE id = 7 AND quantity_remaining >= 7;
+INSERT INTO inventory_movements
+(product_id, batch_id, movement_type, quantity, reference_type, reference_id, performed_by, notes, balance_after)
+VALUES
+(7, 7, 'out', -1, 'order', 1, 2, 'Xuất lô cho đơn mẫu DH-261027-0001.', 29),
+(7, 7, 'out', -2, 'order', 2, 2, 'Xuất lô cho đơn mẫu DH-261027-0002.', 27),
+(7, 7, 'out', -1, 'order', 3, 2, 'Xuất lô cho đơn mẫu DH-261027-0003.', 26),
+(7, 7, 'out', -2, 'order', 4, 2, 'Xuất lô cho đơn mẫu DH-261027-0004.', 24),
+(7, 7, 'out', -1, 'order', 5, 2, 'Xuất lô cho đơn mẫu DH-261027-0005.', 23);
+UPDATE products SET total_stock = (SELECT COALESCE(SUM(quantity_remaining), 0) FROM product_batches WHERE product_id = 7) WHERE id = 7;
+INSERT INTO document_sequences (sequence_key, next_value)
+VALUES (CONCAT('order:', DATE_FORMAT(NOW(), '%y%m%d')), 7)
+ON DUPLICATE KEY UPDATE next_value = GREATEST(next_value, VALUES(next_value));
+INSERT INTO order_status_history (order_id, status, note, changed_by) VALUES
+(1, 'confirmed', 'Đơn mẫu đã xác nhận.', 3),
+(2, 'pending', 'Đơn mẫu đã tiếp nhận.', 2), (2, 'confirmed', 'Đã xác nhận đơn mẫu.', 3), (2, 'processing', 'Đang đóng gói.', 3),
+(3, 'pending', 'Đơn mẫu đã tiếp nhận.', 2), (3, 'confirmed', 'Đã xác nhận đơn mẫu.', 3), (3, 'processing', 'Đã đóng gói.', 3), (3, 'shipping', 'Đơn đang giao.', 3),
+(4, 'pending', 'Đơn mẫu đã tiếp nhận.', 2), (4, 'confirmed', 'Đã xác nhận đơn mẫu.', 3), (4, 'processing', 'Đang đóng gói.', 3), (4, 'shipping', 'Đơn đang giao.', 3), (4, 'completed', 'Đã giao và thu COD.', 3),
+(5, 'pending', 'Đơn mẫu chờ xác nhận.', 2),
+(6, 'pending', 'Đơn mẫu đã tiếp nhận.', 2), (6, 'cancelled', 'Khách mẫu đã hủy.', 2);
+INSERT INTO payments (order_id, method, amount, status, paid_at) VALUES
+(1, 'cod', 103000, 'pending', NULL), (2, 'cod', 181000, 'pending', NULL),
+(3, 'cod', 103000, 'pending', NULL), (4, 'cod', 165400, 'paid', NOW() - INTERVAL 10 HOUR),
+(5, 'cod', 103000, 'pending', NULL), (6, 'cod', 103000, 'failed', NULL);
 
 INSERT INTO shipping_fees (region_id, fee, free_shipping_minimum) VALUES
 (4, 30000, 500000), (5, 35000, 500000), (6, 30000, 500000),
 (7, 35000, 500000), (8, 30000, 500000), (9, 35000, 500000),
 (10, 25000, 400000), (11, 25000, 400000), (12, 28000, 400000), (13, 28000, 400000);
 
-INSERT INTO vouchers (id, code, description, discount_type, discount_value, minimum_order, maximum_discount, usage_limit, starts_at, ends_at, status) VALUES
-(1, 'CHAOMUNG', 'Giảm giá đơn hàng đầu tiên (mẫu).', 'percent', 10, 100000, 50000, 100, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active'),
-(2, 'NONGSAN20', 'Giảm 20.000 đồng (mẫu).', 'fixed', 20000, 200000, NULL, 200, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active'),
-(3, 'FREESHIP', 'Ưu đãi phí vận chuyển theo điều kiện.', 'fixed', 25000, 150000, 25000, 100, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active');
+INSERT INTO vouchers (id, code, description, discount_type, discount_value, minimum_order, maximum_discount, usage_limit, per_user_limit, used_count, starts_at, ends_at, status) VALUES
+(1, 'CHAOMUNG', 'Giảm giá đơn hàng đầu tiên (mẫu).', 'percent', 10, 100000, 50000, 100, 1, 1, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active'),
+(2, 'NONGSAN20', 'Giảm 20.000 đồng (mẫu).', 'fixed', 20000, 200000, NULL, 200, 2, 0, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active'),
+(3, 'FREESHIP', 'Ưu đãi phí vận chuyển theo điều kiện.', 'fixed', 25000, 150000, 25000, 100, 1, 0, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active'),
+(4, 'HET_HAN', 'Voucher mẫu đã hết hạn.', 'fixed', 10000, 0, NULL, 10, 1, 0, DATE_SUB(NOW(), INTERVAL 10 DAY), DATE_SUB(NOW(), INTERVAL 1 DAY), 'inactive'),
+(5, 'HET_LUOT', 'Voucher mẫu đã dùng hết lượt.', 'fixed', 10000, 0, NULL, 1, 1, 1, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active'),
+(6, 'RACE1', 'Voucher một lượt dùng để thử đồng thời.', 'fixed', 1000, 0, NULL, 1, 1, 0, DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 30 DAY), 'active');
+INSERT INTO voucher_usages (voucher_id, user_id, order_id, discount_amount, status)
+VALUES (1, 1, 4, 15600, 'used');
 
 INSERT INTO flash_sales (id, name, starts_at, ends_at, status)
 VALUES (1, 'Flash Sale nông sản mùa thu', DATE_SUB(NOW(), INTERVAL 1 HOUR), DATE_ADD(NOW(), INTERVAL 7 DAY), 'active');
@@ -258,6 +293,7 @@ VALUES (1, 1, 1, 149000, 25, 0, 2);
 INSERT INTO reviews (user_id, product_id, order_id, rating, title, content, status)
 VALUES (1, 7, 1, 5, 'Sản phẩm mẫu', 'Đánh giá mẫu cho dữ liệu phát triển.', 'published');
 INSERT INTO wishlists (user_id, product_id) VALUES (1, 8);
+-- The sample banner uses a bundled SVG, not an external placeholder URL.
 INSERT INTO banners (title, image_url, link_url, sort_order, status)
 VALUES ('Nông sản sạch theo mùa', '/img/banner-fresh.svg', '/san-pham/xoai-cat-hoa-loc', 1, 'active');
 INSERT INTO pages (title, slug, content, status, published_at)
@@ -271,6 +307,8 @@ VALUES (2, 'seed_imported', 'database', 1, 'Tạo dữ liệu mẫu ban đầu.'
 INSERT INTO settings (setting_key, setting_value, description) VALUES
 ('store_name', 'Nông Sản Sạch', 'Tên hiển thị cửa hàng'),
 ('currency', 'VND', 'Đơn vị tiền tệ'),
-('expiry_warning_days', '7', 'Số ngày cảnh báo lô sắp hết hạn');
+('expiry_warning_days', '7', 'Số ngày cảnh báo lô sắp hết hạn'),
+('cart_max_quantity', '20', 'Số lượng tối đa mỗi sản phẩm trong giỏ'),
+('free_shipping_minimum', '500000', 'Giá trị đơn tối thiểu để miễn phí vận chuyển');
 
 COMMIT;

@@ -11,6 +11,8 @@ DROP TABLE IF EXISTS reviews;
 DROP TABLE IF EXISTS flash_sale_purchases;
 DROP TABLE IF EXISTS flash_sale_items;
 DROP TABLE IF EXISTS flash_sales;
+DROP TABLE IF EXISTS voucher_products;
+DROP TABLE IF EXISTS voucher_categories;
 DROP TABLE IF EXISTS voucher_usages;
 DROP TABLE IF EXISTS vouchers;
 DROP TABLE IF EXISTS payments;
@@ -389,6 +391,7 @@ CREATE TABLE cart_items (
     cart_id BIGINT UNSIGNED NOT NULL,
     product_id BIGINT UNSIGNED NOT NULL,
     quantity INT UNSIGNED NOT NULL,
+    price_snapshot DECIMAL(12,2) UNSIGNED DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_cart_product (cart_id, product_id),
@@ -413,14 +416,20 @@ CREATE TABLE orders (
     total_amount DECIMAL(12,2) UNSIGNED NOT NULL,
     voucher_code VARCHAR(50) DEFAULT NULL,
     customer_note TEXT DEFAULT NULL,
+    region_id BIGINT UNSIGNED DEFAULT NULL,
+    idempotency_token CHAR(64) DEFAULT NULL,
     placed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_orders_order_no (order_no),
+    UNIQUE KEY uq_orders_idempotency_token (idempotency_token),
     KEY idx_orders_user_date (user_id, placed_at),
     KEY idx_orders_status_date (status, placed_at),
-    CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT
+    KEY idx_orders_payment_date (payment_status, placed_at),
+    KEY idx_orders_region (region_id),
+    CONSTRAINT fk_orders_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT,
+    CONSTRAINT fk_orders_region FOREIGN KEY (region_id) REFERENCES regions (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE order_items (
@@ -506,6 +515,7 @@ CREATE TABLE vouchers (
     minimum_order DECIMAL(12,2) UNSIGNED NOT NULL DEFAULT 0,
     maximum_discount DECIMAL(12,2) UNSIGNED DEFAULT NULL,
     usage_limit INT UNSIGNED DEFAULT NULL,
+    per_user_limit INT UNSIGNED NOT NULL DEFAULT 1,
     used_count INT UNSIGNED NOT NULL DEFAULT 0,
     starts_at DATETIME NOT NULL,
     ends_at DATETIME NOT NULL,
@@ -521,14 +531,33 @@ CREATE TABLE voucher_usages (
     user_id BIGINT UNSIGNED NOT NULL,
     order_id BIGINT UNSIGNED NOT NULL,
     discount_amount DECIMAL(12,2) UNSIGNED NOT NULL,
+    status ENUM('used','reversed') NOT NULL DEFAULT 'used',
+    reversed_at DATETIME DEFAULT NULL,
     used_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_voucher_usage_user_order (voucher_id, user_id, order_id),
     KEY idx_voucher_usages_user (user_id),
     KEY idx_voucher_usages_order (order_id),
+    KEY idx_voucher_usages_active_user (voucher_id, user_id, status),
     CONSTRAINT fk_voucher_usages_voucher FOREIGN KEY (voucher_id) REFERENCES vouchers (id) ON DELETE RESTRICT,
     CONSTRAINT fk_voucher_usages_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT,
     CONSTRAINT fk_voucher_usages_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE voucher_categories (
+    voucher_id BIGINT UNSIGNED NOT NULL,
+    category_id BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (voucher_id, category_id),
+    CONSTRAINT fk_voucher_categories_voucher FOREIGN KEY (voucher_id) REFERENCES vouchers (id) ON DELETE CASCADE,
+    CONSTRAINT fk_voucher_categories_category FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE voucher_products (
+    voucher_id BIGINT UNSIGNED NOT NULL,
+    product_id BIGINT UNSIGNED NOT NULL,
+    PRIMARY KEY (voucher_id, product_id),
+    CONSTRAINT fk_voucher_products_voucher FOREIGN KEY (voucher_id) REFERENCES vouchers (id) ON DELETE CASCADE,
+    CONSTRAINT fk_voucher_products_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE flash_sales (

@@ -150,12 +150,13 @@ final class AdminController extends Controller
         redirect('/admin/users');
     }
 
-    private function menu(): array
+    public function menu(): array
     {
         $items = [
             ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
             ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
             ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
+            ['permission' => 'shipping.view', 'label' => 'Phí vận chuyển', 'url' => '/admin/shipping'],
             ['permission' => 'reviews.view', 'label' => 'Đánh giá', 'url' => '/admin/reviews'],
             ['permission' => 'customers.view', 'label' => 'Khách hàng', 'url' => '/admin/customers'],
             ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
