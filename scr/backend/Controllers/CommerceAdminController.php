@@ -6,6 +6,7 @@ final class CommerceAdminController extends Controller
 {
     public function orders(): void
     {
+        (new PaymentService())->expirePending();
         $database = Database::connection();
         $filters = [
             'q' => trim((string) ($_GET['q'] ?? '')),
@@ -53,7 +54,8 @@ final class CommerceAdminController extends Controller
         $pages = max(1, (int) ceil($total / 20));
         $page = min($page, $pages);
         $query = $database->prepare(
-            'SELECT o.*, u.name AS customer_name, u.email AS customer_email
+            'SELECT o.*, u.name AS customer_name, u.email AS customer_email,
+                    (SELECT p.method FROM payments p WHERE p.order_id = o.id ORDER BY p.id DESC LIMIT 1) AS payment_method
              FROM orders o JOIN users u ON u.id = o.user_id ' . $where . '
              ORDER BY o.placed_at DESC LIMIT :limit OFFSET :offset'
         );
@@ -79,6 +81,7 @@ final class CommerceAdminController extends Controller
 
     public function order(string $id): void
     {
+        (new PaymentService())->expireForOrder((int) $id);
         $database = Database::connection();
         $query = $database->prepare('SELECT o.*, u.name AS customer_name, u.email AS customer_email FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = :id');
         $query->execute(['id' => (int) $id]);
@@ -155,6 +158,190 @@ final class CommerceAdminController extends Controller
         }
         fclose($output);
         exit;
+    }
+
+    public function payments(): void
+    {
+        (new PaymentService())->expirePending();
+        $database = Database::connection();
+        $filters = [
+            'method' => (string) ($_GET['method'] ?? ''),
+            'status' => (string) ($_GET['status'] ?? ''),
+            'from' => (string) ($_GET['from'] ?? ''),
+            'to' => (string) ($_GET['to'] ?? ''),
+        ];
+        $conditions = [];
+        $parameters = [];
+        if (in_array($filters['method'], ['cod', 'bank_transfer', 'vnpay', 'online'], true)) {
+            $conditions[] = 'p.method = :method';
+            $parameters['method'] = $filters['method'];
+        } else {
+            $filters['method'] = '';
+        }
+        if (in_array($filters['status'], ['pending', 'paid', 'failed', 'refunded'], true)) {
+            $conditions[] = 'p.status = :status';
+            $parameters['status'] = $filters['status'];
+        } else {
+            $filters['status'] = '';
+        }
+        if ($this->validDate($filters['from'])) {
+            $conditions[] = 'p.created_at >= :from_date';
+            $parameters['from_date'] = $filters['from'] . ' 00:00:00';
+        } else {
+            $filters['from'] = '';
+        }
+        if ($this->validDate($filters['to'])) {
+            $conditions[] = 'p.created_at < :to_date';
+            $parameters['to_date'] = date('Y-m-d', strtotime($filters['to'] . ' +1 day')) . ' 00:00:00';
+        } else {
+            $filters['to'] = '';
+        }
+        $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+        $query = $database->prepare(
+            'SELECT p.*, o.order_no, o.user_id, u.name AS customer_name
+             FROM payments p JOIN orders o ON o.id = p.order_id
+             JOIN users u ON u.id = o.user_id ' . $where . '
+             ORDER BY p.created_at DESC, p.id DESC LIMIT 200'
+        );
+        $query->execute($parameters);
+        $totals = $database->query(
+            "SELECT method, SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS received,
+                    SUM(CASE WHEN status = 'refunded' THEN amount ELSE 0 END) AS refunded
+             FROM payments GROUP BY method ORDER BY method"
+        )->fetchAll();
+        $this->adminView('admin/payments', [
+            'title' => 'Thanh toán',
+            'payments' => $query->fetchAll(),
+            'totals' => $totals,
+            'filters' => $filters,
+            'canManage' => Auth::can('orders.manage'),
+            'success' => flash('success'),
+            'error' => flash('error'),
+        ]);
+    }
+
+    public function payment(string $id): void
+    {
+        $query = Database::connection()->prepare(
+            'SELECT p.*, o.order_no, o.total_amount, o.status AS order_status,
+                    o.payment_status, u.name AS customer_name, u.email AS customer_email
+             FROM payments p JOIN orders o ON o.id = p.order_id
+             JOIN users u ON u.id = o.user_id WHERE p.id = :id'
+        );
+        $query->execute(['id' => (int) $id]);
+        $payment = $query->fetch();
+        if (!$payment) {
+            http_response_code(404);
+            View::renderError(404);
+            return;
+        }
+        $payment['raw_response'] = $payment['raw_response']
+            ? json_decode((string) $payment['raw_response'], true)
+            : [];
+        $this->adminView('admin/payment-detail', [
+            'title' => 'Giao dịch #' . $payment['id'],
+            'payment' => $payment,
+            'canManage' => Auth::can('orders.manage'),
+            'success' => flash('success'),
+            'error' => flash('error'),
+        ]);
+    }
+
+    public function paymentProof(string $id): Response
+    {
+        $proof = (new PaymentService())->proofFile((int) $id);
+        if ($proof === null) {
+            return new Response('Không tìm thấy ảnh biên lai.', 404, ['Content-Type' => 'text/plain; charset=UTF-8']);
+        }
+        return new Response(
+            (string) file_get_contents($proof['path']),
+            200,
+            ['Content-Type' => $proof['mime'], 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']
+        );
+    }
+
+    public function paymentSettings(): void
+    {
+        $this->adminView('admin/payment-settings', [
+            'title' => 'Cấu hình thanh toán',
+            'settings' => (new PaymentService())->settings(),
+            'vnpayConfigured' => (new PaymentService())->vnpayConfigured(),
+            'canManage' => Auth::can('orders.manage'),
+            'success' => flash('success'),
+            'error' => flash('error'),
+        ]);
+    }
+
+    public function savePaymentSettings(): void
+    {
+        try {
+            (new PaymentService())->saveSettings($_POST, (int) Auth::user()['id']);
+            flash('success', 'Đã lưu cấu hình thanh toán.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/payments/settings');
+    }
+
+    public function confirmPayment(string $id): void
+    {
+        try {
+            $amount = filter_var($_POST['received_amount'] ?? null, FILTER_VALIDATE_INT);
+            if ($amount === false || $amount < 1) {
+                throw new InvalidArgumentException('Nhập số tiền thực nhận hợp lệ.');
+            }
+            (new PaymentService())->confirmBankTransfer((int) $id, (int) Auth::user()['id'], $amount);
+            flash('success', 'Đã xác nhận giao dịch và xuất kho.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/payments/' . (int) $id);
+    }
+
+    public function reconcileVnpayPayment(string $id): void
+    {
+        try {
+            (new PaymentService())->reconcileVnpayManually(
+                (int) $id,
+                (int) Auth::user()['id'],
+                (string) ($_POST['transaction_no'] ?? ''),
+                (string) ($_POST['reason'] ?? '')
+            );
+            flash('success', 'Đã đối soát VNPay, ghi nhận thanh toán và trừ kho.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/payments/' . (int) $id);
+    }
+
+    public function rejectPayment(string $id): void
+    {
+        try {
+            (new PaymentService())->rejectBankTransfer(
+                (int) $id,
+                (int) Auth::user()['id'],
+                trim((string) ($_POST['reason'] ?? ''))
+            );
+            flash('success', 'Đã từ chối thanh toán và hủy đơn, giải phóng tồn kho/voucher.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/payments/' . (int) $id);
+    }
+
+    public function refundPayment(string $id): void
+    {
+        try {
+            (new PaymentService())->refund(
+                (int) $id,
+                (int) Auth::user()['id'],
+                trim((string) ($_POST['reason'] ?? ''))
+            );
+            flash('success', 'Đã ghi nhận hoàn tiền thủ công và hoàn lại kho/voucher.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/payments/' . (int) $id);
     }
 
     public function vouchers(): void

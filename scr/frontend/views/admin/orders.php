@@ -14,7 +14,10 @@
     <?php foreach ($orders as $order): ?><tr>
         <td><strong><?= e($order['order_no']) ?></strong></td><td><?= e($order['customer_name']) ?><div class="small text-secondary"><?= e($order['customer_email']) ?></div></td>
         <td><?= e($order['recipient_name']) ?><div class="small text-secondary"><?= e($order['recipient_phone']) ?></div></td><td><?= e($order['placed_at']) ?></td>
-        <td><?= e(['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả'][$order['status']] ?? $order['status']) ?></td>
+        <?php $orderStatusLabel = $order['status'] === 'pending' && $order['payment_status'] === 'pending'
+            ? (($order['payment_method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán')
+            : (['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả'][$order['status']] ?? $order['status']); ?>
+        <td><?= e($orderStatusLabel) ?></td>
         <td><?= e($order['payment_status']) ?></td><td class="text-end"><?= number_format((float) $order['total_amount'], 0, ',', '.') ?> ₫</td>
         <td><a class="btn btn-sm btn-outline-success" href="<?= e(url('/admin/orders/' . $order['id'])) ?>">Mở</a></td>
     </tr><?php endforeach; ?>

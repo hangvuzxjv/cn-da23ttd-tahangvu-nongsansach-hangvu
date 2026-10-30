@@ -309,6 +309,13 @@ INSERT INTO settings (setting_key, setting_value, description) VALUES
 ('currency', 'VND', 'Đơn vị tiền tệ'),
 ('expiry_warning_days', '7', 'Số ngày cảnh báo lô sắp hết hạn'),
 ('cart_max_quantity', '20', 'Số lượng tối đa mỗi sản phẩm trong giỏ'),
-('free_shipping_minimum', '500000', 'Giá trị đơn tối thiểu để miễn phí vận chuyển');
+('free_shipping_minimum', '500000', 'Giá trị đơn tối thiểu để miễn phí vận chuyển'),
+('payment_cod_enabled', '1', 'Bật/tắt thanh toán khi nhận hàng'),
+('payment_vietqr_enabled', '1', 'Bật/tắt chuyển khoản VietQR'),
+('payment_vnpay_enabled', '0', 'Bật/tắt VNPay sandbox'),
+('online_payment_hold_minutes', '30', 'Thời gian giữ tồn cho đơn thanh toán trực tuyến (phút)'),
+('vietqr_bank_bin', '', 'Mã BIN ngân hàng nhận chuyển khoản VietQR'),
+('vietqr_account_number', '', 'Số tài khoản nhận chuyển khoản VietQR'),
+('vietqr_account_name', '', 'Tên chủ tài khoản nhận chuyển khoản VietQR');
 
 COMMIT;

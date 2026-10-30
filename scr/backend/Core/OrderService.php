@@ -5,10 +5,12 @@ declare(strict_types=1);
 final class OrderService
 {
     private PDO $database;
+    private ?array $paymentConfiguration;
 
-    public function __construct(?PDO $database = null)
+    public function __construct(?PDO $database = null, ?array $paymentConfiguration = null)
     {
         $this->database = $database ?? Database::connection();
+        $this->paymentConfiguration = $paymentConfiguration;
     }
 
     public function place(int $userId, array $input): array
@@ -19,9 +21,15 @@ final class OrderService
     private function placeAttempt(int $userId, array $input, int $attempt): array
     {
         $token = (string) ($input['idempotency_token'] ?? '');
+        $paymentMethod = (string) ($input['payment_method'] ?? 'cod');
         if ($userId < 1 || preg_match('/\A[a-f0-9]{64}\z/', $token) !== 1) {
             throw new InvalidArgumentException('Phiên đặt hàng không hợp lệ. Hãy tải lại trang thanh toán.');
         }
+        if (!in_array($paymentMethod, ['cod', 'bank_transfer', 'vnpay'], true)
+            || !isset((new PaymentService($this->database, $this->paymentConfiguration))->enabledMethods()[$paymentMethod])) {
+            throw new InvalidArgumentException('Phương thức thanh toán hiện không khả dụng.');
+        }
+        (new PaymentService($this->database, $this->paymentConfiguration))->expirePending();
         $this->database->beginTransaction();
         try {
             $existingQuery = $this->database->prepare('SELECT id, order_no FROM orders WHERE user_id = :user_id AND idempotency_token = :token FOR UPDATE');
@@ -82,18 +90,20 @@ final class OrderService
                 true
             );
             $orderNo = $this->nextOrderNumber();
+            $onlinePayment = $paymentMethod !== 'cod';
             $this->database->prepare(
                 'INSERT INTO orders
                     (user_id, order_no, status, payment_status, recipient_name, recipient_phone,
                      shipping_address, region_name, region_id, subtotal, shipping_fee, discount_amount,
                      total_amount, voucher_code, customer_note, idempotency_token, placed_at)
                  VALUES
-                    (:user_id, :order_no, \'pending\', \'unpaid\', :name, :phone, :address,
+                    (:user_id, :order_no, \'pending\', :payment_status, :name, :phone, :address,
                      :region_name, :region_id, :subtotal, :shipping_fee, :discount, :total,
                      :voucher_code, :note, :token, NOW())'
             )->execute([
                 'user_id' => $userId,
                 'order_no' => $orderNo,
+                'payment_status' => $onlinePayment ? 'pending' : 'unpaid',
                 'name' => $address['recipient_name'],
                 'phone' => $address['phone'],
                 'address' => $address['full_address'],
@@ -109,7 +119,17 @@ final class OrderService
             ]);
             $orderId = (int) $this->database->lastInsertId();
 
-            $allocations = (new InventoryService($this->database))->deductForOrder($orderId, $pricingItems, $userId);
+            $inventory = new InventoryService($this->database);
+            if ($onlinePayment) {
+                $holdMinutes = (new PaymentService($this->database, $this->paymentConfiguration))->holdMinutes();
+                $allocations = $inventory->reserveForOrder(
+                    $orderId,
+                    $pricingItems,
+                    (new DateTimeImmutable())->modify('+' . $holdMinutes . ' minutes')
+                );
+            } else {
+                $allocations = $inventory->deductForOrder($orderId, $pricingItems, $userId);
+            }
             $itemByProduct = [];
             foreach ($items as $item) {
                 $itemByProduct[(int) $item['product_id']] = $item;
@@ -157,25 +177,46 @@ final class OrderService
                 ]);
             }
 
-            $this->database->prepare('INSERT INTO payments (order_id, method, amount, status) VALUES (:id, \'cod\', :amount, \'pending\')')
-                ->execute(['id' => $orderId, 'amount' => $this->decimal($quote['total'])]);
+            $this->database->prepare(
+                'INSERT INTO payments (order_id, method, amount, status, transaction_ref)
+                 VALUES (:id, :method, :amount, \'pending\', :transaction_ref)'
+            )->execute([
+                'id' => $orderId,
+                'method' => $paymentMethod,
+                'amount' => $this->decimal($quote['total']),
+                'transaction_ref' => null,
+            ]);
+            $paymentId = (int) $this->database->lastInsertId();
+            $historyNote = $onlinePayment
+                ? 'Đơn được tạo; chờ xác nhận thanh toán.'
+                : 'Đơn hàng được tạo; chờ xác nhận.';
             $this->database->prepare(
                 'INSERT INTO order_status_history (order_id, status, note, changed_by)
-                 VALUES (:id, \'pending\', \'Đơn hàng được tạo; chờ xác nhận.\', :user_id)'
-            )->execute(['id' => $orderId, 'user_id' => $userId]);
+                 VALUES (:id, \'pending\', :note, :user_id)'
+            )->execute(['id' => $orderId, 'note' => $historyNote, 'user_id' => $userId]);
             $this->database->prepare(
                 'INSERT INTO notifications (user_id, title, message, link_url)
                  VALUES (:user_id, :title, :message, :link)'
             )->execute([
                 'user_id' => $userId,
                 'title' => 'Đặt hàng thành công',
-                'message' => 'Đơn hàng ' . $orderNo . ' đã được tiếp nhận.',
+                'message' => $onlinePayment
+                    ? 'Đơn hàng ' . $orderNo . ' đang chờ thanh toán.'
+                    : 'Đơn hàng ' . $orderNo . ' đã được tiếp nhận.',
                 'link' => '/tai-khoan/don-hang/' . $orderId,
             ]);
             $this->database->prepare('DELETE FROM cart_items WHERE cart_id = :cart_id')->execute(['cart_id' => $cartId]);
             AuditLog::record($userId, 'order_placed', 'order', $orderId, $orderNo, $this->database);
             $this->database->commit();
-            return ['id' => $orderId, 'order_no' => $orderNo, 'existing' => false, 'email' => $this->emailForUser($userId)];
+            return [
+                'id' => $orderId,
+                'order_no' => $orderNo,
+                'payment_id' => $paymentId,
+                'payment_method' => $paymentMethod,
+                'transaction_ref' => null,
+                'existing' => false,
+                'email' => $this->emailForUser($userId),
+            ];
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();
@@ -215,7 +256,9 @@ final class OrderService
             }
             (new InventoryService($this->database))->restoreForOrder($orderId, $userId);
             $nextStatus = $refund ? 'refunded' : 'cancelled';
-            $nextPayment = $order['payment_status'] === 'paid' ? 'refunded' : $order['payment_status'];
+            $nextPayment = $order['payment_status'] === 'paid'
+                ? 'refunded'
+                : ($order['payment_status'] === 'pending' ? 'failed' : $order['payment_status']);
             $this->database->prepare('UPDATE orders SET status = :status, payment_status = :payment WHERE id = :id')
                 ->execute(['status' => $nextStatus, 'payment' => $nextPayment, 'id' => $orderId]);
             $this->database->prepare(
@@ -227,6 +270,11 @@ final class OrderService
                 'user_id' => $userId,
             ]);
             $this->reverseVoucherUsage($orderId);
+            $this->database->prepare(
+                "UPDATE payments SET status = CASE WHEN :refunded = 1 AND status = 'paid' THEN 'refunded'
+                                                   WHEN status = 'pending' THEN 'failed' ELSE status END
+                 WHERE order_id = :id"
+            )->execute(['refunded' => $refund ? 1 : 0, 'id' => $orderId]);
             if ($nextPayment === 'refunded') {
                 $this->database->prepare(
                     'UPDATE payments SET status = \'refunded\', transaction_ref = :reason WHERE order_id = :id AND status = \'paid\''
@@ -259,6 +307,15 @@ final class OrderService
             if (!$order || !in_array($nextStatus, $allowed[$order['status']] ?? [], true)) {
                 throw new InventoryException('Không thể chuyển đơn hàng sang trạng thái đã chọn.');
             }
+            if ($order['payment_status'] === 'pending') {
+                $online = $this->database->prepare(
+                    "SELECT COUNT(*) FROM payments WHERE order_id = :id AND method IN ('bank_transfer','vnpay')"
+                );
+                $online->execute(['id' => $orderId]);
+                if ((int) $online->fetchColumn() > 0 && !in_array($nextStatus, ['cancelled'], true)) {
+                    throw new InventoryException('Chỉ có thể xác nhận đơn trực tuyến sau khi đã ghi nhận thanh toán.');
+                }
+            }
             if (!$canManage && !in_array($nextStatus, ['processing', 'shipping', 'completed'], true)) {
                 throw new InventoryException('Nhân viên kho chỉ được chuyển bước đóng gói/giao hàng.');
             }
@@ -275,6 +332,11 @@ final class OrderService
                 $this->database->prepare(
                     'UPDATE payments SET status = \'paid\', paid_at = NOW()
                      WHERE order_id = :id AND method = \'cod\' AND status = \'pending\''
+                )->execute(['id' => $orderId]);
+            } elseif ($nextStatus === 'cancelled' && $paymentStatus === 'pending') {
+                $paymentStatus = 'failed';
+                $this->database->prepare(
+                    "UPDATE payments SET status = 'failed' WHERE order_id = :id AND status = 'pending'"
                 )->execute(['id' => $orderId]);
             } elseif ($nextStatus === 'refunded' && $paymentStatus === 'paid') {
                 $paymentStatus = 'refunded';

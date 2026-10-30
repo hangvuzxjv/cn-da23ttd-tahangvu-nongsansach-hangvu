@@ -426,7 +426,7 @@ final class AuthController extends Controller
         Session::start();
         $url = $_SESSION['_intended_url'] ?? null;
         unset($_SESSION['_intended_url']);
-        if (!is_string($url) || !str_starts_with($url, '/') || str_starts_with($url, '//')) {
+        if (!is_string($url) || !is_internal_redirect_path($url)) {
             return null;
         }
         return $url;

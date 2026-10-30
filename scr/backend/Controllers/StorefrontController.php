@@ -6,6 +6,7 @@ final class StorefrontController extends Controller
 {
     public function home(): void
     {
+        (new PaymentService())->expirePending();
         (new InventoryService())->expireReservations();
         $database = Database::connection();
         $banners = $database->query(
@@ -82,6 +83,7 @@ final class StorefrontController extends Controller
 
     public function product(string $slug): void
     {
+        (new PaymentService())->expirePending();
         (new InventoryService())->expireReservations();
         $statement = Database::connection()->prepare(
             "SELECT p.*, c.name AS category_name, c.slug AS category_slug,
@@ -170,6 +172,7 @@ final class StorefrontController extends Controller
 
     private function listing(array $scope = [], string $scopeType = ''): void
     {
+        (new PaymentService())->expirePending();
         (new InventoryService())->expireReservations();
         $filterErrors = [];
         $queryInput = $_GET['q'] ?? '';

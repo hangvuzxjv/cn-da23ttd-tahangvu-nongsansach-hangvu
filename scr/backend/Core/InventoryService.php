@@ -75,6 +75,9 @@ final class InventoryService
         if ($quantity < 1 || trim($reason) === '') {
             throw new InvalidArgumentException('Số lượng xuất và lý do bắt buộc phải hợp lệ.');
         }
+        if (!$this->database->inTransaction()) {
+            (new PaymentService($this->database))->expirePending();
+        }
 
         return $this->transaction(function () use ($batchId, $quantity, $reason, $userId, $referenceType, $referenceId): int {
             $batch = $this->lockBatch($batchId);
@@ -97,6 +100,9 @@ final class InventoryService
     ): int {
         if ($signedQuantity === 0 || trim($reason) === '') {
             throw new InvalidArgumentException('Điều chỉnh phải khác 0 và có lý do bắt buộc.');
+        }
+        if (!$this->database->inTransaction()) {
+            (new PaymentService($this->database))->expirePending();
         }
 
         return $this->transaction(function () use ($batchId, $signedQuantity, $reason, $userId, $referenceType, $referenceId): int {
@@ -137,6 +143,9 @@ final class InventoryService
     {
         if ($productId < 1 || $quantity < 1) {
             throw new InvalidArgumentException('Sản phẩm và số lượng cần phân bổ không hợp lệ.');
+        }
+        if (!$this->database->inTransaction()) {
+            (new PaymentService($this->database))->expirePending();
         }
 
         return $this->transaction(function () use ($productId, $quantity): array {
@@ -303,6 +312,9 @@ final class InventoryService
         if ($orderId < 1 || !$items || $expiresAt <= new DateTimeImmutable()) {
             throw new InvalidArgumentException('Đơn hàng, sản phẩm hoặc thời hạn giữ chỗ không hợp lệ.');
         }
+        if (!$this->database->inTransaction()) {
+            (new PaymentService($this->database))->expirePending();
+        }
 
         $quantitiesByProduct = [];
         foreach ($items as $item) {
@@ -335,7 +347,7 @@ final class InventoryService
                         'batch_id' => $allocation['batch_id'],
                         'quantity' => $allocation['quantity'],
                     ]);
-                    $result[] = $allocation;
+                    $result[] = $allocation + ['product_id' => (int) $productId];
                 }
             }
             return $result;
@@ -344,6 +356,7 @@ final class InventoryService
 
     public function availableStock(int $productId): int
     {
+        (new PaymentService($this->database))->expirePending();
         $this->expireReservations();
         $query = $this->database->prepare(
             'SELECT COALESCE(SUM(GREATEST(0, b.quantity_remaining - COALESCE(r.quantity, 0))), 0)
@@ -367,6 +380,7 @@ final class InventoryService
         if (!$productIds) {
             return [];
         }
+        (new PaymentService($this->database))->expirePending();
         $this->expireReservations();
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
         $query = $this->database->prepare(

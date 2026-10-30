@@ -15,6 +15,11 @@ $router->post('/thanh-toan/dat-hang', [CheckoutController::class, 'placeOrder'],
 $router->get('/dat-hang-thanh-cong/{id}', [CheckoutController::class, 'success'], ['auth']);
 $router->get('/tai-khoan/don-hang', [CheckoutController::class, 'myOrders'], ['auth']);
 $router->get('/tai-khoan/don-hang/{id}', [CheckoutController::class, 'myOrder'], ['auth']);
+$router->get('/tai-khoan/don-hang/{id}/thanh-toan', [CheckoutController::class, 'paymentWaiting'], ['auth']);
+$router->post('/tai-khoan/don-hang/{id}/thanh-toan/bien-lai', [CheckoutController::class, 'uploadPaymentProof'], ['auth', 'csrf']);
+$router->post('/tai-khoan/don-hang/{id}/thanh-toan/vnpay', [CheckoutController::class, 'retryVnpay'], ['auth', 'csrf']);
+$router->get('/thanh-toan/vnpay/return', [CheckoutController::class, 'vnpayReturn']);
+$router->get('/thanh-toan/vnpay/ipn', [CheckoutController::class, 'vnpayIpn']);
 $router->post('/tai-khoan/don-hang/{id}/huy', [CheckoutController::class, 'cancelMyOrder'], ['auth', 'csrf']);
 $router->post('/tai-khoan/don-hang/{id}/mua-lai', [CheckoutController::class, 'reorder'], ['auth', 'csrf']);
 $router->get('/_health', static function (): Response {
@@ -63,6 +68,15 @@ $router->get('/admin/orders', [CommerceAdminController::class, 'orders'], ['perm
 $router->get('/admin/orders.csv', [CommerceAdminController::class, 'exportOrders'], ['permission:orders.view']);
 $router->get('/admin/orders/{id}', [CommerceAdminController::class, 'order'], ['permission:orders.view']);
 $router->post('/admin/orders/{id}/status', [CommerceAdminController::class, 'updateOrder'], ['permission_any:orders.manage,orders.fulfill', 'csrf']);
+$router->get('/admin/payments', [CommerceAdminController::class, 'payments'], ['permission:orders.view']);
+$router->get('/admin/payments/settings', [CommerceAdminController::class, 'paymentSettings'], ['permission:orders.manage']);
+$router->post('/admin/payments/settings', [CommerceAdminController::class, 'savePaymentSettings'], ['permission:orders.manage', 'csrf']);
+$router->get('/admin/payments/{id}/proof', [CommerceAdminController::class, 'paymentProof'], ['permission:orders.view']);
+$router->post('/admin/payments/{id}/confirm', [CommerceAdminController::class, 'confirmPayment'], ['permission:orders.manage', 'csrf']);
+$router->post('/admin/payments/{id}/reconcile-vnpay', [CommerceAdminController::class, 'reconcileVnpayPayment'], ['permission:orders.manage', 'csrf']);
+$router->post('/admin/payments/{id}/reject', [CommerceAdminController::class, 'rejectPayment'], ['permission:orders.manage', 'csrf']);
+$router->post('/admin/payments/{id}/refund', [CommerceAdminController::class, 'refundPayment'], ['permission:orders.manage', 'csrf']);
+$router->get('/admin/payments/{id}', [CommerceAdminController::class, 'payment'], ['permission:orders.view']);
 $router->get('/admin/vouchers', [CommerceAdminController::class, 'vouchers'], ['permission:vouchers.view']);
 $router->post('/admin/vouchers', [CommerceAdminController::class, 'saveVoucher'], ['permission:vouchers.manage', 'csrf']);
 $router->post('/admin/vouchers/{id}', [CommerceAdminController::class, 'saveVoucher'], ['permission:vouchers.manage', 'csrf']);

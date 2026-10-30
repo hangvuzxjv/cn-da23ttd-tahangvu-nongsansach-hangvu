@@ -304,7 +304,7 @@ Chạy trên CSDL MySQL/MariaDB **riêng có tên kết thúc `_test`**, không 
 
 - `/gio-hang`: giỏ session cho khách; giỏ DB cho tài khoản. Giá và tồn khả dụng được làm mới từ DB, số lượng vượt tồn được điều chỉnh; dòng sản phẩm hết hàng/ngừng bán hiển thị lý do và không thể đặt. Các thao tác thêm/sửa/xóa dùng `fetch` + CSRF; menu hiển thị số lượng và tạm tính.
 - Endpoint AJAX gửi `Accept: application/json` trả envelope `{ success, message, data }` cho cả thành công lẫn lỗi HTTP/SQL; JavaScript hiển thị thông báo dễ hiểu và ghi phản hồi không phải JSON vào console để chẩn đoán.
-- `/thanh-toan`: bắt buộc đăng nhập; chọn địa chỉ đã lưu hoặc nhập địa chỉ mới, xem trước voucher/phí ship và đặt COD. Máy chủ tính lại bằng `PricingService`, khóa và kiểm tra voucher trong cùng transaction; mọi trừ/hoàn kho qua `InventoryService`. Token một lần cùng unique key bảo vệ gửi lặp; transaction được thử lại tối đa hai lần khi MySQL báo deadlock/lock timeout.
+- `/thanh-toan`: bắt buộc đăng nhập; chọn địa chỉ, voucher/phí ship và phương thức COD, VietQR hoặc VNPay sandbox nếu đã bật/cấu hình. Máy chủ tính lại bằng `PricingService`, khóa và kiểm tra voucher trong cùng transaction; mọi trừ/hoàn kho qua `InventoryService`. Token một lần cùng unique key bảo vệ gửi lặp; transaction được thử lại tối đa hai lần khi MySQL báo deadlock/lock timeout.
 - `/dat-hang-thanh-cong/{id}` và `/tai-khoan/don-hang`: xác nhận, danh sách/chi tiết đơn, lịch sử, hủy đơn đang chờ, truy xuất theo lô đã giao và mua lại sản phẩm còn bán.
 - `/admin/orders`: danh sách/lọc/xuất CSV; `/admin/orders/{id}`: chi tiết, in và chuyển trạng thái. Admin/nhân viên bán hàng quản lý đơn; nhân viên kho chỉ chuyển các bước đóng gói/giao hàng. `/admin/vouchers` quản lý voucher; `/admin/shipping` cấu hình phí theo tỉnh/miền (chỉ admin).
 
@@ -326,6 +326,44 @@ Import schema và seed vào CSDL thử riêng có tên kết thúc `_test`, sau 
 php setup/tests/checkout-invariants.php
 php setup/tests/checkout-concurrency.php
 php setup/tests/reconcile.php
+php setup/tests/payment-flows.php
 ```
 
 Script concurrency khởi chạy worker PHP độc lập; không dùng dịch vụ ngoài. Chỉ chạy trên database thử riêng, vì các worker tạo đơn và dữ liệu kiểm thử.
+
+## Bước 7B: Thanh toán COD, VietQR và VNPay sandbox
+
+### CSDL và cấu hình
+
+- Cài mới: `schema.sql` và `seed.sql` đã có các cột payment, trạng thái thanh toán và settings mặc định.
+- Database đã có dữ liệu từ Bước 7A: sao lưu trước, rồi chạy **một lần** `setup/database/migrations/20261029_online_payments.sql` sau migration Bước 7A. Migration chỉ mở rộng `payments` và thêm settings; **không import lại `schema.sql` hoặc `seed.sql`**. Bản nâng cấp giữ nguyên dữ liệu payment/order hiện có.
+- Cấu hình riêng ở `scr/backend/config/config.php` (không commit): `vnpay.tmn_code`, `vnpay.hash_secret` và `vnpay.url`. Khóa trống được đặt trong `config.sample.php` và `setup/deploy/config.production.sample.php`. `return_url` và `ipn_url` được ứng dụng dựng từ `app.url` tại runtime thành `/thanh-toan/vnpay/return` và `/thanh-toan/vnpay/ipn`; khai báo callback IPN tương ứng ở merchant sandbox.
+- Admin vào `/admin/payments/settings` để bật/tắt phương thức, cấu hình BIN/số tài khoản/tên chủ tài khoản nhận VietQR và thời hạn giữ hàng (mặc định 30 phút). VietQR bật trên trang checkout sau khi cấu hình đủ thông tin ngân hàng. VNPay chỉ hiện khi cả cờ trong settings và khóa cấu hình đã điền.
+- QR VietQR được mã hóa EMVCo/NAPAS ngay bằng PHP và thư viện Bacon QR; không gọi API tạo QR. Ảnh biên lai lưu dưới `scr/backend/storage/payment-proofs` và chỉ admin/nhân viên có quyền đơn hàng xem được qua route có phân quyền.
+
+### Luồng và URL thử
+
+- `/thanh-toan`: COD tiếp tục trừ kho khi đặt; VietQR/VNPay đặt đơn chờ thanh toán và giữ lô bằng `stock_reservations` trong thời gian cấu hình. Payment thành công mới trừ kho thật bằng `InventoryService`. Mỗi lần tạo URL VNPay được lưu thành bản ghi payment riêng để Return/IPN có thể tra cứu cả các TxnRef cũ; callback hợp lệ chỉ ghi nhận một lần trên đơn. Callback xác minh chữ ký HMAC-SHA512, mã website, số tiền theo số nguyên VND, mã đơn, đơn vị tiền và trạng thái từ DB; lặp IPN/Return là idempotent. Dữ liệu ký dùng các trường `vnp_` không rỗng, sắp xếp theo tên và `urlencode` giống chuỗi query gửi đi. Chuyển hướng ngoài chỉ nhận đúng endpoint HTTPS VNPay đã cấu hình và URL phải có chữ ký hợp lệ; URL `next`/`return` do người dùng cung cấp chỉ được dùng dưới dạng đường dẫn nội bộ.
+- `/tai-khoan/don-hang/{id}/thanh-toan`: QR, tài khoản, số tiền, nội dung mã đơn bắt buộc, đồng hồ đếm ngược và form gửi biên lai. VNPay có thể thanh toán lại khi giao dịch lỗi nhưng reservation còn hiệu lực.
+- Hết hạn được xử lý lazy (không cron): khi tính tồn, mở đơn khách hoặc danh sách/chi tiết đơn admin, cập nhật payment/đơn, giải phóng reservation và đảo lượt voucher. Giao dịch bị từ chối thủ công cũng hủy đơn và giải phóng.
+- `/admin/payments` — lọc phương thức/trạng thái/ngày, hàng chờ xác nhận và tổng thu/hoàn theo phương thức; `/admin/payments/{id}` — chi tiết, xem biên lai, xác nhận/từ chối VietQR hoặc đánh dấu hoàn tiền thủ công; `/admin/payments/settings` — cấu hình. Mọi xác nhận/từ chối/hoàn tiền/cập nhật cấu hình được ghi vào `audit_logs`.
+- VNPay Return và IPN cùng xác minh kết quả, cùng cập nhật transaction-safe. Trên localhost VNPay không gọi được IPN; Return URL đủ để hoàn tất đơn. Trên hosting miễn phí, lớp kiểm tra trình duyệt/tường lửa có thể chặn IPN máy chủ VNPay; kiểm tra nhật ký callback và cấu hình allowlist nếu nền tảng hỗ trợ, hoặc dùng Return URL làm hoàn tất tối thiểu rồi đối soát giao dịch tại merchant portal.
+- Đăng ký tài khoản sandbox tại [VNPay Sandbox](https://sandbox.vnpayment.vn/devreg/) và bật URL sandbox trong config. Danh sách thẻ thử chính thức, có thể thay đổi, xem tại [VNPay Demo - thông tin thẻ test](https://sandbox.vnpayment.vn/apis/vnpay-demo/); ví dụ NCB thành công: `9704198526191432198`, chủ thẻ `NGUYEN VAN A`, ngày phát hành `07/15`, OTP `123456`. Chỉ dùng trong môi trường sandbox.
+- Webhook xác nhận tự động từ ngân hàng cho VietQR chưa triển khai; hiện admin đối chiếu sao kê/biên lai. Đây là hướng mở rộng nếu ngân hàng cung cấp webhook có chữ ký.
+
+### Kiểm thử thanh toán
+
+Kiểm thử chữ ký và redirect không cần MySQL:
+
+```text
+php setup/tests/vnpay-signature.php
+php setup/tests/redirect-helpers.php
+```
+
+Kiểm thử tích hợp yêu cầu CSDL riêng có tên kết thúc `_test`, đã import schema + seed:
+
+```text
+php setup/tests/payment-flows.php
+```
+
+`vnpay-signature.php` không cần MySQL; nó xác nhận chuỗi ký `urlencode`, chữ ký mẫu cố định, xác minh Return/IPN đối xứng và từ chối dữ liệu bị sửa. `redirect-helpers.php` kiểm tra URL nội bộ, URL VNPay đã cấu hình có chữ ký hợp lệ, URL tuyệt đối không được phép, URL `//` và scheme lạ. `payment-flows.php` dùng khóa VNPay giả chỉ trong test và tạo sản phẩm/đơn riêng trong database thử; không dùng cổng thanh toán thật. Nó mô phỏng tạo đơn → tạo nhiều URL → Return từ TxnRef/amount lấy trực tiếp từ URL → Return thành công kể cả với lần thử trước → Return lặp, sai chữ ký, sai số tiền và TxnRef lạ; đồng thời xác nhận đơn chỉ có một payment thành công và chỉ trừ kho một lần. Test còn kiểm tra ngày giờ, IPv4, hết hạn đảo voucher/giải phóng tồn, tranh hàng, tổng tiền và VietQR. Lỗi đối chiếu được ghi vào PHP error log với TxnRef, số tiền nhận/đợi và order ID nếu tìm được; không ghi hash secret. Khi `app.debug=true`, dữ liệu ký và chữ ký được ghi nội bộ vào `scr/backend/storage/logs/vnpay-debug.log`; hash secret không được ghi. Không chạy script thanh toán trên database cần giữ dữ liệu.

@@ -55,6 +55,7 @@ final class CheckoutController extends Controller
     public function checkout(): void
     {
         $user = Auth::user();
+        $paymentService = new PaymentService();
         $cart = (new CartService())->summary((int) $user['id']);
         if (!$cart['items']) {
             flash('error', 'Giỏ hàng đang trống.');
@@ -107,7 +108,7 @@ final class CheckoutController extends Controller
             }
         }
         $this->view('client/checkout', [
-            'title' => 'Thanh toán COD',
+            'title' => 'Thanh toán',
             'cart' => $cart,
             'addresses' => $addresses,
             'regions' => $regions,
@@ -116,6 +117,7 @@ final class CheckoutController extends Controller
             'errors' => flash('checkout_errors') ?? [],
             'oldInput' => $oldInput,
             'initialQuote' => $initialQuote,
+            'paymentMethods' => $paymentService->enabledMethods(),
         ]);
     }
 
@@ -144,9 +146,6 @@ final class CheckoutController extends Controller
     {
         $user = Auth::user();
         $input = $_POST;
-        if (($input['payment_method'] ?? 'cod') !== 'cod') {
-            $this->checkoutFailure('Hiện chỉ hỗ trợ thanh toán khi nhận hàng (COD).', $input);
-        }
         Session::start();
         $submittedToken = (string) ($input['idempotency_token'] ?? '');
         if (preg_match('/\A[a-f0-9]{64}\z/', $submittedToken) !== 1) {
@@ -161,7 +160,7 @@ final class CheckoutController extends Controller
             $alreadyPlaced->execute(['user_id' => $user['id'], 'token' => $submittedToken]);
             $existingOrderId = $alreadyPlaced->fetchColumn();
             if ($existingOrderId !== false) {
-                redirect('/dat-hang-thanh-cong/' . (int) $existingOrderId);
+                $this->redirectAfterPlace((int) $existingOrderId, (int) $user['id']);
             }
             $this->checkoutFailure('Phiên đặt hàng đã hết hạn. Hãy tải lại trang thanh toán.', $input);
         }
@@ -179,7 +178,7 @@ final class CheckoutController extends Controller
         if (empty($result['existing'])) {
             $this->sendConfirmation($result, $user);
         }
-        redirect('/dat-hang-thanh-cong/' . (int) $result['id']);
+        $this->redirectAfterPlace((int) $result['id'], (int) $user['id']);
     }
 
     public function success(string $id): void
@@ -194,17 +193,133 @@ final class CheckoutController extends Controller
             View::renderError(404);
             return;
         }
+        if ($order['payment_status'] === 'pending') {
+            $this->redirectAfterPlace((int) $id, $this->userId() ?? 0);
+        }
         $items = $this->orderItems((int) $id);
+        $paymentQuery = Database::connection()->prepare('SELECT * FROM payments WHERE order_id = :id ORDER BY id DESC LIMIT 1');
+        $paymentQuery->execute(['id' => (int) $id]);
         $this->view('client/order-success', [
             'title' => 'Đặt hàng thành công',
             'order' => $order,
             'items' => $items,
+            'payment' => $paymentQuery->fetch() ?: null,
             'emailWarning' => flash('error'),
         ]);
     }
 
+    public function paymentWaiting(string $id): void
+    {
+        $orderId = (int) $id;
+        $service = new PaymentService();
+        $query = Database::connection()->prepare(
+            'SELECT o.* FROM orders o WHERE o.id = :id AND o.user_id = :user_id'
+        );
+        $query->execute(['id' => $orderId, 'user_id' => $this->userId()]);
+        $order = $query->fetch();
+        if (!$order) {
+            http_response_code(404);
+            View::renderError(404);
+            return;
+        }
+        $service->expireForOrder($orderId);
+        $query->execute(['id' => $orderId, 'user_id' => $this->userId()]);
+        $order = $query->fetch();
+        $payment = $service->ownedPendingPayment($orderId, $this->userId() ?? 0, 'bank_transfer');
+        if (!$payment || $order['payment_status'] !== 'pending') {
+            redirect('/tai-khoan/don-hang/' . $orderId);
+        }
+        $settings = $service->settings();
+        $this->view('client/payment-waiting', [
+            'title' => 'Chờ thanh toán ' . $order['order_no'],
+            'order' => $order,
+            'payment' => $payment,
+            'qrSvg' => VietQr::svg(
+                $settings['vietqr_bank_bin'],
+                $settings['vietqr_account_number'],
+                $settings['vietqr_account_name'],
+                $order['order_no'],
+                PricingService::moneyToVnd((string) $order['total_amount'])
+            ),
+            'bankSettings' => $settings,
+            'deadline' => $service->paymentDeadline($orderId),
+            'csrfToken' => Csrf::token(),
+        ]);
+    }
+
+    public function uploadPaymentProof(string $id): void
+    {
+        try {
+            (new PaymentService())->saveProof(
+                (int) $id,
+                $this->userId() ?? 0,
+                $_FILES['proof'] ?? []
+            );
+            flash('success', 'Đã gửi biên lai. Đơn hàng đang chờ quản trị viên xác nhận.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/tai-khoan/don-hang/' . (int) $id . '/thanh-toan');
+    }
+
+    public function retryVnpay(string $id): void
+    {
+        try {
+            $url = (new PaymentService())->createVnpayAttempt((int) $id, $this->userId() ?? 0);
+            redirect($url);
+        } catch (InvalidArgumentException | RuntimeException $exception) {
+            flash('error', $exception->getMessage());
+            redirect('/tai-khoan/don-hang/' . (int) $id);
+        }
+    }
+
+    public function vnpayReturn(): void
+    {
+        $result = (new PaymentService())->handleVnpay($_GET, 'return');
+        $reference = (string) ($_GET['vnp_TxnRef'] ?? '');
+        $query = Database::connection()->prepare(
+            "SELECT o.id, o.user_id FROM payments p JOIN orders o ON o.id = p.order_id
+             WHERE p.method = 'vnpay' AND p.transaction_ref = :reference LIMIT 1"
+        );
+        $query->execute(['reference' => $reference]);
+        $order = $query->fetch();
+        if (!$order || (int) $order['user_id'] !== ($this->userId() ?? 0)) {
+            flash('error', $result['message']);
+            redirect('/tai-khoan/don-hang');
+        }
+        flash($result['success'] ?? false ? 'success' : 'error', $result['message']);
+        redirect('/tai-khoan/don-hang/' . (int) $order['id']);
+    }
+
+    public function vnpayIpn(): Response
+    {
+        try {
+            $result = (new PaymentService())->handleVnpay($_GET, 'ipn');
+            $messages = [
+                '00' => 'Confirm Success',
+                '01' => 'Order not found',
+                '04' => 'Invalid amount or order information',
+                '97' => 'Invalid signature',
+            ];
+            $message = $messages[$result['code']] ?? 'Processing error';
+            return new Response(
+                json_encode(['RspCode' => $result['code'], 'Message' => $message], JSON_THROW_ON_ERROR),
+                200,
+                ['Content-Type' => 'application/json; charset=UTF-8', 'Cache-Control' => 'no-store']
+            );
+        } catch (Throwable $exception) {
+            error_log('VNPay IPN failed: ' . $exception->getMessage());
+            return new Response(
+                '{"RspCode":"99","Message":"Unknown error"}',
+                200,
+                ['Content-Type' => 'application/json; charset=UTF-8', 'Cache-Control' => 'no-store']
+            );
+        }
+    }
+
     public function myOrders(): void
     {
+        (new PaymentService())->expirePending();
         $status = (string) ($_GET['status'] ?? '');
         $allowedStatuses = ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded'];
         $where = 'user_id = :user_id';
@@ -223,7 +338,8 @@ final class CheckoutController extends Controller
         $pages = max(1, (int) ceil($total / 10));
         $page = min($page, $pages);
         $query = $database->prepare(
-            'SELECT o.*, (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id) AS item_count
+            'SELECT o.*, (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id) AS item_count,
+                    (SELECT p.method FROM payments p WHERE p.order_id = o.id ORDER BY p.id DESC LIMIT 1) AS payment_method
              FROM orders o WHERE ' . $where . ' ORDER BY placed_at DESC LIMIT 10 OFFSET :offset'
         );
         foreach ($parameters as $key => $value) {
@@ -253,6 +369,12 @@ final class CheckoutController extends Controller
             View::renderError(404);
             return;
         }
+        (new PaymentService())->expireForOrder((int) $id);
+        $query->execute(['id' => (int) $id, 'user_id' => $this->userId()]);
+        $order = $query->fetch();
+        $paymentQuery = Database::connection()->prepare('SELECT * FROM payments WHERE order_id = :id ORDER BY id DESC LIMIT 1');
+        $paymentQuery->execute(['id' => (int) $id]);
+        $order['payment'] = $paymentQuery->fetch() ?: null;
         $this->view('client/order-detail', [
             'title' => 'Chi tiết ' . $order['order_no'],
             'order' => $order,
@@ -334,8 +456,33 @@ final class CheckoutController extends Controller
     private function checkoutFailure(string $message, array $input): never
     {
         flash('checkout_errors', ['checkout' => $message]);
-        flash('checkout_old', array_intersect_key($input, array_flip(['address_id', 'recipient_name', 'phone', 'region_id', 'address_line', 'ward', 'voucher_code', 'customer_note'])));
+        flash('checkout_old', array_intersect_key($input, array_flip(['address_id', 'recipient_name', 'phone', 'region_id', 'address_line', 'ward', 'voucher_code', 'customer_note', 'payment_method'])));
         redirect('/thanh-toan');
+    }
+
+    private function redirectAfterPlace(int $orderId, int $userId): never
+    {
+        $query = Database::connection()->prepare(
+            'SELECT o.payment_status, p.method FROM orders o
+             LEFT JOIN payments p ON p.order_id = o.id
+             WHERE o.id = :id AND o.user_id = :user_id ORDER BY p.id DESC LIMIT 1'
+        );
+        $query->execute(['id' => $orderId, 'user_id' => $userId]);
+        $order = $query->fetch();
+        if ($order && $order['payment_status'] === 'pending') {
+            if ($order['method'] === 'bank_transfer') {
+                redirect('/tai-khoan/don-hang/' . $orderId . '/thanh-toan');
+            }
+            if ($order['method'] === 'vnpay') {
+                try {
+                    redirect((new PaymentService())->createVnpayAttempt($orderId, $userId));
+                } catch (InvalidArgumentException | RuntimeException $exception) {
+                    flash('error', $exception->getMessage());
+                    redirect('/tai-khoan/don-hang/' . $orderId);
+                }
+            }
+        }
+        redirect('/dat-hang-thanh-cong/' . $orderId);
     }
 
     private function sendConfirmation(array $result, array $user): void
@@ -344,11 +491,16 @@ final class CheckoutController extends Controller
         $orderQuery->execute(['id' => $result['id']]);
         $total = (string) $orderQuery->fetchColumn();
         $config = require BACKEND_PATH . '/config/config.php';
+        $paymentDescription = match ($result['payment_method'] ?? 'cod') {
+            'bank_transfer' => 'Chuyển khoản VietQR: vui lòng hoàn tất thanh toán trong thời hạn giữ hàng.',
+            'vnpay' => 'VNPay sandbox: vui lòng hoàn tất thanh toán trong thời hạn giữ hàng.',
+            default => 'Thanh toán khi nhận hàng (COD).',
+        };
         try {
             MailerFactory::make($config['mailer'] ?? ['driver' => 'log'])->send(
                 (string) $user['email'],
                 'Xác nhận đơn hàng ' . $result['order_no'],
-                "Xin chào {$user['name']},\n\nĐơn hàng {$result['order_no']} đã được tạo thành công.\nTổng thanh toán COD: " . number_format(PricingService::moneyToVnd($total), 0, ',', '.') . " ₫\n\nTheo dõi đơn tại: " . absolute_url('/tai-khoan/don-hang/' . $result['id'])
+                "Xin chào {$user['name']},\n\nĐơn hàng {$result['order_no']} đã được tạo thành công.\nTổng thanh toán: " . number_format(PricingService::moneyToVnd($total), 0, ',', '.') . " ₫\n{$paymentDescription}\n\nTheo dõi đơn tại: " . absolute_url('/tai-khoan/don-hang/' . $result['id'])
             );
         } catch (Throwable $exception) {
             error_log('Order confirmation email failed for ' . $result['order_no'] . ': ' . $exception->getMessage());

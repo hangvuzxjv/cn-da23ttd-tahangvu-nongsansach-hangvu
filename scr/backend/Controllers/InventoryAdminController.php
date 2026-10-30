@@ -565,6 +565,7 @@ final class InventoryAdminController extends Controller
 
     private function stockRows(string $filter, string $search, ?int $limit): array
     {
+        (new PaymentService())->expirePending();
         (new InventoryService())->expireReservations();
         $conditions = [];
         $parameters = [];

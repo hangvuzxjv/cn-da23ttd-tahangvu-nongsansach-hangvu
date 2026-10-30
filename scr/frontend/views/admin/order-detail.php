@@ -1,5 +1,9 @@
 <?php $statusLabels = ['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả']; ?>
-<div class="d-flex justify-content-between align-items-center mb-3"><div><h1 class="h2 mb-1">Đơn <?= e($order['order_no']) ?></h1><span class="badge text-bg-success"><?= e($statusLabels[$order['status']] ?? $order['status']) ?></span></div><div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="<?= e(url('/admin/orders')) ?>">Danh sách</a><a class="btn btn-outline-primary" href="<?= e(url('/admin/orders/' . $order['id'] . '?print=1')) ?>" onclick="window.print();return false;">In phiếu / hóa đơn</a></div></div>
+<?php $latestPayment = $payments[0] ?? null; ?>
+<?php $statusLabel = $order['status'] === 'pending' && $order['payment_status'] === 'pending'
+    ? (($latestPayment['method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán')
+    : ($statusLabels[$order['status']] ?? $order['status']); ?>
+<div class="d-flex justify-content-between align-items-center mb-3"><div><h1 class="h2 mb-1">Đơn <?= e($order['order_no']) ?></h1><span class="badge text-bg-success"><?= e($statusLabel) ?></span></div><div class="d-flex gap-2"><a class="btn btn-outline-secondary" href="<?= e(url('/admin/orders')) ?>">Danh sách</a><a class="btn btn-outline-primary" href="<?= e(url('/admin/orders/' . $order['id'] . '?print=1')) ?>" onclick="window.print();return false;">In phiếu / hóa đơn</a></div></div>
 <?php if ($success): ?><div class="alert alert-success no-print"><?= e($success) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert alert-danger no-print"><?= e($error) ?></div><?php endif; ?>
 <div class="row g-4">

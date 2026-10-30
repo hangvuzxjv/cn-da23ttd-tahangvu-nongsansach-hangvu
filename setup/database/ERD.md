@@ -202,9 +202,14 @@ erDiagram
     payments {
         bigint id PK
         bigint order_id FK
-        varchar method
+        enum method
         decimal amount
         enum status
+        varchar transaction_ref
+        datetime paid_at
+        json raw_response
+        varchar proof_path
+        timestamp created_at
     }
     vouchers {
         bigint id PK
@@ -325,7 +330,9 @@ erDiagram
 - `orders`: đơn hàng thuộc người dùng, trạng thái thanh toán/đơn, snapshot người nhận/địa chỉ/vùng và tổng tiền tại thời điểm đặt. `idempotency_token` duy nhất theo request ngăn gửi lặp khi người dùng bấm nhiều lần hoặc trình duyệt retry.
 - `order_items`: snapshot tên, SKU, đơn vị, đơn giá và thành tiền; có thể gắn lô được phân bổ.
 - `order_status_history`: lịch sử trạng thái đơn cùng người thay đổi và ghi chú.
-- `payments`: phương thức, số tiền, trạng thái và mã giao dịch của thanh toán.
+- `payments`: từng lần thanh toán của đơn, phương thức `cod`/`bank_transfer`/`vnpay` (giữ `online` để tương thích dữ liệu cũ), số tiền, trạng thái `pending`/`paid`/`failed`/`refunded`, mã tham chiếu cho từng lần thử, thời điểm trả tiền, dữ liệu phản hồi JSON đã lọc thông tin nhạy cảm và đường dẫn biên lai chuyển khoản. Không lưu số thẻ; callback VNPay kiểm tra chữ ký/số tiền/mã đơn và cập nhật idempotent.
+- Đơn online giữ hàng theo lô trong `stock_reservations` tối đa số phút đặt trong `online_payment_hold_minutes`; đơn thành công trừ tồn qua `InventoryService`. Hết hạn được cập nhật payment, hủy đơn, giải phóng reservation và đảo lượt voucher theo kiểu lazy khi tính tồn, khách mở đơn hoặc admin mở danh sách/chi tiết đơn; không cần cron/Redis.
+- `settings`: bật/tắt COD, VietQR, VNPay và cấu hình tài khoản VietQR; khóa VNPay được cấu hình riêng trong `config.php`, không lưu vào DB.
 - `shipping_fees`: phí và ngưỡng miễn phí theo tỉnh/vùng.
 - `vouchers`: mã giảm giá cố định hoặc phần trăm, điều kiện tối thiểu, hạn mức tổng/per-user và thời gian hiệu lực; `voucher_categories`/`voucher_products` giới hạn phạm vi áp dụng tùy chọn.
 - `voucher_usages`: liên kết voucher, người dùng và đơn; `status=reversed` giữ dấu vết khi hủy/hoàn đơn, trong khi `used_count` được giảm trong cùng transaction. Khi đặt đơn, hàng voucher khóa và lượt tổng được tăng có điều kiện nguyên tử để không vượt hạn mức đồng thời.

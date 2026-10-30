@@ -483,15 +483,18 @@ CREATE TABLE order_status_history (
 CREATE TABLE payments (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     order_id BIGINT UNSIGNED NOT NULL,
-    method ENUM('cod','bank_transfer','online') NOT NULL,
+    method ENUM('cod','bank_transfer','online','vnpay') NOT NULL,
     amount DECIMAL(12,2) UNSIGNED NOT NULL,
     status ENUM('pending','paid','failed','refunded') NOT NULL DEFAULT 'pending',
     transaction_ref VARCHAR(150) DEFAULT NULL,
     paid_at DATETIME DEFAULT NULL,
+    raw_response JSON DEFAULT NULL,
+    proof_path VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_payments_order (order_id),
     KEY idx_payments_transaction_ref (transaction_ref),
+    KEY idx_payments_method_status_created (method, status, created_at),
     CONSTRAINT fk_payments_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

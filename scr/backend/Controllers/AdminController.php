@@ -155,6 +155,7 @@ final class AdminController extends Controller
         $items = [
             ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
             ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
+            ['permission' => 'orders.view', 'label' => 'Thanh toán', 'url' => '/admin/payments'],
             ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
             ['permission' => 'shipping.view', 'label' => 'Phí vận chuyển', 'url' => '/admin/shipping'],
             ['permission' => 'reviews.view', 'label' => 'Đánh giá', 'url' => '/admin/reviews'],

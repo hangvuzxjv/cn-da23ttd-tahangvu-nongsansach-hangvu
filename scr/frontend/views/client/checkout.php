@@ -31,12 +31,16 @@
             <div class="card mb-4">
                 <div class="card-header"><h2 class="h5 mb-0">Thanh toán</h2></div>
                 <div class="card-body">
-                    <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="cod" id="payCod" checked><label class="form-check-label" for="payCod">Thanh toán khi nhận hàng (COD)</label></div>
-                    <div class="form-check text-secondary"><input class="form-check-input" type="radio" disabled><label class="form-check-label">Chuyển khoản / ví điện tử — sắp có</label></div>
+                    <?php foreach ($paymentMethods as $method => $label): ?>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payment_method" value="<?= e($method) ?>" id="pay<?= e($method) ?>" <?= $method === (string) ($oldInput['payment_method'] ?? 'cod') ? 'checked' : '' ?>>
+                            <label class="form-check-label" for="pay<?= e($method) ?>"><?= e($label) ?></label>
+                        </div>
+                    <?php endforeach; ?>
                     <label class="form-label mt-3" for="customerNote">Ghi chú đơn hàng</label><textarea class="form-control" id="customerNote" name="customer_note" rows="2"><?= e($oldInput['customer_note'] ?? '') ?></textarea>
                 </div>
             </div>
-            <button class="btn btn-success btn-lg w-100" type="submit" id="placeOrderButton" <?= array_filter($cart['items'], static fn (array $item): bool => !$item['valid']) ? 'disabled' : '' ?>>Đặt hàng COD</button>
+            <button class="btn btn-success btn-lg w-100" type="submit" id="placeOrderButton" <?= !$paymentMethods || array_filter($cart['items'], static fn (array $item): bool => !$item['valid']) ? 'disabled' : '' ?>>Đặt hàng</button>
         </form>
     </div>
     <div class="col-lg-5">

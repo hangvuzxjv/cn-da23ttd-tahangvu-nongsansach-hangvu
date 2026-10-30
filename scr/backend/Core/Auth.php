@@ -71,7 +71,7 @@ final class Auth
             }
             Session::start();
             $requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
-            if (str_starts_with($requestUri, '/') && !str_starts_with($requestUri, '//')) {
+            if (is_internal_redirect_path($requestUri)) {
                 $_SESSION['_intended_url'] = $requestUri;
             }
             redirect('/login');

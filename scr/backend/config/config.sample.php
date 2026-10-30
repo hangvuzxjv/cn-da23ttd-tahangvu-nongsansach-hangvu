@@ -25,4 +25,11 @@ return [
         'username' => 'root',
         'password' => '',
     ],
+    'vnpay' => [
+        'tmn_code' => '',
+        'hash_secret' => '',
+        'url' => 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+        'return_url' => '',
+        'ipn_url' => '',
+    ],
 ];
