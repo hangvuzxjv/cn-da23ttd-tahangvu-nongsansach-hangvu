@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS banners;
 DROP TABLE IF EXISTS wishlists;
 DROP TABLE IF EXISTS reviews;
 DROP TABLE IF EXISTS flash_sale_purchases;
+DROP TABLE IF EXISTS flash_sale_rate_limits;
 DROP TABLE IF EXISTS flash_sale_items;
 DROP TABLE IF EXISTS flash_sales;
 DROP TABLE IF EXISTS voucher_products;
@@ -436,6 +437,7 @@ CREATE TABLE order_items (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     order_id BIGINT UNSIGNED NOT NULL,
     product_id BIGINT UNSIGNED DEFAULT NULL,
+    flash_sale_item_id BIGINT UNSIGNED DEFAULT NULL,
     batch_id BIGINT UNSIGNED DEFAULT NULL,
     product_name VARCHAR(200) NOT NULL,
     sku VARCHAR(80) DEFAULT NULL,
@@ -447,6 +449,7 @@ CREATE TABLE order_items (
     KEY idx_order_items_order (order_id),
     KEY idx_order_items_product (product_id),
     KEY idx_order_items_batch (batch_id),
+    KEY idx_order_items_flash_sale_item (flash_sale_item_id),
     CONSTRAINT fk_order_items_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE CASCADE,
     CONSTRAINT fk_order_items_product FOREIGN KEY (product_id) REFERENCES products (id) ON DELETE SET NULL,
     CONSTRAINT fk_order_items_batch FOREIGN KEY (batch_id) REFERENCES product_batches (id) ON DELETE SET NULL
@@ -566,6 +569,8 @@ CREATE TABLE voucher_products (
 CREATE TABLE flash_sales (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     name VARCHAR(180) NOT NULL,
+    description TEXT DEFAULT NULL,
+    banner_url VARCHAR(500) DEFAULT NULL,
     starts_at DATETIME NOT NULL,
     ends_at DATETIME NOT NULL,
     status ENUM('draft','scheduled','active','ended','cancelled') NOT NULL DEFAULT 'draft',
@@ -582,6 +587,7 @@ CREATE TABLE flash_sale_items (
     quota INT UNSIGNED NOT NULL,
     sold_quantity INT UNSIGNED NOT NULL DEFAULT 0,
     per_user_limit INT UNSIGNED NOT NULL DEFAULT 1,
+    sort_order INT NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
     UNIQUE KEY uq_flash_sale_product (flash_sale_id, product_id),
     KEY idx_flash_sale_items_product (product_id),
@@ -590,20 +596,35 @@ CREATE TABLE flash_sale_items (
     CONSTRAINT chk_flash_sale_sold_quota CHECK (sold_quantity <= quota)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+ALTER TABLE order_items
+    ADD CONSTRAINT fk_order_items_flash_sale_item
+        FOREIGN KEY (flash_sale_item_id) REFERENCES flash_sale_items (id) ON DELETE SET NULL;
+
 CREATE TABLE flash_sale_purchases (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     flash_sale_item_id BIGINT UNSIGNED NOT NULL,
     user_id BIGINT UNSIGNED NOT NULL,
     order_id BIGINT UNSIGNED DEFAULT NULL,
     quantity INT UNSIGNED NOT NULL,
+    status ENUM('reserved','confirmed','released') NOT NULL DEFAULT 'confirmed',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     purchased_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
-    UNIQUE KEY uq_flash_sale_purchase_user_item (user_id, flash_sale_item_id),
+    UNIQUE KEY uq_flash_sale_purchase_order_item (order_id, flash_sale_item_id),
     KEY idx_flash_sale_purchases_item (flash_sale_item_id),
+    KEY idx_flash_sale_purchases_user_status (user_id, flash_sale_item_id, status),
     KEY idx_flash_sale_purchases_order (order_id),
     CONSTRAINT fk_flash_sale_purchases_item FOREIGN KEY (flash_sale_item_id) REFERENCES flash_sale_items (id) ON DELETE CASCADE,
     CONSTRAINT fk_flash_sale_purchases_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT,
     CONSTRAINT fk_flash_sale_purchases_order FOREIGN KEY (order_id) REFERENCES orders (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE flash_sale_rate_limits (
+    bucket_key VARCHAR(180) NOT NULL,
+    window_started_at DATETIME NOT NULL,
+    request_count INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (bucket_key),
+    KEY idx_flash_sale_rate_window (window_started_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE reviews (

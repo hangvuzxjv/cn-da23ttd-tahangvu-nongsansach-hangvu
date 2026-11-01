@@ -34,6 +34,7 @@ final class CartService
         $query->execute(['cart_id' => $cartId]);
         $items = $query->fetchAll();
         $stock = (new InventoryService($this->database))->availableStockByProductIds(array_column($items, 'product_id'));
+        $items = (new PricingService($this->database))->applyFlashSalePricing($items, $userId);
         $maxQuantity = $this->maxQuantity();
         $subtotal = 0;
         foreach ($items as &$item) {
@@ -97,9 +98,22 @@ final class CartService
             if ($available < 1 || $newQuantity < 1) {
                 throw new InventoryException('Sản phẩm hiện đã hết tồn khả dụng.');
             }
-            $price = $product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0
-                ? $product['sale_price']
-                : $product['price'];
+            $flashSales = new FlashSaleService($this->database);
+            $flashSales->assertCanAddToCart(
+                $productId,
+                $newQuantity,
+                $userId,
+                (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+            );
+            $pricedItem = (new PricingService($this->database))->applyFlashSalePricing([[
+                'product_id' => $productId,
+                'quantity' => $newQuantity,
+                'current_price' => $product['sale_price'] !== null
+                    && PricingService::moneyToVnd((string) $product['sale_price']) > 0
+                    ? $product['sale_price']
+                    : $product['price'],
+            ]], $userId, false, true)[0];
+            $price = $pricedItem['unit_price'] ?? $product['price'];
             if ($existing) {
                 $this->database->prepare('UPDATE cart_items SET quantity = :quantity, price_snapshot = :price WHERE id = :id')
                     ->execute(['quantity' => $newQuantity, 'price' => $price, 'id' => $existing['id']]);
@@ -139,9 +153,21 @@ final class CartService
             throw new InventoryException('Sản phẩm hiện đã hết tồn khả dụng.');
         }
         $quantity = min($quantity, $available, $this->maxQuantity());
-        $price = $product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0
-            ? $product['sale_price']
-            : $product['price'];
+        (new FlashSaleService($this->database))->assertCanAddToCart(
+            $productId,
+            $quantity,
+            $userId,
+            (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+        );
+        $pricedItem = (new PricingService($this->database))->applyFlashSalePricing([[
+            'product_id' => $productId,
+            'quantity' => $quantity,
+            'current_price' => $product['sale_price'] !== null
+                && PricingService::moneyToVnd((string) $product['sale_price']) > 0
+                ? $product['sale_price']
+                : $product['price'],
+        ]], $userId, false, true)[0];
+        $price = $pricedItem['unit_price'] ?? $product['price'];
         $this->database->prepare(
             'UPDATE cart_items SET quantity = :quantity, price_snapshot = :price WHERE cart_id = :cart_id AND product_id = :product_id'
         )->execute(['quantity' => $quantity, 'price' => $price, 'cart_id' => $cartId, 'product_id' => $productId]);

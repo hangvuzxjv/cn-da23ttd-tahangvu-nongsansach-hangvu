@@ -134,10 +134,18 @@ final class OrderService
             foreach ($items as $item) {
                 $itemByProduct[(int) $item['product_id']] = $item;
             }
+            foreach ($quote['items'] as $pricedItem) {
+                $itemByProduct[(int) $pricedItem['product_id']] = array_replace(
+                    $itemByProduct[(int) $pricedItem['product_id']],
+                    $pricedItem
+                );
+            }
             $insertItem = $this->database->prepare(
                 'INSERT INTO order_items
-                    (order_id, product_id, batch_id, product_name, sku, unit, unit_price, quantity, line_total)
-                 VALUES (:order_id, :product_id, :batch_id, :name, :sku, :unit, :price, :quantity, :line_total)'
+                    (order_id, product_id, flash_sale_item_id, batch_id, product_name, sku, unit,
+                     unit_price, quantity, line_total)
+                 VALUES (:order_id, :product_id, :flash_sale_item_id, :batch_id, :name, :sku, :unit,
+                         :price, :quantity, :line_total)'
             );
             foreach ($allocations as $allocation) {
                 $item = $itemByProduct[(int) $allocation['product_id']];
@@ -146,6 +154,7 @@ final class OrderService
                 $insertItem->execute([
                     'order_id' => $orderId,
                     'product_id' => $allocation['product_id'],
+                    'flash_sale_item_id' => $item['flash_sale_item_id'] ?? null,
                     'batch_id' => $allocation['batch_id'],
                     'name' => $item['name'],
                     'sku' => $item['sku'],
@@ -155,6 +164,12 @@ final class OrderService
                     'line_total' => $this->decimal($lineTotal),
                 ]);
             }
+            (new FlashSaleService($this->database))->recordOrderPurchases(
+                $orderId,
+                $userId,
+                $quote['items'],
+                $onlinePayment
+            );
 
             if ($quote['voucher']) {
                 $updateVoucher = $this->database->prepare(
@@ -255,6 +270,7 @@ final class OrderService
                     : 'Chỉ có thể hủy đơn hàng đang chờ xác nhận.');
             }
             (new InventoryService($this->database))->restoreForOrder($orderId, $userId);
+            (new FlashSaleService($this->database))->releaseForOrder($orderId);
             $nextStatus = $refund ? 'refunded' : 'cancelled';
             $nextPayment = $order['payment_status'] === 'paid'
                 ? 'refunded'

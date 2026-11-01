@@ -186,6 +186,7 @@ final class PaymentService
             $this->database->prepare(
                 "UPDATE orders SET status = 'cancelled', payment_status = 'failed' WHERE id = :id"
             )->execute(['id' => $orderId]);
+            (new FlashSaleService($this->database))->releaseForOrder($orderId);
             $this->reverseVoucher($orderId);
             $this->database->prepare(
                 'INSERT INTO order_status_history (order_id, status, note)
@@ -280,6 +281,7 @@ final class PaymentService
             $this->database->prepare(
                 "UPDATE orders SET payment_status = 'paid', status = 'confirmed' WHERE id = :id"
             )->execute(['id' => $orderId]);
+            (new FlashSaleService($this->database))->confirmForOrder($orderId);
             $this->database->prepare(
                 'INSERT INTO order_status_history (order_id, status, note, changed_by)
                  VALUES (:id, \'confirmed\', :note, :actor)'
@@ -721,6 +723,7 @@ final class PaymentService
             }
             $orderId = (int) $payment['order_id'];
             (new InventoryService($this->database))->restoreForOrder($orderId, $actorId);
+            (new FlashSaleService($this->database))->releaseForOrder($orderId);
             $this->reverseVoucher($orderId);
             $this->database->prepare("UPDATE payments SET status = 'refunded', raw_response = :response WHERE id = :id")
                 ->execute([
@@ -1011,6 +1014,7 @@ final class PaymentService
         (new InventoryService($this->database))->restoreForOrder($orderId, $actorId);
         $this->database->prepare("UPDATE stock_reservations SET status = 'released' WHERE order_id = :id AND status = 'reserved'")
             ->execute(['id' => $orderId]);
+        (new FlashSaleService($this->database))->releaseForOrder($orderId);
         $this->database->prepare("UPDATE orders SET status = 'cancelled', payment_status = 'failed' WHERE id = :id")
             ->execute(['id' => $orderId]);
         $this->reverseVoucher($orderId);

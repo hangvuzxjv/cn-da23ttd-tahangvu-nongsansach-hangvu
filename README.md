@@ -98,10 +98,21 @@ SELECT fs.name, p.name AS product_name, fsi.sale_price, fsi.quota, fsi.sold_quan
 FROM flash_sales fs
 JOIN flash_sale_items fsi ON fsi.flash_sale_id = fs.id
 JOIN products p ON p.id = fsi.product_id
-WHERE fs.status = 'active' AND NOW() BETWEEN fs.starts_at AND fs.ends_at;
+WHERE fs.status IN ('scheduled','active')
+  AND fs.starts_at <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR)
+  AND fs.ends_at > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR);
 ```
 
-Kết quả: chiến dịch `Flash Sale nông sản mùa thu`, sản phẩm `Chè Tân Cương loại đặc biệt`, giá 149.000, hạn mức 25, đã bán 0.
+Kết quả: chương trình đang diễn ra được xác định theo giờ máy chủ; migration Flash Sale cũng thêm một chương trình sắp diễn ra để kiểm tra lịch.
+
+Với database đã có dữ liệu, sao lưu trước rồi áp dụng lần lượt `setup/database/migrations/20261030_flash_sales.sql` và `setup/database/migrations/20261101_flash_sale_sample_campaigns.sql`; không chạy lại `schema.sql` hoặc `seed.sql`.
+
+Kiểm thử lõi trên database riêng đã chuẩn bị schema/seed và có tên kết thúc bằng `_test` (không dùng database đang có dữ liệu):
+
+```powershell
+$env:INVENTORY_TEST_DB_NAME = 'nongsan_flashsale_test'
+& 'C:\xampp\php\php.exe' setup\tests\flash-sale.php
+```
 
 **5. Đơn hàng của người dùng mẫu:**
 

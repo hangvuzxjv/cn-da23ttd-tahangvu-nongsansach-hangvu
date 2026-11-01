@@ -9,12 +9,20 @@ final class PricingService
         $this->database ??= Database::connection();
     }
 
-    public function quote(array $items, int $regionId, ?string $voucherCode = null, ?int $userId = null, bool $lockVoucher = false): array
+    public function quote(
+        array $items,
+        int $regionId,
+        ?string $voucherCode = null,
+        ?int $userId = null,
+        bool $lockVoucher = false,
+        bool $enforceFlashSaleLimit = false
+    ): array
     {
         if (!$items || $regionId < 1) {
             throw new InvalidArgumentException('Giỏ hàng hoặc địa chỉ nhận hàng không hợp lệ.');
         }
 
+        $items = $this->applyFlashSalePricing($items, $userId, $lockVoucher, $enforceFlashSaleLimit);
         $subtotal = 0;
         foreach ($items as $item) {
             $subtotal += self::lineTotal(
@@ -72,7 +80,76 @@ final class PricingService
             'total' => max(0, $subtotal - $discount) + $shipping['fee'],
             'voucher' => $voucher,
             'shipping' => $shipping,
+            'items' => $items,
+            'flash_sale_messages' => array_values(array_filter(array_map(
+                static fn (array $item): ?string => $item['flash_sale_message'] ?? null,
+                $items
+            ))),
         ];
+    }
+
+    public function applyFlashSalePricing(
+        array $items,
+        ?int $userId = null,
+        bool $lockItems = false,
+        bool $enforceUserLimit = false
+    ): array {
+        $flashSales = new FlashSaleService($this->database);
+        foreach ($items as &$item) {
+            $productId = (int) ($item['product_id'] ?? 0);
+            $quantity = (int) ($item['quantity'] ?? 0);
+            $regularPrice = (string) ($item['unit_price'] ?? $item['current_price'] ?? '0');
+            $item['flash_sale_item_id'] = null;
+            $item['flash_sale_price'] = null;
+            $item['flash_sale_message'] = null;
+            $item['original_price'] = self::moneyToVnd($regularPrice);
+            $item['current_price'] = self::moneyToVnd($regularPrice);
+            if ($productId < 1 || $quantity < 1) {
+                continue;
+            }
+            $deal = $flashSales->activeDeal($productId, $userId, $lockItems);
+            if ($deal === null) {
+                continue;
+            }
+            if ((int) $deal['remaining'] < 1) {
+                $item['flash_sale_message'] = 'Flash Sale đã hết suất; đang áp dụng giá bán thường.';
+                continue;
+            }
+            if ($quantity > (int) $deal['remaining']) {
+                $item['flash_sale_message'] = 'Flash Sale không còn đủ suất cho số lượng này; đang áp dụng giá bán thường.';
+                continue;
+            }
+            if ($userId === null) {
+                $item['flash_sale_message'] = 'Đăng nhập để áp dụng giá Flash Sale.';
+                continue;
+            }
+            $userPurchased = (int) ($deal['user_purchased'] ?? 0);
+            if ($userId !== null && $userPurchased + $quantity > (int) $deal['per_user_limit']) {
+                if ($enforceUserLimit) {
+                    throw new PricingException(
+                        'Bạn đã mua hoặc đang giữ ' . $userPurchased . ' sản phẩm; giới hạn Flash Sale là '
+                        . (int) $deal['per_user_limit'] . ' sản phẩm.'
+                    );
+                }
+                $item['flash_sale_message'] = 'Số lượng vượt giới hạn Flash Sale; đang áp dụng giá bán thường.';
+                continue;
+            }
+            $salePrice = self::moneyToVnd((string) $deal['sale_price']);
+            if ($salePrice >= $item['original_price']) {
+                $item['flash_sale_message'] = 'Giá Flash Sale không còn thấp hơn giá bán hiện tại; đang áp dụng giá thường.';
+                continue;
+            }
+            $item['flash_sale_item_id'] = (int) $deal['flash_sale_item_id'];
+            $item['flash_sale_price'] = $salePrice;
+            $item['current_price'] = $salePrice;
+            $item['unit_price'] = (string) $deal['sale_price'];
+            $item['flash_sale_name'] = $deal['campaign_name'];
+            $item['flash_sale_remaining'] = (int) $deal['remaining'];
+            $item['flash_sale_per_user_limit'] = (int) $deal['per_user_limit'];
+            $item['flash_sale_user_purchased'] = $userPurchased;
+        }
+        unset($item);
+        return $items;
     }
 
     public static function moneyToVnd(string $amount): int

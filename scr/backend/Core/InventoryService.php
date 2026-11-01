@@ -638,13 +638,20 @@ final class InventoryService
 
     public function expireReservations(?int $batchId = null): void
     {
+        if ($this->database->inTransaction()) {
+            return;
+        }
         $sql = 'UPDATE stock_reservations SET status = \'expired\' WHERE status = \'reserved\' AND expires_at <= NOW()';
         $parameters = [];
         if ($batchId !== null) {
             $sql .= ' AND batch_id = :batch_id';
             $parameters['batch_id'] = $batchId;
         }
-        $this->database->prepare($sql)->execute($parameters);
+        $expire = $this->database->prepare($sql);
+        $expire->execute($parameters);
+        if ($expire->rowCount() > 0) {
+            (new PaymentService($this->database))->expirePending();
+        }
     }
 
     private function releaseOrderReservations(int $orderId): void

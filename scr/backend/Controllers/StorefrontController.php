@@ -32,7 +32,9 @@ final class StorefrontController extends Controller
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), ',', 1) AS image_url
                  FROM product_images GROUP BY product_id
              ) pi ON pi.product_id = p.id
-             WHERE fs.status = 'active' AND fs.starts_at <= NOW() AND fs.ends_at >= NOW()
+             WHERE fs.status NOT IN ('draft','cancelled')
+               AND fs.starts_at <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR)
+               AND fs.ends_at > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR)
                AND fsi.sold_quantity < fsi.quota AND p.status = 'active' AND p.deleted_at IS NULL
              ORDER BY fs.ends_at, fsi.id LIMIT 8"
         )->fetchAll();

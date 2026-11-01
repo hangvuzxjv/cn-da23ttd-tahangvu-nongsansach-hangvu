@@ -339,9 +339,9 @@ erDiagram
 
 ### Flash Sale, nội dung và vận hành
 
-- `flash_sales`: chiến dịch cùng thời gian và trạng thái; trạng thái đang diễn ra cần đồng thời thỏa khoảng thời gian.
+- `flash_sales`: chiến dịch cùng thời gian và trạng thái; trạng thái hiển thị (sắp diễn ra/đang diễn ra/đã kết thúc) được tính theo giờ máy chủ trong từng truy vấn.
 - `flash_sale_items`: sản phẩm, giá sale, hạn mức và số đã bán; có `CHECK (sold_quantity <= quota)` (MySQL 5.7 chấp nhận nhưng không thực thi CHECK; MariaDB hỗ trợ kiểm tra).
-- `flash_sale_purchases`: ghi nhận lượng mua theo người dùng và mục sale; UNIQUE `(user_id, flash_sale_item_id)` giới hạn một bản ghi/người/mục.
+- `flash_sale_purchases`: ghi nhận lượng giữ/mua theo người dùng, đơn hàng và mục sale; UNIQUE `(order_id, flash_sale_item_id)` ngăn ghi trùng một mục trong đơn. Giới hạn mỗi người được kiểm tra trên các lượt `reserved` và `confirmed`; lượt `released` không tính.
 - `reviews`: đánh giá 1–5 sao gắn người dùng/sản phẩm và tùy chọn đơn hàng.
 - `wishlists`: sản phẩm yêu thích, khóa chính ghép người dùng/sản phẩm.
 - `banners`: banner và liên kết hiển thị có thứ tự.
