@@ -33,6 +33,7 @@
                     <a class="nav-link" href="<?= e(url('/profile')) ?>">Hồ sơ</a>
                     <a class="nav-link" href="<?= e(url('/addresses')) ?>">Sổ địa chỉ</a>
                     <a class="nav-link" href="<?= e(url('/tai-khoan/don-hang')) ?>">Đơn hàng</a>
+                    <a class="nav-link" href="<?= e(url('/tai-khoan/yeu-thich')) ?>">Yêu thích</a>
                     <?php if (Auth::can('dashboard.view')): ?><a class="nav-link" href="<?= e(url('/admin')) ?>">Quản trị</a><?php endif; ?>
                     <form class="d-inline" method="post" action="<?= e(url('/logout')) ?>">
                         <?= csrf_field() ?>
@@ -55,5 +56,6 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= e(asset('/js/cart.js')) ?>"></script>
 <script src="<?= e(asset('/js/flash-sale.js')) ?>"></script>
+<script src="<?= e(asset('/js/customer-engagement.js')) ?>"></script>
 </body>
 </html>

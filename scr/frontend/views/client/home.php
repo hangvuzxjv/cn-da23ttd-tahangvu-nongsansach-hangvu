@@ -70,7 +70,13 @@
                 ?>
                 <div class="col" data-flash-item="<?= (int) $sale['flash_sale_item_id'] ?>"
                      data-quota="<?= (int) $sale['quota'] ?>" data-sold="<?= (int) $sale['sold_quantity'] ?>">
-                    <article class="card h-100 border-danger shadow-sm">
+                    <article class="card h-100 border-danger shadow-sm position-relative">
+                        <?php
+                        $wishlistProductId = (int) $sale['product_id'];
+                        $wishlistProductName = $sale['product_name'];
+                        $wishlistProductSlug = $sale['product_slug'];
+                        require FRONTEND_PATH . '/views/client/wishlist-button.php';
+                        ?>
                         <a class="catalog-card-image" href="<?= e(url('/san-pham/' . $sale['product_slug'])) ?>">
                             <img class="card-img-top" src="<?= e(asset($sale['image_url'])) ?>" alt="<?= e($sale['product_name']) ?>" loading="lazy">
                         </a>
@@ -114,3 +120,9 @@
 
 <section class="mb-5"><div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h3 mb-0">Sản phẩm nổi bật</h2><a href="<?= e(url('/san-pham')) ?>">Xem cửa hàng</a></div><?php $products = $featured; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
 <section><div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h3 mb-0">Sản phẩm mới</h2><a href="<?= e(url('/san-pham?sort=newest')) ?>">Xem tất cả</a></div><?php $products = $newest; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
+<?php if ($recentProducts): ?>
+    <section class="mt-5">
+        <h2 class="h3 mb-3">Sản phẩm bạn đã xem gần đây</h2>
+        <?php $products = $recentProducts; require FRONTEND_PATH . '/views/client/product-cards.php'; ?>
+    </section>
+<?php endif; ?>

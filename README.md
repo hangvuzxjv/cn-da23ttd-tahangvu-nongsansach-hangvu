@@ -145,6 +145,29 @@ foreach ($test in $tests) {
 
 Kiểm tra thủ công phía khách: xem khối ở trang chủ khi có chiến dịch chạy/sắp diễn ra; xác nhận đếm ngược và số đã bán trên `/flash-sale`; thử chi tiết sản phẩm và giới hạn mua; thêm vào giỏ khi đã đăng nhập và khi chưa đăng nhập (phải quay lại trang đã chọn); để chiến dịch kết thúc/hết suất rồi mở lại giỏ và xác nhận thông báo cùng giá mới; kiểm tra snapshot giá trên trang đơn hàng. VietQR/VNPay vẫn cần xác nhận luồng thanh toán trên môi trường thử nghiệm.
 
+**9A. Đánh giá, yêu thích và đã xem:** Bảng `reviews` và `wishlists` đã có trong schema; route đánh giá quản trị trước đây chỉ là trang placeholder. Migration mới `setup/database/migrations/20261102_product_reviews_engagement.sql` bổ sung thời điểm sửa, khóa duy nhất theo người dùng/sản phẩm khi dữ liệu hiện có không bị trùng, và bảng giới hạn tần suất. **Sao lưu CSDL trước khi áp dụng migration**; chỉ chạy file migration này trên CSDL hiện tại, không chạy lại `schema.sql` hoặc `seed.sql`. Nếu CSDL có cặp đánh giá trùng sẵn, migration giữ nguyên dữ liệu và bỏ qua khóa duy nhất; ứng dụng vẫn khóa theo sản phẩm để không tạo thêm đánh giá trùng.
+
+Khách hàng đủ điều kiện đánh giá khi có đơn `completed` chứa sản phẩm đó; đánh giá mới/sửa sẽ chờ duyệt. Trang sản phẩm hiển thị điểm, phân bố sao và danh sách đã duyệt có phân trang. Admin quản lý tại `/admin/reviews`; thao tác duyệt/ẩn/xóa cần CSRF, quyền `reviews.manage` và được ghi audit. Yêu thích xem tại `/tai-khoan/yeu-thich`; AJAX dùng `POST /yeu-thich/chuyen-doi`. Sản phẩm đã xem được lưu trong session, tối đa 8 mã sản phẩm.
+
+Chạy tất cả test trong database riêng kết thúc bằng `_test`, đã có schema/seed và đã áp dụng migration mới:
+
+```powershell
+$env:INVENTORY_TEST_DB_NAME = 'nongsan_engagement_test'
+$tests = @(
+  @('vnpay-signature.php'), @('redirect-helpers.php'), @('reconcile.php'),
+  @('payment-flows.php'), @('flash-sale.php'), @('flash-sale-admin.php'),
+  @('customer-engagement.php'), @('fefo.php', '4', '1'),
+  @('concurrency.php', '--cli'), @('checkout-invariants.php'),
+  @('checkout-concurrency.php')
+)
+foreach ($test in $tests) {
+  & 'C:\xampp\php\php.exe' (Join-Path 'setup\tests' $test[0]) @($test | Select-Object -Skip 1)
+  if ($LASTEXITCODE -ne 0) { throw "Test failed: $($test[0])" }
+}
+```
+
+Kiểm tra thủ công: thử gửi/sửa đánh giá bằng khách chưa mua, khách có đơn đã giao và khách có đơn chưa hoàn tất; duyệt/ẩn/xóa ở admin và xác nhận ẩn không ảnh hưởng điểm; thử tìm/lọc đánh giá và phân trang; thêm/bỏ yêu thích khi đăng nhập và khi chưa đăng nhập (phải quay lại đúng sản phẩm); từ trang yêu thích thêm giỏ và kiểm tra giá Flash Sale/tồn kho; mở vài sản phẩm rồi kiểm tra lịch sử trên trang chủ/chi tiết.
+
 **5. Đơn hàng của người dùng mẫu:**
 
 ```sql

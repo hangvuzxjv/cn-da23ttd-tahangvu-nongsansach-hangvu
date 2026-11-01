@@ -1,12 +1,25 @@
 <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3">
     <?php foreach ($products as $item): ?>
         <div class="col">
-            <article class="card h-100 shadow-sm">
+            <article class="card h-100 shadow-sm position-relative">
+                <?php
+                $wishlistProductId = (int) $item['id'];
+                $wishlistProductName = $item['name'];
+                $wishlistProductSlug = $item['slug'];
+                require FRONTEND_PATH . '/views/client/wishlist-button.php';
+                ?>
                 <a href="<?= e(url('/san-pham/' . $item['slug'])) ?>" class="catalog-card-image">
                     <img src="<?= e(asset($item['image_url'] ?: '/img/product-placeholder.svg')) ?>" class="card-img-top" alt="<?= e($item['name']) ?>" loading="lazy">
                 </a>
                 <div class="card-body d-flex flex-column">
                     <h3 class="h6"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['slug'])) ?>"><?= e($item['name']) ?></a></h3>
+                    <?php if ((int) ($item['review_count'] ?? 0) > 0): ?>
+                        <div class="small text-warning mb-2" aria-label="Đánh giá <?= number_format((float) $item['average_rating'], 1) ?> trên 5 sao">
+                            &#9733; <?= number_format((float) $item['average_rating'], 1) ?> <span class="text-secondary">(<?= (int) $item['review_count'] ?>)</span>
+                        </div>
+                    <?php else: ?>
+                        <div class="small text-secondary mb-2">Chưa có đánh giá</div>
+                    <?php endif; ?>
                     <?php if (!empty($item['short_description'])): ?><p class="small text-secondary flex-grow-1"><?= e($item['short_description']) ?></p><?php endif; ?>
                     <?php $available = (int) ($item['actual_stock'] ?? 0); $threshold = (int) ($item['min_stock'] ?? 5); ?>
                     <p class="small mb-2">Tồn khả dụng:
@@ -15,7 +28,11 @@
                         </strong>
                     </p>
                     <div class="mt-auto">
-                        <?php if ($item['sale_price'] !== null): ?><del class="small text-secondary"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</del><div class="fw-bold text-danger"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫</div>
+                        <?php if (!empty($item['flash_sale_item_id'])): ?>
+                            <span class="badge text-bg-danger">Flash Sale</span>
+                            <del class="small text-secondary"><?= number_format((int) $item['original_price'], 0, ',', '.') ?> ₫</del>
+                            <div class="fw-bold text-danger"><?= number_format((int) $item['current_price'], 0, ',', '.') ?> ₫</div>
+                        <?php elseif ($item['sale_price'] !== null): ?><del class="small text-secondary"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</del><div class="fw-bold text-danger"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫</div>
                         <?php else: ?><div class="fw-bold text-success"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</div><?php endif; ?>
                         <?php if (isset($item['unit'])): ?><span class="small text-secondary">/ <?= e($item['unit']) ?></span><?php endif; ?>
                         <?php if ((int) ($item['actual_stock'] ?? 0) > 0): ?>

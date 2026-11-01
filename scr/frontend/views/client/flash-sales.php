@@ -58,7 +58,13 @@ $hasActiveCampaign = (bool) array_filter(
                 ?>
                 <div class="col" data-flash-item="<?= (int) $item['flash_sale_item_id'] ?>"
                      data-quota="<?= (int) $item['quota'] ?>" data-sold="<?= (int) $item['sold_quantity'] ?>">
-                    <article class="card h-100 shadow-sm border-<?= $active ? 'danger' : 'secondary' ?>">
+                    <article class="card h-100 shadow-sm border-<?= $active ? 'danger' : 'secondary' ?> position-relative">
+                        <?php
+                        $wishlistProductId = (int) $item['product_id'];
+                        $wishlistProductName = $item['product_name'];
+                        $wishlistProductSlug = $item['product_slug'];
+                        require FRONTEND_PATH . '/views/client/wishlist-button.php';
+                        ?>
                         <a class="catalog-card-image" href="<?= e(url('/san-pham/' . $item['product_slug'])) ?>">
                             <img class="card-img-top" src="<?= e(asset($item['image_url'])) ?>" alt="<?= e($item['product_name']) ?>" loading="lazy">
                         </a>

@@ -8,6 +8,14 @@
     <div class="col-lg-6">
         <div class="text-success mb-2"><a href="<?= e(url('/danh-muc/' . $product['category_slug'])) ?>"><?= e($product['category_name']) ?></a></div>
         <h1 class="h2"><?= e($product['name']) ?></h1>
+        <?php
+        $wishlistProductId = (int) $product['id'];
+        $wishlistProductName = $product['name'];
+        $wishlistProductSlug = $product['slug'];
+        $wishlistButtonClass = 'mb-3 position-relative';
+        require FRONTEND_PATH . '/views/client/wishlist-button.php';
+        unset($wishlistButtonClass);
+        ?>
         <p class="text-secondary"><?= e($product['short_description']) ?></p>
         <?php $regularPrice = $product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0 ? $product['sale_price'] : $product['price']; ?>
         <?php if ($flashSale): ?>
@@ -98,7 +106,93 @@
         <p class="text-secondary">Hiện chưa có lô còn hàng và còn hạn để hiển thị.</p>
     <?php endif; ?>
 </section>
-<section class="mb-5"><h2 class="h4">Đánh giá</h2><p class="text-secondary">Đánh giá sản phẩm sẽ được hiển thị tại đây.</p></section>
+<section class="mb-5" id="reviews">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 class="h4 mb-1">Đánh giá sản phẩm</h2>
+            <div class="text-warning" aria-label="Điểm trung bình <?= number_format((float) $reviewSummary['average_rating'], 1) ?> trên 5 sao">
+                <strong>&#9733; <?= number_format((float) $reviewSummary['average_rating'], 1) ?>/5</strong>
+                <span class="text-secondary">(<?= (int) $reviewSummary['review_count'] ?> đánh giá đã duyệt)</span>
+            </div>
+        </div>
+    </div>
+    <?php if ($reviewSummary['review_count'] > 0): ?>
+        <div class="row g-2 mb-4" aria-label="Phân bố số lượt đánh giá theo sao">
+            <?php for ($stars = 5; $stars >= 1; $stars--): ?>
+                <?php $count = (int) $reviewSummary['distribution'][$stars]; $percent = (int) round($count * 100 / $reviewSummary['review_count']); ?>
+                <div class="col-12 col-sm-6 col-lg-4 d-flex align-items-center gap-2 small">
+                    <span class="text-nowrap"><?= $stars ?> sao</span>
+                    <div class="progress flex-grow-1" role="progressbar" aria-label="<?= $stars ?> sao" aria-valuenow="<?= $percent ?>" aria-valuemin="0" aria-valuemax="100">
+                        <div class="progress-bar bg-warning" style="width: <?= $percent ?>%"></div>
+                    </div>
+                    <span class="text-secondary"><?= $count ?></span>
+                </div>
+            <?php endfor; ?>
+        </div>
+    <?php endif; ?>
+    <?php if ($canReview): ?>
+        <form class="card card-body mb-4" action="<?= e(url('/danh-gia')) ?>" method="post"
+              data-review-submit data-login-url="<?= e($reviewLoginUrl) ?>">
+            <?= csrf_field() ?>
+            <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+            <h3 class="h6"><?= $myReview ? 'Sửa đánh giá của bạn' : 'Chia sẻ trải nghiệm của bạn' ?></h3>
+            <?php if ($myReview && $myReview['status'] !== 'published'): ?>
+                <p class="small text-secondary">Đánh giá hiện ở trạng thái <?= $myReview['status'] === 'hidden' ? 'đã ẩn' : 'chờ duyệt' ?>; nội dung sửa sẽ được duyệt lại.</p>
+            <?php endif; ?>
+            <div class="mb-3">
+                <label class="form-label" for="reviewRating">Số sao</label>
+                <select class="form-select" id="reviewRating" name="rating" required>
+                    <?php for ($stars = 5; $stars >= 1; $stars--): ?>
+                        <option value="<?= $stars ?>" <?= $myReview && (int) $myReview['rating'] === $stars ? 'selected' : '' ?>><?= $stars ?> sao</option>
+                    <?php endfor; ?>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="reviewContent">Nội dung</label>
+                <textarea class="form-control" id="reviewContent" name="content" rows="4" maxlength="2000" required><?= e($myReview['content'] ?? '') ?></textarea>
+                <div class="form-text">Tối đa 2000 ký tự. Chỉ tài khoản có đơn hàng đã giao sản phẩm này mới được đánh giá.</div>
+            </div>
+            <div data-review-message role="status" aria-live="polite"></div>
+            <div><button class="btn btn-success" type="submit"><?= $myReview ? 'Cập nhật đánh giá' : 'Gửi đánh giá' ?></button></div>
+        </form>
+    <?php elseif (!$flashSaleLoggedIn): ?>
+        <p><a class="btn btn-outline-success btn-sm" href="<?= e($reviewLoginUrl) ?>">Đăng nhập để đánh giá</a></p>
+    <?php else: ?>
+        <p class="small text-secondary">Bạn cần có đơn hàng đã giao sản phẩm này mới được đánh giá.</p>
+    <?php endif; ?>
+    <?php if ($reviews): ?>
+        <div class="vstack gap-3">
+            <?php foreach ($reviews as $review): ?>
+                <article class="border-bottom pb-3">
+                    <div class="d-flex flex-wrap justify-content-between gap-2">
+                        <strong><?= e($review['customer_name']) ?></strong>
+                        <time class="small text-secondary" datetime="<?= e(date(DATE_ATOM, strtotime($review['created_at']))) ?>"><?= e($review['created_at']) ?></time>
+                    </div>
+                    <div class="text-warning" aria-label="<?= (int) $review['rating'] ?> trên 5 sao"><?= str_repeat('★', (int) $review['rating']) ?><?= str_repeat('☆', 5 - (int) $review['rating']) ?></div>
+                    <?php if ($review['title']): ?><h3 class="h6 mt-1"><?= e($review['title']) ?></h3><?php endif; ?>
+                    <p class="mb-0"><?= nl2br(e($review['content'])) ?></p>
+                </article>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($reviewsPages > 1): ?>
+            <nav class="mt-4" aria-label="Phân trang đánh giá"><ul class="pagination">
+                <?php for ($number = 1; $number <= $reviewsPages; $number++): ?>
+                    <li class="page-item <?= $number === $reviewsPage ? 'active' : '' ?>">
+                        <a class="page-link" href="<?= e(url('/san-pham/' . $product['slug'] . '?reviews_page=' . $number . '#reviews')) ?>"><?= $number ?></a>
+                    </li>
+                <?php endfor; ?>
+            </ul></nav>
+        <?php endif; ?>
+    <?php else: ?>
+        <p class="text-secondary">Chưa có đánh giá được duyệt cho sản phẩm này.</p>
+    <?php endif; ?>
+</section>
+<?php if ($recentProducts): ?>
+    <section class="mb-5">
+        <h2 class="h4 mb-3">Sản phẩm bạn đã xem gần đây</h2>
+        <?php $products = $recentProducts; require FRONTEND_PATH . '/views/client/product-cards.php'; ?>
+    </section>
+<?php endif; ?>
 <section><h2 class="h4 mb-3">Sản phẩm liên quan</h2><?php $products = $related; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
 <script>
 document.querySelectorAll('[data-image]').forEach((button) => button.addEventListener('click', () => {

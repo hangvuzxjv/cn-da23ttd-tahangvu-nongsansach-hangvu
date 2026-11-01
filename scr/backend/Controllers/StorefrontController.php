@@ -21,6 +21,9 @@ final class StorefrontController extends Controller
         )->fetchAll();
         $featured = $this->fetchProducts('p.is_featured = 1', [], 'p.created_at DESC', 8);
         $newest = $this->fetchProducts('1 = 1', [], 'p.created_at DESC', 8);
+        $userId = $this->currentUserId();
+        $engagement = new CustomerEngagementService($database);
+        $recentProducts = $this->recentlyViewedProducts();
         $flashService = new FlashSaleService($database);
         $flashSaleCampaigns = $this->groupFlashSaleOffers(
             $flashService->customerCampaigns($this->currentUserId())
@@ -43,20 +46,26 @@ final class StorefrontController extends Controller
             'newest' => $newest,
             'flashSaleCampaign' => $homeFlashSale,
             'flashSaleServerTime' => $flashService->serverTime(),
-            'flashSaleLoggedIn' => $this->currentUserId() !== null,
+            'flashSaleLoggedIn' => $userId !== null,
+            'wishlistIds' => $userId === null ? [] : $engagement->wishlistProductIds($userId),
+            'recentProducts' => $recentProducts,
         ]);
     }
 
     public function flashSales(): void
     {
         $service = new FlashSaleService();
-        $campaigns = $this->groupFlashSaleOffers($service->customerCampaigns($this->currentUserId()));
+        $userId = $this->currentUserId();
+        $campaigns = $this->groupFlashSaleOffers($service->customerCampaigns($userId));
         $this->view('client/flash-sales', [
             'title' => 'Flash Sale',
             'metaDescription' => 'Khám phá các chương trình Flash Sale đang diễn ra và sắp bắt đầu.',
             'campaigns' => $campaigns,
             'serverTime' => $service->serverTime(),
-            'loggedIn' => $this->currentUserId() !== null,
+            'loggedIn' => $userId !== null,
+            'wishlistIds' => $userId === null
+                ? []
+                : (new CustomerEngagementService())->wishlistProductIds($userId),
         ]);
     }
 
@@ -133,8 +142,18 @@ final class StorefrontController extends Controller
             $this->notFound();
             return;
         }
+        $this->recordRecentlyViewed((int) $product['id']);
+        $userId = $this->currentUserId();
+        $engagement = new CustomerEngagementService();
+        $reviewSummary = $engagement->reviewSummary((int) $product['id']);
+        $rawReviewPage = $_GET['reviews_page'] ?? 1;
+        $reviewPage = is_scalar($rawReviewPage) ? max(1, (int) $rawReviewPage) : 1;
+        $reviewPageData = $engagement->publishedReviews((int) $product['id'], $reviewPage);
+        $myReview = $userId === null ? null : $engagement->reviewForUser($userId, (int) $product['id']);
+        $canReview = $userId !== null && $engagement->canReview($userId, (int) $product['id']);
+        $recentProducts = $this->recentlyViewedProducts((int) $product['id']);
         $flashService = new FlashSaleService();
-        $flashDeal = $flashService->activeDeal((int) $product['id'], $this->currentUserId());
+        $flashDeal = $flashService->activeDeal((int) $product['id'], $userId);
         if ($flashDeal !== null
             && PricingService::moneyToVnd((string) $flashDeal['sale_price'])
                 < PricingService::moneyToVnd((string) ($product['sale_price'] ?: $product['price']))) {
@@ -183,7 +202,16 @@ final class StorefrontController extends Controller
             'product' => $product,
             'flashSale' => $flashDeal,
             'flashSaleServerTime' => $flashService->serverTime(),
-            'flashSaleLoggedIn' => $this->currentUserId() !== null,
+            'flashSaleLoggedIn' => $userId !== null,
+            'wishlistIds' => $userId === null ? [] : $engagement->wishlistProductIds($userId),
+            'reviewSummary' => $reviewSummary,
+            'reviews' => $reviewPageData['reviews'],
+            'reviewsPage' => $reviewPageData['page'],
+            'reviewsPages' => $reviewPageData['pages'],
+            'canReview' => $canReview,
+            'myReview' => $myReview,
+            'reviewLoginUrl' => url('/login?return_to=' . rawurlencode('/san-pham/' . $product['slug'] . '#reviews')),
+            'recentProducts' => $recentProducts,
             'images' => $images->fetchAll(),
             'related' => $related,
             'traceBatches' => $batchQuery->fetchAll(),
@@ -349,6 +377,8 @@ final class StorefrontController extends Controller
             'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock, p.short_description,
                     COALESCE(stock.quantity, 0) AS actual_stock,
                     COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url,
+                    COALESCE(review_summary.average_rating, 0) AS average_rating,
+                    COALESCE(review_summary.review_count, 0) AS review_count,
                     COALESCE(sales.sold, 0) AS sold_quantity
              FROM products p
              JOIN regions r ON r.id = p.region_id AND r.is_active = 1
@@ -358,6 +388,10 @@ final class StorefrontController extends Controller
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
                  FROM product_images GROUP BY product_id
              ) images ON images.product_id = p.id
+             LEFT JOIN (
+                 SELECT product_id, AVG(rating) AS average_rating, COUNT(*) AS review_count
+                 FROM reviews WHERE status = \'published\' GROUP BY product_id
+             ) review_summary ON review_summary.product_id = p.id
              LEFT JOIN (
                  SELECT oi.product_id, SUM(oi.quantity) AS sold
                  FROM order_items oi JOIN orders o ON o.id = oi.order_id
@@ -408,6 +442,9 @@ final class StorefrontController extends Controller
             'breadcrumbs' => $breadcrumbs,
             'scope' => $scope,
             'scopeType' => $scopeType,
+            'wishlistIds' => $this->currentUserId() === null
+                ? []
+                : (new CustomerEngagementService())->wishlistProductIds((int) $this->currentUserId()),
         ]);
     }
 
@@ -416,13 +453,19 @@ final class StorefrontController extends Controller
         $statement = Database::connection()->prepare(
             'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock, p.short_description,
                     COALESCE(stock.quantity, 0) AS actual_stock,
-                    COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url
+                    COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url,
+                    COALESCE(review_summary.average_rating, 0) AS average_rating,
+                    COALESCE(review_summary.review_count, 0) AS review_count
              FROM products p
              LEFT JOIN ' . $this->availableStockSubquery() . ' stock ON stock.product_id = p.id
              LEFT JOIN (
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
                  FROM product_images GROUP BY product_id
              ) images ON images.product_id = p.id
+             LEFT JOIN (
+                 SELECT product_id, AVG(rating) AS average_rating, COUNT(*) AS review_count
+                 FROM reviews WHERE status = \'published\' GROUP BY product_id
+             ) review_summary ON review_summary.product_id = p.id
              JOIN categories c ON c.id = p.category_id AND c.is_active = 1
              JOIN regions r ON r.id = p.region_id AND r.is_active = 1
              WHERE p.status = \'active\' AND p.deleted_at IS NULL AND ' . $extraCondition . '
@@ -434,6 +477,43 @@ final class StorefrontController extends Controller
         $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
         $statement->execute();
         return $statement->fetchAll();
+    }
+
+    private function recordRecentlyViewed(int $productId): void
+    {
+        Session::start();
+        $stored = $_SESSION['recent_product_ids'] ?? [];
+        $recent = array_values(array_filter(
+            is_array($stored) ? $stored : [],
+            static fn (mixed $id): bool => filter_var($id, FILTER_VALIDATE_INT) !== false && (int) $id > 0
+        ));
+        $recent = array_values(array_unique(array_merge([$productId], array_map('intval', $recent))));
+        $_SESSION['recent_product_ids'] = array_slice($recent, 0, 8);
+    }
+
+    private function recentlyViewedProducts(?int $excludeProductId = null): array
+    {
+        Session::start();
+        $stored = $_SESSION['recent_product_ids'] ?? [];
+        $ids = array_values(array_filter(
+            array_map('intval', is_array($stored) ? $stored : []),
+            static fn (int $id): bool => $id > 0 && $id !== $excludeProductId
+        ));
+        if ($ids === []) {
+            return [];
+        }
+        $conditions = [];
+        $parameters = [];
+        foreach (array_slice($ids, 0, 8) as $index => $id) {
+            $conditions[] = ':recent_' . $index;
+            $parameters['recent_' . $index] = $id;
+        }
+        return $this->fetchProducts(
+            'p.id IN (' . implode(', ', $conditions) . ')',
+            $parameters,
+            'FIELD(p.id, ' . implode(', ', array_slice($ids, 0, 8)) . ')',
+            8
+        );
     }
 
     private function validPrice(mixed $value): ?float
