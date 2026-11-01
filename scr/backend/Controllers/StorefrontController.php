@@ -21,23 +21,19 @@ final class StorefrontController extends Controller
         )->fetchAll();
         $featured = $this->fetchProducts('p.is_featured = 1', [], 'p.created_at DESC', 8);
         $newest = $this->fetchProducts('1 = 1', [], 'p.created_at DESC', 8);
-        $flashSales = $database->query(
-            "SELECT fs.id, fs.name, fs.ends_at, p.name AS product_name, p.slug AS product_slug,
-                    fsi.sale_price, fsi.quota, fsi.sold_quantity,
-                    COALESCE(pi.image_url, '/img/product-placeholder.svg') AS image_url
-             FROM flash_sales fs
-             JOIN flash_sale_items fsi ON fsi.flash_sale_id = fs.id
-             JOIN products p ON p.id = fsi.product_id
-             LEFT JOIN (
-                 SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), ',', 1) AS image_url
-                 FROM product_images GROUP BY product_id
-             ) pi ON pi.product_id = p.id
-             WHERE fs.status NOT IN ('draft','cancelled')
-               AND fs.starts_at <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR)
-               AND fs.ends_at > DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR)
-               AND fsi.sold_quantity < fsi.quota AND p.status = 'active' AND p.deleted_at IS NULL
-             ORDER BY fs.ends_at, fsi.id LIMIT 8"
-        )->fetchAll();
+        $flashService = new FlashSaleService($database);
+        $flashSaleCampaigns = $this->groupFlashSaleOffers(
+            $flashService->customerCampaigns($this->currentUserId())
+        );
+        $activeCampaigns = array_values(array_filter(
+            $flashSaleCampaigns,
+            static fn (array $campaign): bool => $campaign['campaign_status'] === 'active'
+        ));
+        $scheduledCampaigns = array_values(array_filter(
+            $flashSaleCampaigns,
+            static fn (array $campaign): bool => $campaign['campaign_status'] === 'scheduled'
+        ));
+        $homeFlashSale = $activeCampaigns[0] ?? $scheduledCampaigns[0] ?? null;
         $this->view('client/home', [
             'title' => 'Nông sản sạch theo mùa',
             'metaDescription' => 'Khám phá nông sản sạch, truy xuất nguồn gốc từ các vùng miền Việt Nam.',
@@ -45,8 +41,38 @@ final class StorefrontController extends Controller
             'regions' => $regions,
             'featured' => $featured,
             'newest' => $newest,
-            'flashSales' => $flashSales,
+            'flashSaleCampaign' => $homeFlashSale,
+            'flashSaleServerTime' => $flashService->serverTime(),
+            'flashSaleLoggedIn' => $this->currentUserId() !== null,
         ]);
+    }
+
+    public function flashSales(): void
+    {
+        $service = new FlashSaleService();
+        $campaigns = $this->groupFlashSaleOffers($service->customerCampaigns($this->currentUserId()));
+        $this->view('client/flash-sales', [
+            'title' => 'Flash Sale',
+            'metaDescription' => 'Khám phá các chương trình Flash Sale đang diễn ra và sắp bắt đầu.',
+            'campaigns' => $campaigns,
+            'serverTime' => $service->serverTime(),
+            'loggedIn' => $this->currentUserId() !== null,
+        ]);
+    }
+
+    public function flashSaleProgress(): Response
+    {
+        try {
+            return Response::json(true, 'Đã cập nhật trạng thái Flash Sale.', (new FlashSaleService())->liveProgress());
+        } catch (Throwable $exception) {
+            error_log('Flash Sale customer progress failed: ' . $exception->getMessage());
+            return Response::json(
+                false,
+                'Không thể cập nhật số suất Flash Sale lúc này.',
+                [],
+                503
+            );
+        }
     }
 
     public function shop(): void
@@ -107,6 +133,24 @@ final class StorefrontController extends Controller
             $this->notFound();
             return;
         }
+        $flashService = new FlashSaleService();
+        $flashDeal = $flashService->activeDeal((int) $product['id'], $this->currentUserId());
+        if ($flashDeal !== null
+            && PricingService::moneyToVnd((string) $flashDeal['sale_price'])
+                < PricingService::moneyToVnd((string) ($product['sale_price'] ?: $product['price']))) {
+            $flashDeal['remaining'] = max(0, (int) $flashDeal['quota'] - (int) $flashDeal['sold_quantity']);
+            $flashDeal['user_remaining'] = max(
+                0,
+                (int) $flashDeal['per_user_limit'] - (int) $flashDeal['user_purchased']
+            );
+            $flashDeal['max_buy_quantity'] = min(
+                $flashDeal['remaining'],
+                $flashDeal['user_remaining'],
+                (int) $product['actual_stock']
+            );
+        } else {
+            $flashDeal = null;
+        }
         $images = Database::connection()->prepare(
             'SELECT image_url, alt_text FROM product_images WHERE product_id = :product_id
              ORDER BY is_primary DESC, sort_order, id'
@@ -137,6 +181,9 @@ final class StorefrontController extends Controller
             'title' => $product['name'],
             'metaDescription' => $product['short_description'] ?: mb_substr(strip_tags((string) $product['description']), 0, 155, 'UTF-8'),
             'product' => $product,
+            'flashSale' => $flashDeal,
+            'flashSaleServerTime' => $flashService->serverTime(),
+            'flashSaleLoggedIn' => $this->currentUserId() !== null,
             'images' => $images->fetchAll(),
             'related' => $related,
             'traceBatches' => $batchQuery->fetchAll(),
@@ -147,6 +194,34 @@ final class StorefrontController extends Controller
                 ['name' => $product['name'], 'url' => null],
             ],
         ]);
+    }
+
+    private function groupFlashSaleOffers(array $offers): array
+    {
+        $campaigns = [];
+        foreach ($offers as $offer) {
+            $campaignId = (int) $offer['campaign_id'];
+            if (!isset($campaigns[$campaignId])) {
+                $campaigns[$campaignId] = [
+                    'id' => $campaignId,
+                    'name' => $offer['campaign_name'],
+                    'description' => $offer['description'],
+                    'banner_url' => $offer['banner_url'],
+                    'starts_at' => $offer['starts_at'],
+                    'ends_at' => $offer['ends_at'],
+                    'campaign_status' => $offer['campaign_status'],
+                    'items' => [],
+                ];
+            }
+            $campaigns[$campaignId]['items'][] = $offer;
+        }
+        return array_values($campaigns);
+    }
+
+    private function currentUserId(): ?int
+    {
+        $user = Auth::user();
+        return $user === null ? null : (int) $user['id'];
     }
 
     public function sitemap(): Response

@@ -55,8 +55,11 @@ final class FlashSaleService
         if (!$deal) {
             return;
         }
+        if ((int) $deal['remaining'] < 1) {
+            throw new InventoryException('Flash Sale đã hết suất. Vui lòng tải lại trang hoặc mua theo giá bán hiện hành.');
+        }
         if ((int) $deal['remaining'] < $quantity) {
-            return;
+            throw new InventoryException('Flash Sale chỉ còn ' . (int) $deal['remaining'] . ' suất. Hãy giảm số lượng và thử lại.');
         }
         if ($userId === null) {
             throw new InvalidArgumentException('Bạn cần đăng nhập để mua sản phẩm Flash Sale.');
@@ -234,9 +237,9 @@ final class FlashSaleService
         )->execute(['order_id' => $orderId]);
     }
 
-    public function customerCampaigns(): array
+    public function customerCampaigns(?int $userId = null): array
     {
-        $statement = $this->database->query(
+        $statement = $this->database->prepare(
             "SELECT fs.id AS campaign_id, fs.name AS campaign_name, fs.description,
                     fs.banner_url, fs.starts_at, fs.ends_at,
                     CASE
@@ -248,7 +251,10 @@ final class FlashSaleService
                     fsi.id AS flash_sale_item_id, fsi.product_id, fsi.sale_price, fsi.quota,
                     fsi.sold_quantity, fsi.per_user_limit, fsi.sort_order,
                     p.name AS product_name, p.slug AS product_slug, p.price AS regular_price,
+                    p.unit,
                     COALESCE(NULLIF(p.sale_price, 0), p.price) AS normal_price,
+                    COALESCE(stock.available, 0) AS available_stock,
+                    COALESCE(user_purchases.quantity, 0) AS user_purchased,
                     COALESCE(pi.image_url, '/img/product-placeholder.svg') AS image_url
              FROM flash_sales fs
              JOIN flash_sale_items fsi ON fsi.flash_sale_id = fs.id
@@ -257,11 +263,52 @@ final class FlashSaleService
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), ',', 1) AS image_url
                  FROM product_images GROUP BY product_id
              ) pi ON pi.product_id = p.id
+             LEFT JOIN (
+                 SELECT b.product_id,
+                        SUM(GREATEST(0, b.quantity_remaining - COALESCE(r.reserved, 0))) AS available
+                 FROM product_batches b
+                 LEFT JOIN (
+                     SELECT batch_id, SUM(quantity) AS reserved
+                     FROM stock_reservations
+                     WHERE status = 'reserved' AND expires_at > NOW()
+                     GROUP BY batch_id
+                 ) r ON r.batch_id = b.id
+                 WHERE b.status = 'selling' AND b.inspection_result <> 'failed'
+                   AND (b.expires_at IS NULL OR b.expires_at >= CURDATE())
+                 GROUP BY b.product_id
+             ) stock ON stock.product_id = p.id
+             LEFT JOIN (
+                 SELECT flash_sale_item_id, SUM(quantity) AS quantity
+                 FROM flash_sale_purchases
+                 WHERE user_id = :user_id AND status IN ('reserved','confirmed')
+                 GROUP BY flash_sale_item_id
+             ) user_purchases ON user_purchases.flash_sale_item_id = fsi.id
              WHERE fs.status NOT IN ('draft','cancelled')
                AND fs.ends_at > " . self::LOCAL_NOW_SQL . "
-             ORDER BY fs.starts_at, fs.ends_at, fs.id, fsi.sort_order, fsi.id"
+             ORDER BY
+                CASE WHEN fs.starts_at <= " . self::LOCAL_NOW_SQL . " THEN 0 ELSE 1 END,
+                fs.starts_at, fs.ends_at, fs.id, fsi.sort_order, fsi.id"
         );
-        return $statement->fetchAll();
+        $statement->execute(['user_id' => $userId ?? 0]);
+        $offers = $statement->fetchAll();
+        foreach ($offers as &$offer) {
+            $offer['remaining'] = max(0, (int) $offer['quota'] - (int) $offer['sold_quantity']);
+            $offer['user_remaining'] = max(0, (int) $offer['per_user_limit'] - (int) $offer['user_purchased']);
+            $offer['max_buy_quantity'] = min(
+                $offer['remaining'],
+                $offer['user_remaining'],
+                (int) $offer['available_stock']
+            );
+        }
+        unset($offer);
+        return $offers;
+    }
+
+    public function serverTime(): string
+    {
+        return (string) $this->database->query(
+            "SELECT DATE_FORMAT(" . self::LOCAL_NOW_SQL . ", '%Y-%m-%dT%H:%i:%s+07:00')"
+        )->fetchColumn();
     }
 
     public function liveProgress(): array
@@ -275,15 +322,21 @@ final class FlashSaleService
                         ELSE 'active'
                     END AS campaign_status,
                     fs.starts_at, fs.ends_at,
-                    fsi.id AS item_id, fsi.quota, fsi.sold_quantity
+                    fsi.id AS item_id, fsi.quota, fsi.sold_quantity,
+                    GREATEST(0, fsi.quota - fsi.sold_quantity) AS remaining
              FROM flash_sales fs JOIN flash_sale_items fsi ON fsi.flash_sale_id = fs.id
              WHERE fs.status NOT IN ('draft','cancelled')
                AND fs.ends_at > " . self::LOCAL_NOW_SQL . "
              ORDER BY fs.id, fsi.sort_order, fsi.id"
         );
+        $items = $query->fetchAll();
         return [
-            'server_time' => (new DateTimeImmutable('now', new DateTimeZone('Asia/Ho_Chi_Minh')))->format(DATE_ATOM),
-            'items' => $query->fetchAll(),
+            'server_time' => $this->serverTime(),
+            'has_active_campaign' => (bool) array_filter(
+                $items,
+                static fn (array $item): bool => $item['campaign_status'] === 'active'
+            ),
+            'items' => $items,
         ];
     }
 

@@ -27,11 +27,14 @@ function flashSaleCreateUser(PDO $database): int
 function flashSaleCreateCampaign(PDO $database, array &$campaignIds, string $window, int $productId, int $quota, int $perUserLimit): int
 {
     $name = 'Flash Sale Test ' . strtoupper(bin2hex(random_bytes(6)));
-    $times = $window === 'future'
-        ? "DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR),
-           DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 2 HOUR), 'scheduled'"
-        : "DATE_SUB(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR),
-           DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR), 'active'";
+    $times = match ($window) {
+        'future' => "DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR),
+                     DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 2 HOUR), 'scheduled'",
+        'past' => "DATE_SUB(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 2 HOUR),
+                   DATE_SUB(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR), 'active'",
+        default => "DATE_SUB(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR),
+                    DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR), 'active'",
+    };
     $database->prepare(
         "INSERT INTO flash_sales (name, starts_at, ends_at, status) VALUES (:name, {$times})"
     )->execute(['name' => $name]);
@@ -194,7 +197,18 @@ try {
     $soldQuery = $database->prepare('SELECT sold_quantity FROM flash_sale_items WHERE id = :id');
     $soldQuery->execute(['id' => $quotaItem]);
     flashSaleAssert((int) $soldQuery->fetchColumn() === 2, 'Quota sold count should remain exactly 2.');
+    try {
+        (new CartService($database))->add(4, 1, $userId);
+        $error = null;
+    } catch (Throwable $exception) {
+        $error = $exception;
+    }
+    flashSaleAssert(
+        $error instanceof InventoryException && str_contains($error->getMessage(), 'hết suất'),
+        'Adding a sold-out Flash Sale product to the cart should be rejected with a clear message.'
+    );
     $passed[] = 'exact quota and over-quota rejection';
+    $passed[] = 'sold-out Flash Sale cart rejection';
 
     $limitedItem = flashSaleCreateCampaign($database, $campaignIds, 'active', 5, 10, 1);
     $firstLimitedOrder = flashSaleCreateOrder($database, $userId, $orderIds);
@@ -207,7 +221,15 @@ try {
     flashSaleAssert($error instanceof InvalidArgumentException, 'Purchases over the per-user limit should be rejected.');
     $soldQuery->execute(['id' => $limitedItem]);
     flashSaleAssert((int) $soldQuery->fetchColumn() === 1, 'Rejected per-user purchase must not increase sold count.');
+    try {
+        (new CartService($database))->add(5, 1, $userId);
+        $error = null;
+    } catch (Throwable $exception) {
+        $error = $exception;
+    }
+    flashSaleAssert($error instanceof InvalidArgumentException, 'Adding above the per-user Flash Sale limit should be rejected.');
     $passed[] = 'per-user limit';
+    $passed[] = 'per-user cart limit';
 
     $futureItem = flashSaleCreateCampaign($database, $campaignIds, 'future', 7, 5, 2);
     $futureOrder = flashSaleCreateOrder($database, $userId, $orderIds);
@@ -216,6 +238,28 @@ try {
     $soldQuery->execute(['id' => $futureItem]);
     flashSaleAssert((int) $soldQuery->fetchColumn() === 0, 'Out-of-window purchase must not change sold count.');
     $passed[] = 'out-of-window rejection';
+    $endedItem = flashSaleCreateCampaign($database, $campaignIds, 'past', 7, 5, 2);
+    $endedOrder = flashSaleCreateOrder($database, $userId, $orderIds);
+    $error = flashSaleAttempt($database, $endedItem, $userId, $endedOrder, 1);
+    flashSaleAssert($error instanceof InventoryException, 'Purchases after the campaign ends should be rejected.');
+    $soldQuery->execute(['id' => $endedItem]);
+    flashSaleAssert((int) $soldQuery->fetchColumn() === 0, 'An ended campaign must not consume Flash Sale quota.');
+    $passed[] = 'purchase rejected after campaign end';
+    $customerFlashSales = new FlashSaleService($database);
+    $futureOffer = array_values(array_filter(
+        $customerFlashSales->customerCampaigns($userId),
+        static fn (array $offer): bool => (int) $offer['flash_sale_item_id'] === $futureItem
+    ))[0] ?? null;
+    $liveProgress = $customerFlashSales->liveProgress();
+    flashSaleAssert(
+        $futureOffer !== null && $futureOffer['campaign_status'] === 'scheduled'
+            && (int) $futureOffer['remaining'] === 5
+            && str_ends_with($customerFlashSales->serverTime(), '+07:00')
+            && isset($liveProgress['server_time'], $liveProgress['has_active_campaign'])
+            && in_array($futureItem, array_map('intval', array_column($liveProgress['items'], 'item_id')), true),
+        'Customer Flash Sale queries should return scheduled offers and server-synchronized progress.'
+    );
+    $passed[] = 'customer campaign and server-time progress data';
 
     $inventoryTemplate = $database->query(
         'SELECT category_id, region_id, farm_id, unit, price
@@ -255,6 +299,32 @@ try {
     $createdBatchIds[] = $batchId;
     (new InventoryService($database))->receive($batchId, 3, 'Flash Sale test inventory');
 
+    $regularPriceQuery = $database->prepare(
+        'SELECT COALESCE(NULLIF(sale_price, 0), price) FROM products WHERE id = :id'
+    );
+    $regularPriceQuery->execute(['id' => $testProductId]);
+    $testProductRegularPrice = PricingService::moneyToVnd((string) $regularPriceQuery->fetchColumn());
+    $upcomingItem = flashSaleCreateCampaign($database, $campaignIds, 'future', $testProductId, 5, 1);
+    $upcomingCart = (new CartService($database))->add($testProductId, 1, $userId);
+    $upcomingCartItem = array_values(array_filter(
+        $upcomingCart['items'],
+        static fn (array $item): bool => (int) $item['product_id'] === $testProductId
+    ))[0] ?? null;
+    flashSaleAssert(
+        $upcomingCartItem !== null
+            && empty($upcomingCartItem['flash_sale_item_id'])
+            && (int) $upcomingCartItem['current_price'] === $testProductRegularPrice,
+        'A product in a not-yet-started Flash Sale should remain available only at its regular price.'
+    );
+    (new CartService($database))->remove($testProductId, $userId);
+    $database->prepare(
+        'UPDATE flash_sales
+         SET starts_at = DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 DAY),
+             ends_at = DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 2 DAY)
+         WHERE id = (SELECT flash_sale_id FROM flash_sale_items WHERE id = :item_id)'
+    )->execute(['item_id' => $upcomingItem]);
+    $passed[] = 'upcoming Flash Sale does not apply the discount';
+
     $cancelItem = flashSaleCreateCampaign($database, $campaignIds, 'active', $testProductId, 5, 1);
     $address = $database->prepare(
         "INSERT INTO addresses (user_id, recipient_name, phone, region_id, address_line, ward, is_default)
@@ -278,6 +348,30 @@ try {
             && (int) $cartItem['current_price'] === 1000,
         'Cart should apply the active Flash Sale price.'
     );
+    $database->prepare(
+        'UPDATE flash_sales SET ends_at = DATE_SUB(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 MINUTE)
+         WHERE id = :id'
+    )->execute(['id' => $campaignIds[array_key_last($campaignIds)]]);
+    $expiredCart = $cartService->summary($userId);
+    $expiredCartItem = $expiredCart['items'][0] ?? null;
+    flashSaleAssert(
+        $expiredCartItem !== null
+            && empty($expiredCartItem['flash_sale_item_id'])
+            && (int) $expiredCartItem['current_price'] === $testProductRegularPrice
+            && str_contains((string) $expiredCartItem['message'], 'Flash Sale đã kết thúc'),
+        'An expired Flash Sale in the cart should be repriced and clearly explained.'
+    );
+    $database->prepare(
+        'UPDATE flash_sales SET ends_at = DATE_ADD(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR), INTERVAL 1 HOUR)
+         WHERE id = :id'
+    )->execute(['id' => $campaignIds[array_key_last($campaignIds)]]);
+    $restoredCart = $cartService->summary($userId);
+    flashSaleAssert(
+        (int) ($restoredCart['items'][0]['flash_sale_item_id'] ?? 0) === $cancelItem
+            && (int) $restoredCart['items'][0]['current_price'] === 1000,
+        'The active Flash Sale price should apply again when the campaign is active.'
+    );
+    $passed[] = 'cart is repriced when Flash Sale expires';
     $placed = (new OrderService($database))->place($userId, [
         'idempotency_token' => bin2hex(random_bytes(32)),
         'address_id' => $addressId,

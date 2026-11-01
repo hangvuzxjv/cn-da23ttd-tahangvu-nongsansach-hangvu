@@ -12,7 +12,8 @@
     <div class="col-lg-8">
         <div class="card mb-4"><div class="card-header"><h2 class="h5 mb-0">Sản phẩm</h2></div><div class="card-body">
             <?php foreach ($items as $item): ?><div class="d-flex justify-content-between gap-3 border-bottom py-2">
-                <div><strong><?= e($item['product_name']) ?></strong> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?>
+                <div><?php if (!empty($item['flash_sale_item_id'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?><strong><?= e($item['product_name']) ?></strong> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?>
+                    <div class="small text-secondary"><?= number_format((float) $item['unit_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?></div>
                     <?php if ($item['batch_code']): ?><div class="small"><a href="<?= e(url('/truy-xuat/' . $item['batch_code'])) ?>">Truy xuất lô <?= e($item['batch_code']) ?></a></div><?php endif; ?>
                 </div><span><?= number_format((float) $item['line_total'], 0, ',', '.') ?> ₫</span>
             </div><?php endforeach; ?>

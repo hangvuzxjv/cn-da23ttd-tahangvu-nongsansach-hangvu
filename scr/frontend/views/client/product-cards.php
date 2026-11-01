@@ -19,7 +19,7 @@
                         <?php else: ?><div class="fw-bold text-success"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</div><?php endif; ?>
                         <?php if (isset($item['unit'])): ?><span class="small text-secondary">/ <?= e($item['unit']) ?></span><?php endif; ?>
                         <?php if ((int) ($item['actual_stock'] ?? 0) > 0): ?>
-                            <form class="mt-2" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
+                            <form class="mt-2" data-cart-add="<?= e(url('/gio-hang/them')) ?>" data-login-url="<?= e(url('/login?return_to=' . rawurlencode('/san-pham/' . $item['slug']))) ?>">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="product_id" value="<?= (int) $item['id'] ?>">
                                 <div class="input-group input-group-sm">

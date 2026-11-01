@@ -125,6 +125,26 @@ $env:INVENTORY_TEST_DB_NAME = 'nongsan_flashsale_test'
 
 Kiểm tra thủ công: đăng nhập admin để xác nhận menu và danh sách; tạo lịch nháp/sắp diễn ra; thử thời gian kết thúc trước bắt đầu, giá flash bằng/cao hơn giá hiện tại, sản phẩm trùng lịch, quota thấp hơn đã bán; tìm sản phẩm và xác nhận cảnh báo tồn kho; kiểm tra doanh thu/đã bán/còn lại; thử hủy chương trình có đơn và xác nhận không xóa được chương trình hoặc gỡ sản phẩm đã có đơn. Đăng nhập bằng nhân viên để xác nhận không truy cập được route Flash Sale.
 
+**8C. Flash Sale cho khách hàng:** `/` hiển thị chương trình đang chạy hoặc sắp bắt đầu; `/flash-sale` liệt kê các chương trình và `/flash-sale/status` trả tiến độ JSON. Trang chủ, danh sách và chi tiết sản phẩm dùng đồng hồ theo giờ máy chủ, polling tối thiểu 20 giây khi tab đang hiện và có chương trình chạy. Giá được xác nhận lại ở giỏ/đặt hàng; giỏ báo và cập nhật giá thường nếu ưu đãi kết thúc/hết suất. Không cần migration mới.
+
+Chạy toàn bộ test trên database thử nghiệm riêng tên kết thúc bằng `_test`, đã import schema và seed. Không dùng database có dữ liệu thật:
+
+```powershell
+$env:INVENTORY_TEST_DB_NAME = 'nongsan_flashsale_test'
+$tests = @(
+  @('vnpay-signature.php'), @('redirect-helpers.php'), @('reconcile.php'),
+  @('payment-flows.php'), @('flash-sale.php'), @('flash-sale-admin.php'),
+  @('fefo.php', '4', '1'), @('concurrency.php', '--cli'),
+  @('checkout-invariants.php'), @('checkout-concurrency.php')
+)
+foreach ($test in $tests) {
+  & 'C:\xampp\php\php.exe' (Join-Path 'setup\tests' $test[0]) @($test | Select-Object -Skip 1)
+  if ($LASTEXITCODE -ne 0) { throw "Test failed: $($test[0])" }
+}
+```
+
+Kiểm tra thủ công phía khách: xem khối ở trang chủ khi có chiến dịch chạy/sắp diễn ra; xác nhận đếm ngược và số đã bán trên `/flash-sale`; thử chi tiết sản phẩm và giới hạn mua; thêm vào giỏ khi đã đăng nhập và khi chưa đăng nhập (phải quay lại trang đã chọn); để chiến dịch kết thúc/hết suất rồi mở lại giỏ và xác nhận thông báo cùng giá mới; kiểm tra snapshot giá trên trang đơn hàng. VietQR/VNPay vẫn cần xác nhận luồng thanh toán trên môi trường thử nghiệm.
+
 **5. Đơn hàng của người dùng mẫu:**
 
 ```sql

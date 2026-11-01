@@ -8,6 +8,14 @@ final class AuthController extends Controller
 
     public function showLogin(): void
     {
+        $returnTo = $_GET['return_to'] ?? null;
+        if (is_string($returnTo) && is_internal_redirect_path($returnTo)
+            && !str_starts_with($returnTo, '/login')) {
+            Session::start();
+            if (empty($_SESSION['_intended_url'])) {
+                $_SESSION['_intended_url'] = $returnTo;
+            }
+        }
         $this->view('client/login', [
             'title' => 'Đăng nhập',
             'errors' => form_errors(),

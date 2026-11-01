@@ -41,6 +41,7 @@ final class CartService
             $item['current_price'] = PricingService::moneyToVnd((string) $item['current_price']);
             $item['price_changed'] = $item['price_snapshot'] !== null
                 && PricingService::moneyToVnd((string) $item['price_snapshot']) !== $item['current_price'];
+            $item['is_flash_sale'] = !empty($item['flash_sale_item_id']);
             $item['available_stock'] = (int) ($stock[(int) $item['product_id']] ?? 0);
             $item['valid'] = $item['product_status'] === 'active' && $item['deleted_at'] === null && $item['available_stock'] > 0;
             $item['message'] = null;
@@ -60,7 +61,17 @@ final class CartService
                     $item['quantity'] = $clamped;
                 }
                 if ($item['price_changed']) {
-                    $item['message'] = trim(($item['message'] ? $item['message'] . ' ' : '') . 'Giá đã thay đổi; đang hiển thị giá hiện hành.');
+                    $snapshot = PricingService::moneyToVnd((string) $item['price_snapshot']);
+                    if (!$item['is_flash_sale'] && $snapshot < $item['current_price']) {
+                        $item['flash_sale_message'] ??= 'Flash Sale đã kết thúc hoặc hết suất; giá giỏ hàng đã được cập nhật về giá hiện hành.';
+                    }
+                    $item['message'] = trim(
+                        ($item['message'] ? $item['message'] . ' ' : '')
+                        . ($item['flash_sale_message'] ?? 'Giá đã thay đổi; đang hiển thị giá hiện hành.')
+                    );
+                    $this->database->prepare(
+                        'UPDATE cart_items SET price_snapshot = :price WHERE id = :id'
+                    )->execute(['price' => $item['current_price'], 'id' => $item['cart_item_id']]);
                 }
                 $subtotal += PricingService::lineTotal((string) $item['current_price'], (int) $item['quantity']);
             }

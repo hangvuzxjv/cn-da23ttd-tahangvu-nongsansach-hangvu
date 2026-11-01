@@ -29,7 +29,16 @@ final class CheckoutController extends Controller
                 'formatted_subtotal' => number_format($summary['subtotal'], 0, ',', '.') . ' ₫',
             ]);
         } catch (InventoryException | InvalidArgumentException $exception) {
+            if (str_contains(mb_strtolower($exception->getMessage(), 'UTF-8'), 'đăng nhập để mua sản phẩm flash sale')) {
+                return Response::json(false, $exception->getMessage(), [], 401);
+            }
             return Response::json(false, $exception->getMessage(), [], 422);
+        } catch (HttpException $exception) {
+            return Response::json(false, $exception->getMessage(), [], $exception->status());
+        } catch (PDOException $exception) {
+            return $this->cartJsonFailure($exception);
+        } catch (Throwable $exception) {
+            return $this->cartJsonFailure($exception);
         }
     }
 
@@ -49,6 +58,10 @@ final class CheckoutController extends Controller
             ]);
         } catch (InventoryException | InvalidArgumentException $exception) {
             return Response::json(false, $exception->getMessage(), [], 422);
+        } catch (PDOException $exception) {
+            return $this->cartJsonFailure($exception);
+        } catch (Throwable $exception) {
+            return $this->cartJsonFailure($exception);
         }
     }
 
@@ -139,6 +152,12 @@ final class CheckoutController extends Controller
             return Response::json(true, 'Đã tính lại tổng tiền.', $this->formatQuote($quote));
         } catch (PricingException | InventoryException | InvalidArgumentException $exception) {
             return Response::json(false, $exception->getMessage(), [], 422);
+        } catch (HttpException $exception) {
+            return Response::json(false, $exception->getMessage(), [], $exception->status());
+        } catch (PDOException $exception) {
+            return $this->cartJsonFailure($exception);
+        } catch (Throwable $exception) {
+            return $this->cartJsonFailure($exception);
         }
     }
 
@@ -433,7 +452,11 @@ final class CheckoutController extends Controller
                 'product_id' => (int) $item['product_id'],
                 'category_id' => (int) $item['category_id'],
                 'quantity' => (int) $item['quantity'],
-                'unit_price' => (string) $item['current_price'],
+                'unit_price' => (string) (
+                    $item['sale_price'] !== null && PricingService::moneyToVnd((string) $item['sale_price']) > 0
+                        ? $item['sale_price']
+                        : $item['price']
+                ),
             ];
         }
         return $valid;
@@ -450,7 +473,19 @@ final class CheckoutController extends Controller
             'formatted_discount' => number_format($quote['discount'], 0, ',', '.') . ' ₫',
             'formatted_shipping' => number_format($quote['shipping_fee'], 0, ',', '.') . ' ₫',
             'formatted_total' => number_format($quote['total'], 0, ',', '.') . ' ₫',
+            'flash_sale_messages' => $quote['flash_sale_messages'] ?? [],
         ];
+    }
+
+    private function cartJsonFailure(Throwable $exception): Response
+    {
+        error_log('Customer cart/checkout AJAX failed: ' . $exception->getMessage());
+        return Response::json(
+            false,
+            'Không thể cập nhật giỏ hàng lúc này. Vui lòng tải lại trang và thử lại.',
+            [],
+            503
+        );
     }
 
     private function checkoutFailure(string $message, array $input): never

@@ -49,7 +49,11 @@
             <div class="card-body">
                 <?php foreach ($cart['items'] as $item): ?>
                     <div class="d-flex justify-content-between gap-3 mb-2">
-                        <span><?= e($item['name']) ?> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?></span>
+                        <span>
+                            <?php if (!empty($item['is_flash_sale'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?>
+                            <?= e($item['name']) ?> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?>
+                            <?php if (!empty($item['flash_sale_message'])): ?><span class="d-block small text-warning-emphasis"><?= e($item['flash_sale_message']) ?></span><?php endif; ?>
+                        </span>
                         <strong><?= number_format($item['current_price'] * (int) $item['quantity'], 0, ',', '.') ?> ₫</strong>
                     </div>
                 <?php endforeach; ?>
@@ -64,6 +68,11 @@
                     <div id="voucherPreviewMessage" class="small mt-2" aria-live="polite"></div>
                 </form>
                 <div id="checkoutQuote" class="mt-3">
+                    <?php if (!empty($initialQuote['flash_sale_messages'])): ?>
+                        <div class="alert alert-warning py-2" data-flash-sale-messages><?= e(implode(' ', $initialQuote['flash_sale_messages'])) ?></div>
+                    <?php else: ?>
+                        <div class="small text-warning-emphasis" data-flash-sale-messages></div>
+                    <?php endif; ?>
                     <div class="d-flex justify-content-between"><span>Tạm tính</span><strong data-subtotal><?= number_format($initialQuote['subtotal'] ?? $cart['subtotal'], 0, ',', '.') ?> ₫</strong></div>
                     <div class="d-flex justify-content-between"><span>Giảm giá</span><strong data-discount><?= number_format($initialQuote['discount'] ?? 0, 0, ',', '.') ?> ₫</strong></div>
                     <div class="d-flex justify-content-between"><span>Phí vận chuyển</span><strong data-shipping><?= $initialQuote !== null ? number_format($initialQuote['shipping_fee'], 0, ',', '.') . ' ₫' : 'Chọn địa chỉ' ?></strong></div>

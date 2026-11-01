@@ -23,7 +23,13 @@
                             </div>
                         </div>
                     </td>
-                    <td><?= number_format($item['current_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?></td>
+                    <td>
+                        <?php if (!empty($item['is_flash_sale'])): ?>
+                            <span class="badge text-bg-danger">Flash Sale</span><br>
+                            <del class="small text-secondary"><?= number_format((int) $item['original_price'], 0, ',', '.') ?> ₫</del><br>
+                        <?php endif; ?>
+                        <?= number_format($item['current_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?>
+                    </td>
                     <td>
                         <?php if ($item['valid']): ?>
                             <form method="post" data-cart-update="<?= e(url('/gio-hang/cap-nhat')) ?>" class="d-flex gap-1">

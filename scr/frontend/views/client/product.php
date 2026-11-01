@@ -9,8 +9,52 @@
         <div class="text-success mb-2"><a href="<?= e(url('/danh-muc/' . $product['category_slug'])) ?>"><?= e($product['category_name']) ?></a></div>
         <h1 class="h2"><?= e($product['name']) ?></h1>
         <p class="text-secondary"><?= e($product['short_description']) ?></p>
-        <p class="mb-1"><?php if ($product['sale_price'] !== null): ?><del class="text-secondary"><?= number_format((float) $product['price'], 0, ',', '.') ?> ₫</del><?php endif; ?></p>
-        <div class="h3 text-danger"><?= number_format((float) ($product['sale_price'] ?? $product['price']), 0, ',', '.') ?> ₫ <span class="fs-6 text-secondary">/ <?= e($product['unit']) ?></span></div>
+        <?php $regularPrice = $product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0 ? $product['sale_price'] : $product['price']; ?>
+        <?php if ($flashSale): ?>
+            <?php
+            $flashSaleEnd = new DateTimeImmutable($flashSale['ends_at'], new DateTimeZone('Asia/Ho_Chi_Minh'));
+            $flashLoginUrl = url('/login?return_to=' . rawurlencode('/san-pham/' . $product['slug']));
+            ?>
+            <div class="border border-danger rounded p-3 mb-3" data-flash-sale-root data-server-time="<?= e($flashSaleServerTime) ?>"
+                 data-progress-url="<?= e(url('/flash-sale/status')) ?>" data-has-active="1">
+                <div class="d-flex flex-wrap justify-content-between gap-2">
+                    <strong class="text-danger">Flash Sale · <?= e($flashSale['campaign_name']) ?></strong>
+                    <span class="small">Kết thúc sau <strong data-countdown data-countdown-target="<?= e($flashSaleEnd->format(DATE_ATOM)) ?>">Đang đồng bộ giờ máy chủ…</strong></span>
+                </div>
+                <div class="mt-2" data-flash-item="<?= (int) $flashSale['flash_sale_item_id'] ?>"
+                     data-quota="<?= (int) $flashSale['quota'] ?>" data-sold="<?= (int) $flashSale['sold_quantity'] ?>">
+                    <del class="text-secondary"><?= number_format((float) $regularPrice, 0, ',', '.') ?> ₫</del>
+                    <div class="h3 text-danger mb-1"><?= number_format((float) $flashSale['sale_price'], 0, ',', '.') ?> ₫ <span class="fs-6 text-secondary">/ <?= e($product['unit']) ?></span></div>
+                    <div class="small text-secondary">Còn <span data-remaining><?= number_format((int) $flashSale['remaining']) ?></span>/<?= (int) $flashSale['quota'] ?> suất Flash Sale</div>
+                    <div class="small text-danger" data-flash-poll-message role="status" aria-live="polite"></div>
+                    <div class="mt-3" data-flash-action>
+                        <?php if ((int) $flashSale['remaining'] < 1): ?>
+                            <button class="btn btn-secondary btn-lg" type="button" disabled>Đã hết suất</button>
+                        <?php elseif ((int) $product['actual_stock'] < 1): ?>
+                            <button class="btn btn-secondary btn-lg" type="button" disabled>Hết tồn kho</button>
+                        <?php elseif ((int) $flashSale['user_remaining'] < 1): ?>
+                            <button class="btn btn-secondary btn-lg" type="button" disabled>Bạn đã đạt giới hạn mua</button>
+                        <?php elseif (!$flashSaleLoggedIn): ?>
+                            <a class="btn btn-danger btn-lg" href="<?= e($flashLoginUrl) ?>">Đăng nhập để mua Flash Sale</a>
+                        <?php else: ?>
+                            <form data-cart-add="<?= e(url('/gio-hang/them')) ?>" data-login-url="<?= e($flashLoginUrl) ?>">
+                                <?= csrf_field() ?>
+                                <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+                                <div class="input-group" style="max-width:22rem">
+                                    <input class="form-control" type="number" name="quantity" data-max-buy="<?= (int) $flashSale['max_buy_quantity'] ?>" value="1" min="1" max="<?= (int) $flashSale['max_buy_quantity'] ?>" aria-label="Số lượng sản phẩm">
+                                    <span class="input-group-text"><?= e($product['unit']) ?></span>
+                                    <button class="btn btn-danger" type="submit">Thêm Flash Sale vào giỏ</button>
+                                </div>
+                                <div data-cart-message aria-live="polite"></div>
+                            </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        <?php else: ?>
+            <p class="mb-1"><?php if ($product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0): ?><del class="text-secondary"><?= number_format((float) $product['price'], 0, ',', '.') ?> ₫</del><?php endif; ?></p>
+            <div class="h3 text-danger"><?= number_format((float) $regularPrice, 0, ',', '.') ?> ₫ <span class="fs-6 text-secondary">/ <?= e($product['unit']) ?></span></div>
+        <?php endif; ?>
         <p>Tình trạng: <strong class="<?= $stockStatus === 'Hết hàng' ? 'text-danger' : ($stockStatus === 'Sắp hết hàng' ? 'text-warning' : 'text-success') ?>"><?= e($stockStatus) ?></strong> (<?= (int) $product['actual_stock'] ?>)</p>
         <dl class="row">
             <dt class="col-sm-4">Vùng miền</dt><dd class="col-sm-8"><a href="<?= e(url('/vung-mien/' . $product['region_slug'])) ?>"><?= e($product['parent_region_name'] ? $product['parent_region_name'] . ' · ' : '') ?><?= e($product['region_name']) ?></a></dd>
@@ -18,7 +62,7 @@
             <?php if ($product['certifications'] || $product['farm_certifications']): ?><dt class="col-sm-4">Chứng nhận</dt><dd class="col-sm-8"><?= e(implode(' · ', array_filter([$product['certifications'], $product['farm_certifications']]))) ?></dd><?php endif; ?>
             <?php if ($product['suggested_shelf_life_days']): ?><dt class="col-sm-4">Hạn dùng gợi ý</dt><dd class="col-sm-8"><?= (int) $product['suggested_shelf_life_days'] ?> ngày</dd><?php endif; ?>
         </dl>
-        <?php if ((int) $product['actual_stock'] > 0): ?>
+        <?php if (!$flashSale && (int) $product['actual_stock'] > 0): ?>
             <form class="mt-3" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
                 <?= csrf_field() ?>
                 <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
@@ -29,7 +73,7 @@
                 </div>
                 <div data-cart-message aria-live="polite"></div>
             </form>
-        <?php else: ?>
+        <?php elseif (!$flashSale): ?>
             <button class="btn btn-secondary btn-lg" type="button" disabled>Hết hàng</button>
         <?php endif; ?>
     </div>

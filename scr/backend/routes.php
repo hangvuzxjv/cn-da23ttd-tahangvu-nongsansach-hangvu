@@ -3,6 +3,8 @@
 $router->get('/', [HomeController::class, 'index']);
 $router->get('/san-pham', [StorefrontController::class, 'shop']);
 $router->get('/san-pham/{slug}', [StorefrontController::class, 'product']);
+$router->get('/flash-sale/status', [StorefrontController::class, 'flashSaleProgress']);
+$router->get('/flash-sale', [StorefrontController::class, 'flashSales']);
 $router->get('/vung-mien/{slug}', [StorefrontController::class, 'region']);
 $router->get('/danh-muc/{slug}', [StorefrontController::class, 'category']);
 $router->get('/sitemap.xml', [StorefrontController::class, 'sitemap']);

@@ -11,6 +11,10 @@
             credentials: 'same-origin'
         });
         const result = await readResponse(response);
+        if (response.status === 401 && form.dataset.loginUrl) {
+            window.location.assign(form.dataset.loginUrl);
+            return null;
+        }
         if (!response.ok || !result.success) throw new Error(result.message || 'Không thể cập nhật giỏ hàng.');
         return result;
     }
@@ -62,6 +66,7 @@
             const message = form.querySelector('[data-cart-message]');
             try {
                 const result = await submit(form, form.dataset.cartAdd);
+                if (!result) return;
                 updateMiniCart(result.data);
                 if (message) {
                     message.className = 'small text-success mt-2';
@@ -133,6 +138,14 @@
             quoteTarget.querySelector('[data-discount]').textContent = quote.formatted_discount;
             quoteTarget.querySelector('[data-shipping]').textContent = quote.formatted_shipping;
             quoteTarget.querySelector('[data-total]').textContent = quote.formatted_total;
+            const flashSaleMessages = quoteTarget.querySelector('[data-flash-sale-messages]');
+            const saleMessages = quote.flash_sale_messages || [];
+            if (flashSaleMessages) {
+                flashSaleMessages.className = saleMessages.length
+                    ? 'alert alert-warning py-2'
+                    : 'small text-warning-emphasis';
+                flashSaleMessages.textContent = saleMessages.join(' ');
+            }
             if (quoteMessage) {
                 quoteMessage.className = 'small text-success';
                 quoteMessage.textContent = 'Đã tính lại tạm tính, giảm giá và phí vận chuyển.';

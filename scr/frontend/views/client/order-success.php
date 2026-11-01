@@ -7,7 +7,7 @@
 <?php if ($emailWarning): ?><div class="alert alert-warning mx-auto" style="max-width:760px"><?= e($emailWarning) ?></div><?php endif; ?>
 <div class="card mx-auto" style="max-width: 760px">
     <div class="card-body">
-        <?php foreach ($items as $item): ?><div class="d-flex justify-content-between border-bottom py-2"><span><?= e($item['product_name']) ?> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?></span><strong><?= number_format((float) $item['line_total'], 0, ',', '.') ?> ₫</strong></div><?php endforeach; ?>
+        <?php foreach ($items as $item): ?><div class="d-flex justify-content-between border-bottom py-2"><span><?php if (!empty($item['flash_sale_item_id'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?><?= e($item['product_name']) ?> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?><span class="d-block small text-secondary"><?= number_format((float) $item['unit_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?></span></span><strong><?= number_format((float) $item['line_total'], 0, ',', '.') ?> ₫</strong></div><?php endforeach; ?>
         <div class="d-flex justify-content-between pt-3"><span>Tạm tính</span><span><?= number_format((float) $order['subtotal'], 0, ',', '.') ?> ₫</span></div>
         <div class="d-flex justify-content-between"><span>Giảm giá</span><span>-<?= number_format((float) $order['discount_amount'], 0, ',', '.') ?> ₫</span></div>
         <div class="d-flex justify-content-between"><span>Phí vận chuyển</span><span><?= number_format((float) $order['shipping_fee'], 0, ',', '.') ?> ₫</span></div>
