@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($title ?? 'Nông Sản Sạch') ?> - Nông Sản Sạch</title>
     <meta name="description" content="<?= e($metaDescription ?? 'Nông sản sạch theo mùa, minh bạch nguồn gốc từ các vùng miền Việt Nam.') ?>">
+    <meta name="theme-color" content="#176b3a">
     <meta name="csrf-token" content="<?= e(Csrf::token()) ?>">
     <meta name="app-base-url" content="<?= e(url('/')) ?>">
     <link rel="icon" type="image/svg+xml" href="<?= e(asset('/favicon.svg')) ?>">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="<?= e(asset('/css/vendor/bootstrap.min.css')) ?>" rel="stylesheet">
     <link href="<?= e(asset('/css/app.css')) ?>" rel="stylesheet">
 </head>
 <body>
@@ -41,7 +42,7 @@
                             Thông báo <span class="badge bg-warning text-dark d-none" id="notificationCount">0</span>
                         </button>
                         <div class="dropdown-menu dropdown-menu-end p-2" aria-labelledby="notificationMenu"
-                             id="notificationList" style="min-width:min(22rem,90vw);max-height:70vh;overflow:auto">
+                             id="notificationList">
                             <span class="dropdown-item-text text-muted">Đang tải thông báo…</span>
                         </div>
                     </div>
@@ -84,7 +85,7 @@ $footerPages = $footerPageQuery->fetchAll();
         </div>
     </div>
 </footer>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="<?= e(asset('/js/vendor/bootstrap.bundle.min.js')) ?>"></script>
 <script src="<?= e(asset('/js/cart.js')) ?>"></script>
 <script src="<?= e(asset('/js/flash-sale.js')) ?>"></script>
 <script src="<?= e(asset('/js/customer-engagement.js')) ?>"></script>

@@ -384,6 +384,7 @@ final class StorefrontController extends Controller
         };
         $statement = Database::connection()->prepare(
             'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock, p.short_description,
+                    r.name AS region_name,
                     COALESCE(stock.quantity, 0) AS actual_stock,
                     COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url,
                     COALESCE(review_summary.average_rating, 0) AS average_rating,

@@ -1,4 +1,4 @@
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 dashboard-page">
     <div>
         <h1 class="h2">Bảng điều khiển</h1>
         <p class="text-secondary mb-0">Xin chào <?= e($user['name'] ?? '') ?> · Vai trò: <?= e($user['role'] ?? '') ?></p>
@@ -23,13 +23,13 @@
     $maxRegion = max(1, ...array_map(static fn (array $row): float => (float) $row['revenue'], $dashboard['regionalRevenue']));
     ?>
     <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-4 g-3 mt-2">
-        <div class="col"><div class="card h-100 border-success"><div class="card-body"><div class="text-secondary">Doanh thu hôm nay</div><div class="fs-4 fw-bold text-success"><?= e($money($dashboard['revenue']['today'] ?? 0)) ?></div></div></div></div>
-        <div class="col"><div class="card h-100"><div class="card-body"><div class="text-secondary">Doanh thu 7 ngày</div><div class="fs-4 fw-bold"><?= e($money($dashboard['revenue']['last_7_days'] ?? 0)) ?></div></div></div></div>
-        <div class="col"><div class="card h-100"><div class="card-body"><div class="text-secondary">Doanh thu 30 ngày</div><div class="fs-4 fw-bold"><?= e($money($dashboard['revenue']['last_30_days'] ?? 0)) ?></div></div></div></div>
-        <div class="col"><div class="card h-100"><div class="card-body"><div class="text-secondary">Đơn chờ xử lý</div><div class="fs-4 fw-bold"><?= (int) $dashboard['pendingOrders'] ?></div></div></div></div>
-        <div class="col"><div class="card h-100"><div class="card-body"><div class="text-secondary">Khách mới hôm nay</div><div class="fs-4 fw-bold"><?= (int) $dashboard['newCustomers'] ?></div></div></div></div>
-        <div class="col"><div class="card h-100"><div class="card-body"><div class="text-secondary">Sản phẩm dưới tồn tối thiểu</div><div class="fs-4 fw-bold <?= (int) $dashboard['lowStock'] > 0 ? 'text-danger' : '' ?>"><?= (int) $dashboard['lowStock'] ?></div></div></div></div>
-        <div class="col"><div class="card h-100"><div class="card-body"><div class="text-secondary">Lô sắp hết hạn (30 ngày)</div><div class="fs-4 fw-bold <?= (int) $dashboard['nearExpiry'] > 0 ? 'text-warning' : '' ?>"><?= (int) $dashboard['nearExpiry'] ?></div></div></div></div>
+        <div class="col"><div class="card h-100 border-success dashboard-stat"><div class="card-body"><div class="text-secondary">Doanh thu hôm nay</div><div class="fs-4 fw-bold text-success"><?= e($money($dashboard['revenue']['today'] ?? 0)) ?></div></div></div></div>
+        <div class="col"><div class="card h-100 dashboard-stat"><div class="card-body"><div class="text-secondary">Doanh thu 7 ngày</div><div class="fs-4 fw-bold"><?= e($money($dashboard['revenue']['last_7_days'] ?? 0)) ?></div></div></div></div>
+        <div class="col"><div class="card h-100 dashboard-stat"><div class="card-body"><div class="text-secondary">Doanh thu 30 ngày</div><div class="fs-4 fw-bold"><?= e($money($dashboard['revenue']['last_30_days'] ?? 0)) ?></div></div></div></div>
+        <div class="col"><div class="card h-100 dashboard-stat"><div class="card-body"><div class="text-secondary">Đơn chờ xử lý</div><div class="fs-4 fw-bold"><?= (int) $dashboard['pendingOrders'] ?></div></div></div></div>
+        <div class="col"><div class="card h-100 dashboard-stat"><div class="card-body"><div class="text-secondary">Khách mới hôm nay</div><div class="fs-4 fw-bold"><?= (int) $dashboard['newCustomers'] ?></div></div></div></div>
+        <div class="col"><div class="card h-100 dashboard-stat"><div class="card-body"><div class="text-secondary">Sản phẩm dưới tồn tối thiểu</div><div class="fs-4 fw-bold <?= (int) $dashboard['lowStock'] > 0 ? 'text-danger' : '' ?>"><?= (int) $dashboard['lowStock'] ?></div></div></div></div>
+        <div class="col"><div class="card h-100 dashboard-stat"><div class="card-body"><div class="text-secondary">Lô sắp hết hạn (30 ngày)</div><div class="fs-4 fw-bold <?= (int) $dashboard['nearExpiry'] > 0 ? 'text-warning' : '' ?>"><?= (int) $dashboard['nearExpiry'] ?></div></div></div></div>
     </div>
 
     <section class="card mt-4">
@@ -50,13 +50,13 @@
                     <h2 class="h5">Doanh thu 14 ngày gần nhất</h2>
                     <p class="small text-secondary">Theo tổng tiền đã lưu trên đơn; loại đơn hủy và hoàn tiền.</p>
                     <div class="table-responsive">
-                        <svg viewBox="0 0 700 190" role="img" aria-label="Biểu đồ doanh thu 14 ngày" class="w-100" style="min-width:560px;height:190px">
-                            <line x1="20" y1="155" x2="680" y2="155" stroke="#adb5bd" />
-                            <polyline points="<?= e(implode(' ', $points)) ?>" fill="none" stroke="#198754" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+                        <svg viewBox="0 0 700 190" role="img" aria-label="Biểu đồ doanh thu 14 ngày" class="w-100 dashboard-chart">
+                            <line x1="20" y1="155" x2="680" y2="155" class="dashboard-chart__axis" />
+                            <polyline points="<?= e(implode(' ', $points)) ?>" fill="none" class="dashboard-chart__line" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
                             <?php foreach ($dashboard['dailyRevenue'] as $index => $row): if ($index % 2 !== 0 && $index !== 13) { continue; } ?>
                                 <?php $x = 20 + $index * 50; $y = 155 - (int) round((float) $row['revenue'] / $maxDaily * 130); ?>
-                                <circle cx="<?= $x ?>" cy="<?= $y ?>" r="4" fill="#198754"><title><?= e($row['date']) ?>: <?= e($money($row['revenue'])) ?></title></circle>
-                                <text x="<?= $x ?>" y="178" text-anchor="middle" font-size="10" fill="#495057"><?= e(substr((string) $row['date'], 5)) ?></text>
+                                <circle cx="<?= $x ?>" cy="<?= $y ?>" r="4" class="dashboard-chart__point"><title><?= e($row['date']) ?>: <?= e($money($row['revenue'])) ?></title></circle>
+                                <text x="<?= $x ?>" y="178" text-anchor="middle" font-size="10" class="dashboard-chart__label"><?= e(substr((string) $row['date'], 5)) ?></text>
                             <?php endforeach; ?>
                         </svg>
                     </div>
@@ -72,7 +72,7 @@
                             <?php $width = min(100, (int) round((float) $row['revenue'] / $maxRegion * 100)); ?>
                             <div class="mb-3">
                                 <div class="d-flex justify-content-between gap-2 small"><span><?= e($row['region_name']) ?></span><strong><?= e($money($row['revenue'])) ?></strong></div>
-                                <div class="progress" role="progressbar" aria-valuenow="<?= $width ?>" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar bg-success" style="width:<?= $width ?>%"></div></div>
+                                <div class="progress dashboard-region-progress" role="progressbar" aria-valuenow="<?= $width ?>" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar bg-success" style="width:<?= $width ?>%"></div></div>
                             </div>
                         <?php endforeach; ?>
                     <?php endif; ?>

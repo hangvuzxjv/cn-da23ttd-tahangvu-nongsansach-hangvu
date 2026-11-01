@@ -1,5 +1,5 @@
-<section class="text-center py-5">
-    <p class="display-1 fw-bold text-danger">500</p>
+<section class="text-center py-5 error-card">
+    <p class="display-1 fw-bold text-danger error-card__code">500</p>
     <h1 class="h3">Đã xảy ra lỗi máy chủ</h1>
     <p class="text-secondary">Vui lòng thử lại sau.</p>
     <?php if (!empty($detail)): ?>

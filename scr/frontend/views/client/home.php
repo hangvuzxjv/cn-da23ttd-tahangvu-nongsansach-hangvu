@@ -3,7 +3,7 @@
         <div class="carousel-inner rounded-3 overflow-hidden">
             <?php foreach ($banners as $index => $banner): ?><div class="carousel-item <?= $index === 0 ? 'active' : '' ?>">
                 <?php if ($banner['link_url']): ?><a href="<?= e($banner['link_url']) ?>"><?php endif; ?>
-                <img class="d-block w-100 home-banner" src="<?= e(asset($banner['image_url'])) ?>" alt="<?= e($banner['title']) ?>" <?= $index > 0 ? 'loading="lazy"' : '' ?>>
+                <img class="d-block w-100 home-banner" src="<?= e(asset($banner['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($banner['title']) ?>" <?= $index > 0 ? 'loading="lazy"' : 'fetchpriority="high"' ?>>
                 <div class="carousel-caption d-none d-md-block"><h1><?= e($banner['title']) ?></h1></div>
                 <?php if ($banner['link_url']): ?></a><?php endif; ?>
             </div><?php endforeach; ?>
@@ -12,7 +12,7 @@
     </div>
 <?php else: ?>
     <section class="p-4 p-md-5 mb-5 rounded-3 home-hero">
-        <div class="col-lg-7 py-4"><h1 class="display-5 fw-bold">Nông sản sạch, an tâm mỗi ngày</h1><p class="fs-5">Khám phá sản vật theo mùa từ các vùng miền Việt Nam, minh bạch nguồn gốc từ nông trại.</p><a class="btn btn-success btn-lg" href="<?= e(url('/san-pham')) ?>">Khám phá sản phẩm</a></div>
+        <div class="col-lg-7 py-4 home-hero__content"><p class="home-hero__eyebrow">Tươi ngon · Theo mùa · Rõ nguồn gốc</p><h1 class="display-5 fw-bold">Nông sản sạch, an tâm mỗi ngày</h1><p class="fs-5">Khám phá sản vật theo mùa từ các vùng miền Việt Nam, minh bạch nguồn gốc từ nông trại.</p><a class="btn btn-success btn-lg" href="<?= e(url('/san-pham')) ?>">Khám phá sản phẩm</a></div>
     </section>
 <?php endif; ?>
 
@@ -70,7 +70,7 @@
                 ?>
                 <div class="col" data-flash-item="<?= (int) $sale['flash_sale_item_id'] ?>"
                      data-quota="<?= (int) $sale['quota'] ?>" data-sold="<?= (int) $sale['sold_quantity'] ?>">
-                    <article class="card h-100 border-danger shadow-sm position-relative">
+                    <article class="card h-100 border-danger shadow-sm position-relative product-card product-card--flash">
                         <?php
                         $wishlistProductId = (int) $sale['product_id'];
                         $wishlistProductName = $sale['product_name'];
@@ -78,11 +78,12 @@
                         require FRONTEND_PATH . '/views/client/wishlist-button.php';
                         ?>
                         <a class="catalog-card-image" href="<?= e(url('/san-pham/' . $sale['product_slug'])) ?>">
-                            <img class="card-img-top" src="<?= e(asset($sale['image_url'])) ?>" alt="<?= e($sale['product_name']) ?>" loading="lazy">
+                            <img class="card-img-top" src="<?= e(asset($sale['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($sale['product_name']) ?>" loading="lazy">
                         </a>
                         <div class="card-body d-flex flex-column">
                             <div class="small text-danger"><?= e($flashSaleCampaign['name']) ?></div>
                             <h3 class="h6"><a class="link-dark" href="<?= e(url('/san-pham/' . $sale['product_slug'])) ?>"><?= e($sale['product_name']) ?></a></h3>
+                            <?php if (!empty($sale['region_name'])): ?><span class="product-card__region"><?= e($sale['region_name']) ?></span><?php endif; ?>
                             <div class="mb-2"><del class="small text-secondary"><?= number_format((float) $sale['normal_price'], 0, ',', '.') ?> ₫</del>
                                 <span class="badge text-bg-danger"><?= $discountPercent ?>% giảm</span>
                                 <div class="fw-bold fs-5 text-danger"><?= number_format((float) $sale['sale_price'], 0, ',', '.') ?> ₫ <span class="small text-secondary">/ <?= e($sale['unit']) ?></span></div>

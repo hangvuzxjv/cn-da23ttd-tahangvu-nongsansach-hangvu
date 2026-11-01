@@ -251,6 +251,7 @@ final class FlashSaleService
                     fsi.id AS flash_sale_item_id, fsi.product_id, fsi.sale_price, fsi.quota,
                     fsi.sold_quantity, fsi.per_user_limit, fsi.sort_order,
                     p.name AS product_name, p.slug AS product_slug, p.price AS regular_price,
+                    region.name AS region_name,
                     p.unit,
                     COALESCE(NULLIF(p.sale_price, 0), p.price) AS normal_price,
                     COALESCE(stock.available, 0) AS available_stock,
@@ -259,6 +260,7 @@ final class FlashSaleService
              FROM flash_sales fs
              JOIN flash_sale_items fsi ON fsi.flash_sale_id = fs.id
              JOIN products p ON p.id = fsi.product_id AND p.status = 'active' AND p.deleted_at IS NULL
+             LEFT JOIN regions region ON region.id = p.region_id
              LEFT JOIN (
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), ',', 1) AS image_url
                  FROM product_images GROUP BY product_id

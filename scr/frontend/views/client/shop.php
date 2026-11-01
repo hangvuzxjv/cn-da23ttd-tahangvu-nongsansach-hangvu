@@ -1,8 +1,9 @@
+<div class="catalog-page">
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><?php foreach ($breadcrumbs as $crumb): ?><li class="breadcrumb-item"><?php if ($crumb['url']): ?><a href="<?= e(url($crumb['url'])) ?>"><?= e($crumb['name']) ?></a><?php else: ?><?= e($crumb['name']) ?><?php endif; ?></li><?php endforeach; ?></ol></nav>
 <div class="mb-4"><h1 class="h2"><?= e($title) ?></h1><p class="text-secondary"><?= e($description) ?></p></div>
 
 <?php $filterAction = $scopeType === 'region' ? '/vung-mien/' . $scope['region']['slug'] : ($scopeType === 'category' ? '/danh-muc/' . $scope['category']['slug'] : '/san-pham'); ?>
-<form class="card card-body mb-4" method="get" action="<?= e(url($filterAction)) ?>">
+<form class="card card-body catalog-filter mb-4" method="get" action="<?= e(url($filterAction)) ?>">
     <?php if ($scopeType === 'region'): ?><input type="hidden" name="region" value="<?= (int) $scope['region']['id'] ?>"><?php endif; ?>
     <?php if ($scopeType === 'category'): ?><input type="hidden" name="category" value="<?= (int) $scope['category']['id'] ?>"><?php endif; ?>
     <div class="row g-2 align-items-end">
@@ -23,3 +24,4 @@
 <p class="text-secondary"><?= (int) $total ?> sản phẩm</p>
 <?php require FRONTEND_PATH . '/views/client/product-cards.php'; ?>
 <?php if ($pages > 1): ?><nav class="mt-4" aria-label="Phân trang"><ul class="pagination"><?php for ($number = 1; $number <= $pages; $number++): $params = $_GET; $params['page'] = $number; ?><li class="page-item <?= $number === $page ? 'active' : '' ?>"><a class="page-link" href="<?= e(url($scopeType === 'region' ? '/vung-mien/' . $scope['region']['slug'] : ($scopeType === 'category' ? '/danh-muc/' . $scope['category']['slug'] : '/san-pham')) . '?' . http_build_query($params)) ?>"><?= $number ?></a></li><?php endfor; ?></ul></nav><?php endif; ?>
+</div>

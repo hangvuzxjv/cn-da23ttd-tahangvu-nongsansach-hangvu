@@ -38,6 +38,6 @@ final class View
             : null;
         $content = null;
         require $template;
-        require FRONTEND_PATH . '/views/layouts/client.php';
+        require FRONTEND_PATH . '/views/layouts/error.php';
     }
 }
