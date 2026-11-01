@@ -159,6 +159,7 @@ final class AdminController extends Controller
             ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
             ['permission' => 'shipping.view', 'label' => 'Phí vận chuyển', 'url' => '/admin/shipping'],
             ['permission' => 'reviews.view', 'label' => 'Đánh giá', 'url' => '/admin/reviews'],
+            ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
             ['permission' => 'customers.view', 'label' => 'Khách hàng', 'url' => '/admin/customers'],
             ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
             ['permission' => 'flash_sales.view', 'label' => 'Flash Sale', 'url' => '/admin/flash-sales'],

@@ -194,16 +194,18 @@ Các route ứng dụng được khai báo tập trung trong `scr/backend/routes
 
 - Đăng ký tại `/register`; server kiểm tra họ tên, email duy nhất, điện thoại, mật khẩu tối thiểu 8 ký tự có chữ/số và xác nhận mật khẩu. Mật khẩu lưu bằng bcrypt.
 - Đăng nhập tại `/login`, đăng xuất chỉ qua POST có CSRF. Email/mật khẩu sai dùng chung thông báo; năm lần sai liên tiếp theo cặp email/IP khóa cặp đó trong 15 phút. Bảng mới `login_attempts` chỉ lưu SHA-256 email/IP, số lần và thời hạn khóa.
-- `/forgot-password` tạo token ngẫu nhiên; DB chỉ lưu SHA-256 token, hết hạn sau 60 phút và chỉ dùng một lần. `/reset-password/{token}` nhận mật khẩu mới. Email xác thực tùy chọn tại `/verify-email/{token}`; thay đổi email trong hồ sơ sẽ yêu cầu xác thực lại.
+- `/forgot-password` tạo token ngẫu nhiên; DB chỉ lưu SHA-256 token, hết hạn sau 30 phút và chỉ dùng một lần. `/reset-password/{token}` nhận mật khẩu mới. Email xác thực tùy chọn tại `/verify-email/{token}`; thay đổi email trong hồ sơ sẽ yêu cầu xác thực lại. Hồ sơ có nút gửi lại email xác minh với giới hạn tần suất.
 - `/profile` cho phép cập nhật họ tên/email/điện thoại và đổi mật khẩu với mật khẩu hiện tại. `/addresses` cung cấp CRUD sổ địa chỉ và địa chỉ mặc định.
 - Session ID được đổi khi đăng nhập; cookie có `HttpOnly`, `SameSite=Lax`, bật `Secure` khi HTTPS. Session hết hạn sau hai giờ không hoạt động.
 - Các thay đổi đăng nhập/đăng xuất, đổi mật khẩu, đổi vai trò và khóa/mở tài khoản được ghi vào `audit_logs`.
 
 ### Cấu hình email
 
-`scr/backend/config/config.php` có cấu hình `mailer.driver` là `log` (mặc định) hoặc `smtp`. Đặt `app.url` thành URL chuẩn của ứng dụng để tạo liên kết email chính xác (không lấy domain từ HTTP Host của request). Driver `log` ghi email và liên kết vào `scr/backend/storage/logs/mail.log`; nếu `app.debug=true`, link demo cũng hiện trên trang sau thao tác tương ứng. Thư mục log bị Apache chặn truy cập trực tiếp.
+`scr/backend/config/config.php` giữ URL ứng dụng, người gửi và thông tin xác thực email; không commit tệp cấu hình thật. `app.url` là URL chuẩn dùng cho liên kết email, không lấy host từ request. Hệ thống hỗ trợ SMTP qua PHPMailer, Brevo HTTPS API và hộp thư chờ trong CSDL. Chọn ban đầu bằng `mailer.driver`; quyền quản trị có thể đổi kênh tại `/admin/mail`. Nếu SMTP/Brevo lỗi, nội dung được lưu ở outbox để quản trị gửi lại; lỗi gửi email không làm hỏng đăng ký, đặt lại mật khẩu hay đặt hàng.
 
-Driver `smtp` dùng PHPMailer. Chạy `composer install`, sau đó điền `mailer.smtp.host`, `port`, `username`, `password`, `encryption` và `mailer.from_address` trong cấu hình riêng. Tệp cấu hình thực tế không được commit. `Mailer` là interface và `MailerFactory` chọn driver; có thể thêm driver HTTP API sau này mà không đổi các luồng xác thực.
+Các khóa cần cấu hình trong `config.php`: `mailer.driver`, `mailer.from_address`, `mailer.from_name`, `mailer.smtp.host`, `mailer.smtp.port`, `mailer.smtp.username`, `mailer.smtp.password`, `mailer.smtp.encryption`, `mailer.brevo.api_key`. SMTP dùng cổng 587/STARTTLS theo cấu hình mẫu; Brevo gọi API HTTPS qua cURL. Trang `/admin/mail` chỉ hiển thị trạng thái đã cấu hình, không hiển thị khóa/mật khẩu; thư thử được gửi tới email tài khoản quản trị. Hộp thư chờ và nhật ký gửi nằm trong bảng `mail_outbox`, người nhận được che bớt khi hiển thị.
+
+Thông báo đơn hàng được lưu trong bảng `notifications`; Flash Sale đang chạy cho sản phẩm khách yêu thích cũng tạo thông báo. Danh sách trong menu khách polling không nhanh hơn 30 giây và chỉ gửi yêu cầu khi tab đang hiện.
 
 ### Quyền quản trị
 
@@ -219,9 +221,9 @@ Ma trận quyền có tại `scr/backend/config/permissions.php`. `admin` có to
 
 Đã kiểm tra qua PHP development server và MySQL cục bộ:
 
-- Đăng ký khách hàng, bcrypt, mail xác thực ghi vào `mail.log`, sau đó vào hồ sơ: **đạt**.
+- Đăng ký khách hàng, bcrypt, lưu thư xác thực vào hộp thư chờ rồi vào hồ sơ: **đạt**.
 - Năm mật khẩu sai liên tiếp rồi thử đúng trong thời gian khóa: bị từ chối với thông báo chung; bảng `login_attempts` lưu khóa theo email/IP: **đạt**.
-- Quên mật khẩu: link từ `mail.log`/debug đặt lại được mật khẩu; mở lại token trả lỗi hết hạn/đã dùng: **đạt**.
+- Quên mật khẩu: token đặt lại được mật khẩu; mở lại token trả lỗi hết hạn/đã dùng: **đạt**.
 - Đăng nhập customer, admin, staff_sales, staff_warehouse và kiểm tra route quản trị cho phép/từ chối theo quyền: **đạt**; customer vào `/admin` nhận HTTP 403.
 - POST `/logout` thiếu CSRF nhận HTTP 419; thao tác quản trị không thể tự đổi vai trò/trạng thái và các thay đổi tài khoản được ghi audit: **đạt**.
 - Xác thực email cập nhật `email_verified_at`; CRUD địa chỉ mặc định: **đạt**.
@@ -432,3 +434,30 @@ php setup/tests/payment-flows.php
 ```
 
 `vnpay-signature.php` không cần MySQL; nó xác nhận chuỗi ký `urlencode`, chữ ký mẫu cố định, xác minh Return/IPN đối xứng và từ chối dữ liệu bị sửa. `redirect-helpers.php` kiểm tra URL nội bộ, URL VNPay đã cấu hình có chữ ký hợp lệ, URL tuyệt đối không được phép, URL `//` và scheme lạ. `payment-flows.php` dùng khóa VNPay giả chỉ trong test và tạo sản phẩm/đơn riêng trong database thử; không dùng cổng thanh toán thật. Nó mô phỏng tạo đơn → tạo nhiều URL → Return từ TxnRef/amount lấy trực tiếp từ URL → Return thành công kể cả với lần thử trước → Return lặp, sai chữ ký, sai số tiền và TxnRef lạ; đồng thời xác nhận đơn chỉ có một payment thành công và chỉ trừ kho một lần. Test còn kiểm tra ngày giờ, IPv4, hết hạn đảo voucher/giải phóng tồn, tranh hàng, tổng tiền và VietQR. Lỗi đối chiếu được ghi vào PHP error log với TxnRef, số tiền nhận/đợi và order ID nếu tìm được; không ghi hash secret. Khi `app.debug=true`, dữ liệu ký và chữ ký được ghi nội bộ vào `scr/backend/storage/logs/vnpay-debug.log`; hash secret không được ghi. Không chạy script thanh toán trên database cần giữ dữ liệu.
+
+## Bước 9B: Email, hộp thư chờ và thông báo
+
+Trên CSDL đã có dữ liệu, hãy **sao lưu trước**, sau đó chỉ áp dụng `setup/database/migrations/20261103_email_notifications.sql` (có thể chạy lặp lại). Không chạy lại `schema.sql` hoặc `seed.sql`. Migration tạo `mail_outbox`, `mail_rate_limits` và thêm khóa nguồn để tránh sinh trùng thông báo; các bảng token xác minh/đặt lại mật khẩu và `notifications` hiện có được dùng lại.
+
+Điền các khóa `mailer.driver`, `mailer.from_address`, `mailer.from_name`, `mailer.smtp.host`, `mailer.smtp.port`, `mailer.smtp.username`, `mailer.smtp.password`, `mailer.smtp.encryption`, `mailer.brevo.api_key` trong `scr/backend/config/config.php`; chỉ dùng giá trị giả trong file mẫu. Chọn `smtp`, `brevo` hoặc `outbox`; quản trị viên cũng có thể đổi kênh tại `/admin/mail` mà không lưu bí mật vào CSDL. Cấu hình `app.url` chính xác để tạo link xác minh, đặt lại mật khẩu và theo dõi đơn. Luồng xác minh email vẫn là tùy chọn như hành vi hiện tại; token được lưu dạng băm, dùng một lần, xác minh hết hạn sau 60 phút và reset mật khẩu sau 30 phút. Mọi email lỗi gửi được giữ trong outbox; đặt hàng không bị rollback vì lỗi email. Nhân viên thường không có quyền truy cập trang cấu hình/thư.
+
+Routes mới: `POST /email/xac-minh/gui-lai`, `GET /notifications`, `POST /notifications/{id}/read`, `/admin/mail`, `POST /admin/mail/driver`, `POST /admin/mail/test`, `POST /admin/mail/{id}/resend`. Thao tác ghi có CSRF; APIs AJAX dùng `{ success, message, data }`. Dropdown thông báo polling tối thiểu 30 giây khi tab đang hiện.
+
+Chạy tất cả test trên **database thử riêng** có tên kết thúc `_test`, đã import schema + seed và áp dụng các migration trước đó cùng migration 9B:
+
+```powershell
+$env:INVENTORY_TEST_DB_NAME = 'nongsan_step9b_test'
+$tests = @(
+  @('vnpay-signature.php'), @('redirect-helpers.php'), @('reconcile.php'),
+  @('payment-flows.php'), @('flash-sale.php'), @('flash-sale-admin.php'),
+  @('customer-engagement.php'), @('email-infrastructure.php'),
+  @('fefo.php', '4', '1'), @('concurrency.php', '--cli'),
+  @('checkout-invariants.php'), @('checkout-concurrency.php')
+)
+foreach ($test in $tests) {
+  & 'C:\xampp\php\php.exe' (Join-Path 'setup\tests' $test[0]) @($test | Select-Object -Skip 1)
+  if ($LASTEXITCODE -ne 0) { throw "Test failed: $($test[0])" }
+}
+```
+
+Kiểm tra thủ công: chọn từng kênh và gửi thư thử; cố ý dùng cấu hình sai để xác nhận thư được giữ trong outbox rồi gửi lại; đăng ký/xác minh, gửi lại xác minh, quên/đặt lại mật khẩu và thử token cũ/hết hạn; kiểm tra đặt hàng COD/VietQR/VNPay vẫn thành công khi email lỗi; cập nhật trạng thái đơn và xem cả email/thông báo chuông; bật Flash Sale cho sản phẩm yêu thích để kiểm tra thông báo; xác nhận admin che email người nhận, xem lỗi an toàn và nhân viên không có quyền quản lý mail. Chưa cấu hình kênh thật thì chọn `outbox`, không gửi thư kiểm thử ra ngoài.

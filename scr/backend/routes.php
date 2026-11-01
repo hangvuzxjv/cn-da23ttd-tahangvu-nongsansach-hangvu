@@ -58,6 +58,9 @@ $router->post('/forgot-password', [AuthController::class, 'forgotPassword'], ['c
 $router->get('/reset-password/{slug}', [AuthController::class, 'showResetPassword']);
 $router->post('/reset-password/{slug}', [AuthController::class, 'resetPassword'], ['csrf']);
 $router->get('/verify-email/{slug}', [AuthController::class, 'verifyEmail']);
+$router->post('/email/xac-minh/gui-lai', [AuthController::class, 'resendVerification'], ['auth', 'csrf']);
+$router->get('/notifications', [NotificationController::class, 'index'], ['auth']);
+$router->post('/notifications/{id}/read', [NotificationController::class, 'markRead'], ['auth', 'csrf']);
 $router->post('/logout', [AuthController::class, 'logout'], ['auth', 'csrf']);
 $router->get('/profile', [ProfileController::class, 'show'], ['auth']);
 $router->post('/profile', [ProfileController::class, 'update'], ['auth', 'csrf']);
@@ -67,6 +70,10 @@ $router->post('/addresses', [ProfileController::class, 'storeAddress'], ['auth',
 $router->post('/addresses/{id}', [ProfileController::class, 'updateAddress'], ['auth', 'csrf']);
 $router->post('/addresses/{id}/delete', [ProfileController::class, 'deleteAddress'], ['auth', 'csrf']);
 $router->get('/admin', [AdminController::class, 'index'], ['permission:dashboard.view']);
+$router->get('/admin/mail', [AdminMailController::class, 'index'], ['permission:mail.view']);
+$router->post('/admin/mail/driver', [AdminMailController::class, 'saveDriver'], ['permission:mail.manage', 'csrf']);
+$router->post('/admin/mail/test', [AdminMailController::class, 'sendTest'], ['permission:mail.manage', 'csrf']);
+$router->post('/admin/mail/{id}/resend', [AdminMailController::class, 'resend'], ['permission:mail.manage', 'csrf']);
 $router->get('/admin/flash-sales', [FlashSaleAdminController::class, 'index'], ['permission:flash_sales.view']);
 $router->get('/admin/flash-sales/new', [FlashSaleAdminController::class, 'create'], ['permission:flash_sales.manage']);
 $router->get('/admin/flash-sales/products', [FlashSaleAdminController::class, 'products'], ['permission:flash_sales.view']);

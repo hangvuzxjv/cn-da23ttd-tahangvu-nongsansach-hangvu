@@ -687,6 +687,7 @@ final class InventoryAdminController extends Controller
             ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
             ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
             ['permission' => 'flash_sales.view', 'label' => 'Flash Sale', 'url' => '/admin/flash-sales'],
+            ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
             ['permission' => 'inventory.view', 'label' => 'Tồn kho', 'url' => '/admin/inventory/stock'],
             ['permission' => 'inventory.manage', 'label' => 'Phiếu nhập', 'url' => '/admin/inventory/receipts'],
             ['permission' => 'inventory.view', 'label' => 'Sổ cái kho', 'url' => '/admin/inventory/movements'],

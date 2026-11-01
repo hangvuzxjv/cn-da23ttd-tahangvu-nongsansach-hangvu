@@ -192,8 +192,10 @@ final class PaymentService
                 'INSERT INTO order_status_history (order_id, status, note)
                  VALUES (:id, \'cancelled\', :reason)'
             )->execute(['id' => $orderId, 'reason' => mb_substr($reason, 0, 500, 'UTF-8')]);
+            $this->notifyOrderStatus($order, $orderId, 'cancelled');
             AuditLog::record(null, 'online_payment_expired', 'order', $orderId, $reason, $this->database);
             $this->database->commit();
+            $this->sendOrderStatusEmail($order, $orderId, 'cancelled');
             return true;
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
@@ -290,6 +292,7 @@ final class PaymentService
                 'note' => 'Thanh toán trực tuyến đã được xác nhận.',
                 'actor' => $actorId,
             ]);
+            $this->notifyOrderStatus($order, $orderId, 'confirmed');
             $isManualVnpay = ($sanitized['source'] ?? null) === 'manual_vnpay_reconciliation';
             $auditAction = $isManualVnpay ? 'vnpay_manual_reconciled' : 'payment_confirmed';
             $auditDetails = $isManualVnpay
@@ -301,6 +304,7 @@ final class PaymentService
                 : $transactionRef;
             AuditLog::record($actorId, $auditAction, 'payment', $paymentId, $auditDetails, $this->database);
             $this->database->commit();
+            $this->sendOrderStatusEmail($order, $orderId, 'confirmed');
             return ['order_id' => $orderId, 'already_paid' => false];
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
@@ -700,6 +704,7 @@ final class PaymentService
             $this->cancelUnpaidOrder($orderId, $actorId, trim($reason));
             AuditLog::record($actorId, 'payment_rejected', 'payment', $paymentId, trim($reason), $this->database);
             $this->database->commit();
+            $this->sendOrderStatusEmailById($orderId, 'cancelled');
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();
@@ -715,7 +720,10 @@ final class PaymentService
         }
         $this->database->beginTransaction();
         try {
-            $query = $this->database->prepare('SELECT p.*, o.status AS order_status FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = :id FOR UPDATE');
+            $query = $this->database->prepare(
+                'SELECT p.*, o.status AS order_status, o.user_id, o.order_no
+                 FROM payments p JOIN orders o ON o.id = p.order_id WHERE p.id = :id FOR UPDATE'
+            );
             $query->execute(['id' => $paymentId]);
             $payment = $query->fetch();
             if (!$payment || $payment['status'] !== 'paid' || $payment['order_status'] === 'refunded') {
@@ -736,8 +744,10 @@ final class PaymentService
                 'INSERT INTO order_status_history (order_id, status, note, changed_by)
                  VALUES (:id, \'refunded\', :note, :actor)'
             )->execute(['id' => $orderId, 'note' => trim($reason), 'actor' => $actorId]);
+            $this->notifyOrderStatus($payment, $orderId, 'refunded');
             AuditLog::record($actorId, 'payment_refunded', 'payment', $paymentId, trim($reason), $this->database);
             $this->database->commit();
+            $this->sendOrderStatusEmail($payment, $orderId, 'refunded');
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();
@@ -1022,5 +1032,41 @@ final class PaymentService
             'INSERT INTO order_status_history (order_id, status, note, changed_by)
              VALUES (:id, \'cancelled\', :note, :actor)'
         )->execute(['id' => $orderId, 'note' => mb_substr($reason, 0, 500, 'UTF-8'), 'actor' => $actorId]);
+        $this->notifyOrderStatus($order, $orderId, 'cancelled');
+    }
+
+    private function notifyOrderStatus(array $order, int $orderId, string $status): void
+    {
+        (new NotificationService($this->database))->notifyOrderStatus(
+            (int) $order['user_id'],
+            $orderId,
+            (int) $this->database->lastInsertId(),
+            (string) $order['order_no'],
+            $status
+        );
+    }
+
+    private function sendOrderStatusEmail(array $order, int $orderId, string $status): void
+    {
+        (new NotificationService($this->database))->sendOrderStatusEmail(
+            (int) $order['user_id'],
+            $orderId,
+            (string) $order['order_no'],
+            $status
+        );
+    }
+
+    private function sendOrderStatusEmailById(int $orderId, string $status): void
+    {
+        try {
+            $query = $this->database->prepare('SELECT user_id, order_no FROM orders WHERE id = :id');
+            $query->execute(['id' => $orderId]);
+            $order = $query->fetch();
+            if ($order) {
+                $this->sendOrderStatusEmail($order, $orderId, $status);
+            }
+        } catch (Throwable) {
+            error_log('Order status email could not be queued (order=' . $orderId . ').');
+        }
     }
 }

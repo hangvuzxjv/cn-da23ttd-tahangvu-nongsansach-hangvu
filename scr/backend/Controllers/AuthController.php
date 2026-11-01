@@ -44,6 +44,15 @@ final class AuthController extends Controller
         if ($errors !== []) {
             $this->failValidation('/register', $input, $errors);
         }
+        if (!(new MailRateLimiter())->allow(
+            'registration',
+            $input['email'],
+            (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'),
+            2,
+            8
+        )) {
+            $this->failValidation('/register', $input, ['email' => 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.']);
+        }
 
         $database = Database::connection();
         $database->beginTransaction();
@@ -59,15 +68,7 @@ final class AuthController extends Controller
                 'password' => password_hash($password, PASSWORD_BCRYPT),
             ]);
             $userId = (int) $database->lastInsertId();
-            $verificationToken = bin2hex(random_bytes(32));
-            $verification = $database->prepare(
-                'INSERT INTO email_verifications (user_id, token_hash, expires_at)
-                 VALUES (:user_id, :token_hash, DATE_ADD(NOW(), INTERVAL 60 MINUTE))'
-            );
-            $verification->execute([
-                'user_id' => $userId,
-                'token_hash' => hash('sha256', $verificationToken),
-            ]);
+            $verificationToken = (new AccountTokenService($database))->issueVerification($userId);
             $database->commit();
         } catch (Throwable $exception) {
             if ($database->inTransaction()) {
@@ -80,17 +81,30 @@ final class AuthController extends Controller
         }
 
         AuditLog::record($userId, 'register', 'user', $userId);
-        $verifyUrl = absolute_url('/verify-email/' . $verificationToken);
-        $mailerConfig = $this->mailerConfig();
-        MailerFactory::make($mailerConfig)->send(
-            $input['email'],
-            'Xác thực email - Nông Sản Sạch',
-            "Xin chào {$input['name']},\n\nXác thực email của bạn tại:\n{$verifyUrl}\n\nLiên kết có hiệu lực trong 60 phút."
-        );
+        $verificationMail = null;
+        try {
+            $verifyUrl = absolute_url('/verify-email/' . $verificationToken);
+            $verificationMail = (new MailService())->sendTemplate(
+                $input['email'],
+                'Xác thực email - Nông Sản Sạch',
+                'Xác thực địa chỉ email',
+                ['Xin chào ' . $input['name'] . '.', 'Liên kết có hiệu lực trong 60 phút và chỉ dùng một lần.'],
+                'Xác thực email',
+                $verifyUrl,
+                ['type' => 'email_verification', 'user_id' => $userId]
+            );
+            $this->exposeDemoLink($verifyUrl);
+        } catch (Throwable) {
+            error_log('Registration verification email could not be queued.');
+        }
         Auth::login($this->findUserById($userId));
         (new CartService())->mergeSessionCart($userId);
         flash('success', 'Tạo tài khoản thành công. Bạn có thể mua hàng ngay; email xác thực là tùy chọn.');
-        $this->exposeDemoLink($mailerConfig, $verifyUrl);
+        if ($verificationMail === null || !$verificationMail['accepted']) {
+            flash('error', 'Tài khoản đã tạo; email xác minh chưa thể được lưu để gửi. Bạn có thể yêu cầu gửi lại trong hồ sơ.');
+        } elseif (!$verificationMail['delivered']) {
+            flash('error', 'Tài khoản đã tạo; email xác minh đang chờ gửi lại.');
+        }
         redirect('/profile');
     }
 
@@ -167,44 +181,40 @@ final class AuthController extends Controller
             redirect('/forgot-password');
         }
 
+        $allowed = (new MailRateLimiter())->allow(
+            'password-reset',
+            $email,
+            (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+        );
         $statement = Database::connection()->prepare('SELECT id, name FROM users WHERE email = :email LIMIT 1');
         $statement->execute(['email' => $email]);
-        $user = $statement->fetch();
+        $user = $allowed ? $statement->fetch() : false;
         $mailLink = null;
-        $mailerConfig = $this->mailerConfig();
         if ($user) {
-            $token = bin2hex(random_bytes(32));
-            $database = Database::connection();
-            $database->beginTransaction();
+            $token = (new AccountTokenService())->issuePasswordReset((int) $user['id']);
             try {
-                $database->prepare('UPDATE password_resets SET used_at = NOW() WHERE user_id = :user_id AND used_at IS NULL')
-                    ->execute(['user_id' => $user['id']]);
-                $tokenStatement = $database->prepare(
-                    'INSERT INTO password_resets (user_id, token_hash, expires_at)
-                     VALUES (:user_id, :token_hash, DATE_ADD(NOW(), INTERVAL 60 MINUTE))'
+                $mailLink = absolute_url('/reset-password/' . $token);
+                (new MailService())->sendTemplate(
+                    $email,
+                    'Đặt lại mật khẩu - Nông Sản Sạch',
+                    'Yêu cầu đặt lại mật khẩu',
+                    ['Xin chào ' . $user['name'] . '.', 'Liên kết chỉ dùng một lần và hết hạn sau 30 phút.'],
+                    'Đặt lại mật khẩu',
+                    $mailLink,
+                    ['type' => 'password_reset', 'user_id' => (int) $user['id']]
                 );
-                $tokenStatement->execute([
-                    'user_id' => $user['id'],
-                    'token_hash' => hash('sha256', $token),
-                ]);
-                $database->commit();
-            } catch (Throwable $exception) {
-                if ($database->inTransaction()) {
-                    $database->rollBack();
-                }
-                throw $exception;
+            } catch (Throwable) {
+                error_log('Password reset email could not be queued.');
             }
-            $mailLink = absolute_url('/reset-password/' . $token);
-            MailerFactory::make($mailerConfig)->send(
-                $email,
-                'Đặt lại mật khẩu - Nông Sản Sạch',
-                "Xin chào {$user['name']},\n\nĐặt lại mật khẩu tại:\n{$mailLink}\n\nLiên kết chỉ dùng một lần và hết hạn sau 60 phút."
-            );
         }
 
         flash('success', 'Nếu email thuộc tài khoản hợp lệ, hướng dẫn đặt lại mật khẩu sẽ được gửi.');
         if ($mailLink !== null) {
-            $this->exposeDemoLink($mailerConfig, $mailLink);
+            try {
+                $this->exposeDemoLink($mailLink);
+            } catch (Throwable) {
+                error_log('Password reset debug link unavailable.');
+            }
         }
         redirect('/forgot-password');
     }
@@ -245,42 +255,14 @@ final class AuthController extends Controller
             $this->failValidation('/reset-password/' . rawurlencode($token), [], $errors);
         }
 
-        $database = Database::connection();
-        $database->beginTransaction();
-        try {
-            $statement = $database->prepare(
-                'SELECT id, user_id FROM password_resets
-                 WHERE token_hash = :token_hash AND used_at IS NULL AND expires_at > NOW()
-                 LIMIT 1 FOR UPDATE'
-            );
-            $statement->execute(['token_hash' => hash('sha256', $token)]);
-            $reset = $statement->fetch();
-            if (!$reset) {
-                $database->rollBack();
-                http_response_code(400);
-                $this->view('client/reset-password', [
-                    'title' => 'Đặt lại mật khẩu',
-                    'token' => '',
-                    'errors' => ['token' => 'Liên kết không hợp lệ, đã dùng hoặc hết hạn.'],
-                ]);
-                return;
-            }
-
-            $update = $database->prepare('UPDATE users SET password = :password WHERE id = :user_id');
-            $update->execute([
-                'password' => password_hash($password, PASSWORD_BCRYPT),
-                'user_id' => $reset['user_id'],
+        if (!(new AccountTokenService())->resetPassword($token, $password)) {
+            http_response_code(400);
+            $this->view('client/reset-password', [
+                'title' => 'Đặt lại mật khẩu',
+                'token' => '',
+                'errors' => ['token' => 'Liên kết không hợp lệ, đã dùng hoặc hết hạn.'],
             ]);
-            $database->prepare('UPDATE password_resets SET used_at = NOW() WHERE user_id = :user_id AND used_at IS NULL')
-                ->execute(['user_id' => $reset['user_id']]);
-            AuditLog::record((int) $reset['user_id'], 'password_changed', 'user', (int) $reset['user_id'], 'via=password_reset');
-            AuditLog::record((int) $reset['user_id'], 'password_reset', 'user', (int) $reset['user_id']);
-            $database->commit();
-        } catch (Throwable $exception) {
-            if ($database->inTransaction()) {
-                $database->rollBack();
-            }
-            throw $exception;
+            return;
         }
 
         flash('success', 'Mật khẩu đã được cập nhật. Vui lòng đăng nhập.');
@@ -289,35 +271,57 @@ final class AuthController extends Controller
 
     public function verifyEmail(string $token): void
     {
-        $database = Database::connection();
-        $statement = $database->prepare(
-            'SELECT id, user_id FROM email_verifications
-             WHERE token_hash = :token_hash AND verified_at IS NULL AND expires_at > NOW() LIMIT 1'
-        );
-        $statement->execute(['token_hash' => hash('sha256', $token)]);
-        $verification = $statement->fetch();
-        if (!$verification) {
+        if (!(new AccountTokenService())->verifyEmail($token)) {
             http_response_code(400);
             flash('error', 'Liên kết xác thực không hợp lệ hoặc đã hết hạn.');
             redirect(Auth::check() ? '/profile' : '/login');
         }
 
-        $database->beginTransaction();
-        try {
-            $database->prepare('UPDATE email_verifications SET verified_at = NOW() WHERE id = :id')
-                ->execute(['id' => $verification['id']]);
-            $database->prepare('UPDATE users SET email_verified_at = NOW() WHERE id = :user_id')
-                ->execute(['user_id' => $verification['user_id']]);
-            $database->commit();
-        } catch (Throwable $exception) {
-            if ($database->inTransaction()) {
-                $database->rollBack();
-            }
-            throw $exception;
-        }
-
         flash('success', 'Email đã được xác thực.');
         redirect(Auth::check() ? '/profile' : '/login');
+    }
+
+    public function resendVerification(): Response
+    {
+        $user = Auth::user();
+        try {
+            $database = Database::connection();
+            $verified = $database->prepare('SELECT email_verified_at FROM users WHERE id = :id');
+            $verified->execute(['id' => $user['id']]);
+            if ($verified->fetchColumn() !== null) {
+                return Response::json(false, 'Email của bạn đã được xác thực.', [], 422);
+            }
+            if (!(new MailRateLimiter($database))->allow(
+                'verification-resend',
+                (string) $user['email'],
+                (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'),
+                3,
+                10
+            )) {
+                return Response::json(false, 'Bạn đã yêu cầu gửi quá nhiều lần. Vui lòng thử lại sau.', [], 429);
+            }
+            $token = (new AccountTokenService($database))->issueVerification((int) $user['id']);
+            $link = absolute_url('/verify-email/' . $token);
+            $result = (new MailService($database))->sendTemplate(
+                (string) $user['email'],
+                'Xác thực email - Nông Sản Sạch',
+                'Xác thực địa chỉ email',
+                ['Liên kết có hiệu lực trong 60 phút và chỉ dùng một lần.'],
+                'Xác thực email',
+                $link,
+                ['type' => 'email_verification', 'user_id' => (int) $user['id']]
+            );
+            if (!$result['accepted']) {
+                return Response::json(false, 'Chưa thể lưu thư xác thực. Vui lòng thử lại sau.', [], 503);
+            }
+            $message = $result['delivered']
+                ? 'Email xác thực đã được gửi.'
+                : 'Email xác thực đã được đưa vào hàng chờ để gửi lại.';
+            return Response::json(true, $message, ['queued' => $result['queued']]);
+        } catch (Throwable) {
+            error_log('Verification resend request failed.');
+            return Response::json(false, 'Chưa thể gửi email xác thực. Vui lòng thử lại sau.', [], 503);
+        }
     }
 
     private function validateRegistration(array $input, string $password, string $confirmation): array
@@ -440,16 +444,10 @@ final class AuthController extends Controller
         return $url;
     }
 
-    private function mailerConfig(): array
-    {
-        $config = require BACKEND_PATH . '/config/config.php';
-        return $config['mailer'] ?? ['driver' => 'log'];
-    }
-
-    private function exposeDemoLink(array $mailerConfig, string $link): void
+    private function exposeDemoLink(string $link): void
     {
         $appConfig = require BACKEND_PATH . '/config/config.php';
-        if (($mailerConfig['driver'] ?? 'log') === 'log' && ($appConfig['app']['debug'] ?? false) === true) {
+        if ((new MailService())->selectedDriver() === 'outbox' && ($appConfig['app']['debug'] ?? false) === true) {
             flash('mail_link', $link);
         }
     }

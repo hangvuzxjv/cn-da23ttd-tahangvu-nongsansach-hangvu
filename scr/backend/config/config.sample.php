@@ -7,7 +7,7 @@ return [
         'debug' => false,
     ],
     'mailer' => [
-        'driver' => 'log',
+        'driver' => 'outbox',
         'from_address' => 'no-reply@example.com',
         'from_name' => 'Nông Sản Sạch',
         'smtp' => [
@@ -16,6 +16,9 @@ return [
             'username' => '',
             'password' => '',
             'encryption' => 'tls',
+        ],
+        'brevo' => [
+            'api_key' => '',
         ],
     ],
     'database' => [

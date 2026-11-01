@@ -6,6 +6,13 @@
             <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
             <?php if (!empty($error)): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
             <p class="small">Trạng thái email: <?= !empty($profile['email_verified_at']) ? 'Đã xác thực' : 'Chưa xác thực (không ảnh hưởng việc mua hàng)' ?></p>
+            <?php if (empty($profile['email_verified_at'])): ?>
+                <form method="post" action="<?= e(url('/email/xac-minh/gui-lai')) ?>" id="resend-verification-form" class="mb-3">
+                    <?= csrf_field() ?>
+                    <button class="btn btn-sm btn-outline-success" type="submit">Gửi lại email xác minh</button>
+                    <span class="small ms-2" id="verification-resend-message" role="status"></span>
+                </form>
+            <?php endif; ?>
             <form method="post" action="<?= e(url('/profile')) ?>">
                 <?= csrf_field() ?>
                 <?php foreach (['name' => 'Họ tên', 'email' => 'Email', 'phone' => 'Số điện thoại'] as $field => $label): ?>

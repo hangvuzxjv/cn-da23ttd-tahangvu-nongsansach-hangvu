@@ -209,9 +209,11 @@ final class OrderService
                 'INSERT INTO order_status_history (order_id, status, note, changed_by)
                  VALUES (:id, \'pending\', :note, :user_id)'
             )->execute(['id' => $orderId, 'note' => $historyNote, 'user_id' => $userId]);
+            $historyId = (int) $this->database->lastInsertId();
             $this->database->prepare(
-                'INSERT INTO notifications (user_id, title, message, link_url)
-                 VALUES (:user_id, :title, :message, :link)'
+                'INSERT IGNORE INTO notifications
+                    (user_id, title, message, link_url, source_type, source_id)
+                 VALUES (:user_id, :title, :message, :link, \'order_status\', :source_id)'
             )->execute([
                 'user_id' => $userId,
                 'title' => 'Đặt hàng thành công',
@@ -219,6 +221,7 @@ final class OrderService
                     ? 'Đơn hàng ' . $orderNo . ' đang chờ thanh toán.'
                     : 'Đơn hàng ' . $orderNo . ' đã được tiếp nhận.',
                 'link' => '/tai-khoan/don-hang/' . $orderId,
+                'source_id' => $historyId,
             ]);
             $this->database->prepare('DELETE FROM cart_items WHERE cart_id = :cart_id')->execute(['cart_id' => $cartId]);
             AuditLog::record($userId, 'order_placed', 'order', $orderId, $orderNo, $this->database);
@@ -285,6 +288,13 @@ final class OrderService
                 'note' => trim($reason),
                 'user_id' => $userId,
             ]);
+            (new NotificationService($this->database))->notifyOrderStatus(
+                (int) $order['user_id'],
+                $orderId,
+                (int) $this->database->lastInsertId(),
+                (string) $order['order_no'],
+                $nextStatus
+            );
             $this->reverseVoucherUsage($orderId);
             $this->database->prepare(
                 "UPDATE payments SET status = CASE WHEN :refunded = 1 AND status = 'paid' THEN 'refunded'
@@ -298,6 +308,12 @@ final class OrderService
             }
             AuditLog::record($userId, $refund ? 'order_refunded' : 'order_cancelled', 'order', $orderId, trim($reason), $this->database);
             $this->database->commit();
+            (new NotificationService($this->database))->sendOrderStatusEmail(
+                (int) $order['user_id'],
+                $orderId,
+                (string) $order['order_no'],
+                $nextStatus
+            );
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();
@@ -364,8 +380,21 @@ final class OrderService
             $this->database->prepare(
                 'INSERT INTO order_status_history (order_id, status, note, changed_by) VALUES (:id, :status, :note, :user_id)'
             )->execute(['id' => $orderId, 'status' => $nextStatus, 'note' => trim($note) ?: null, 'user_id' => $userId]);
+            (new NotificationService($this->database))->notifyOrderStatus(
+                (int) $order['user_id'],
+                $orderId,
+                (int) $this->database->lastInsertId(),
+                (string) $order['order_no'],
+                $nextStatus
+            );
             AuditLog::record($userId, 'order_status_changed', 'order', $orderId, $order['status'] . ' -> ' . $nextStatus, $this->database);
             $this->database->commit();
+            (new NotificationService($this->database))->sendOrderStatusEmail(
+                (int) $order['user_id'],
+                $orderId,
+                (string) $order['order_no'],
+                $nextStatus
+            );
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();

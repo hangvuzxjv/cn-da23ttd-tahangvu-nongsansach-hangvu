@@ -7,15 +7,18 @@ return [
         'debug' => false,
     ],
     'mailer' => [
-        'driver' => 'log',
+        'driver' => 'outbox',
         'from_address' => 'no-reply@your-domain.example',
         'from_name' => 'Nông Sản Sạch',
         'smtp' => [
-            'host' => '',
+            'host' => 'smtp.example.invalid',
             'port' => 587,
-            'username' => '',
-            'password' => '',
+            'username' => 'YOUR_SMTP_USERNAME',
+            'password' => 'YOUR_SMTP_APP_PASSWORD',
             'encryption' => 'tls',
+        ],
+        'brevo' => [
+            'api_key' => 'YOUR_BREVO_API_KEY',
         ],
     ],
     'database' => [

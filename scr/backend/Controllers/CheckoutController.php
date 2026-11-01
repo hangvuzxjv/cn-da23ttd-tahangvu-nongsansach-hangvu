@@ -522,24 +522,38 @@ final class CheckoutController extends Controller
 
     private function sendConfirmation(array $result, array $user): void
     {
-        $orderQuery = Database::connection()->prepare('SELECT total_amount FROM orders WHERE id = :id');
-        $orderQuery->execute(['id' => $result['id']]);
-        $total = (string) $orderQuery->fetchColumn();
-        $config = require BACKEND_PATH . '/config/config.php';
-        $paymentDescription = match ($result['payment_method'] ?? 'cod') {
-            'bank_transfer' => 'Chuyển khoản VietQR: vui lòng hoàn tất thanh toán trong thời hạn giữ hàng.',
-            'vnpay' => 'VNPay sandbox: vui lòng hoàn tất thanh toán trong thời hạn giữ hàng.',
-            default => 'Thanh toán khi nhận hàng (COD).',
-        };
         try {
-            MailerFactory::make($config['mailer'] ?? ['driver' => 'log'])->send(
+            $orderQuery = Database::connection()->prepare('SELECT total_amount FROM orders WHERE id = :id');
+            $orderQuery->execute(['id' => $result['id']]);
+            $total = (string) $orderQuery->fetchColumn();
+            $paymentDescription = match ($result['payment_method'] ?? 'cod') {
+                'bank_transfer' => 'Chuyển khoản VietQR: vui lòng hoàn tất thanh toán trong thời hạn giữ hàng.',
+                'vnpay' => 'VNPay sandbox: vui lòng hoàn tất thanh toán trong thời hạn giữ hàng.',
+                default => 'Thanh toán khi nhận hàng (COD).',
+            };
+            $mail = (new MailService())->sendTemplate(
                 (string) $user['email'],
                 'Xác nhận đơn hàng ' . $result['order_no'],
-                "Xin chào {$user['name']},\n\nĐơn hàng {$result['order_no']} đã được tạo thành công.\nTổng thanh toán: " . number_format(PricingService::moneyToVnd($total), 0, ',', '.') . " ₫\n{$paymentDescription}\n\nTheo dõi đơn tại: " . absolute_url('/tai-khoan/don-hang/' . $result['id'])
+                'Đặt hàng thành công',
+                [
+                    'Xin chào ' . $user['name'] . '.',
+                    'Đơn hàng ' . $result['order_no'] . ' đã được tạo thành công.',
+                    'Tổng thanh toán: ' . number_format(PricingService::moneyToVnd($total), 0, ',', '.') . ' ₫.',
+                    $paymentDescription,
+                ],
+                'Theo dõi đơn hàng',
+                absolute_url('/tai-khoan/don-hang/' . $result['id']),
+                ['type' => 'order_confirmation', 'order_id' => (int) $result['id']]
             );
-        } catch (Throwable $exception) {
-            error_log('Order confirmation email failed for ' . $result['order_no'] . ': ' . $exception->getMessage());
-            flash('error', 'Đơn hàng đã được lưu nhưng email xác nhận chưa gửi được. Mã đơn: ' . $result['order_no']);
+            if (!$mail['accepted']) {
+                error_log('Order confirmation email could not be queued (order=' . (int) $result['id'] . ').');
+                flash('error', 'Đơn hàng đã được lưu; email xác nhận chưa thể được lưu để gửi.');
+            } elseif (!$mail['delivered']) {
+                flash('error', 'Đơn hàng đã được lưu; email xác nhận đang chờ gửi lại.');
+            }
+        } catch (Throwable) {
+            error_log('Order confirmation email could not be queued (order=' . (int) $result['id'] . ').');
+            flash('error', 'Đơn hàng đã được lưu; email xác nhận chưa gửi được.');
         }
     }
 

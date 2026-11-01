@@ -53,7 +53,18 @@ final class ProfileController extends Controller
 
         $database = Database::connection();
         $emailChanged = strcasecmp($email, (string) $user['email']) !== 0;
-        $verificationToken = $emailChanged ? bin2hex(random_bytes(32)) : null;
+        if ($emailChanged && !(new MailRateLimiter($database))->allow(
+            'verification-change',
+            $email,
+            (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'),
+            3,
+            10
+        )) {
+            remember_form_data($input);
+            flash('validation_errors', ['email' => 'Bạn đã yêu cầu xác thực email quá nhiều lần. Vui lòng thử lại sau.']);
+            redirect('/profile');
+        }
+        $verificationToken = null;
         $database->beginTransaction();
         try {
             $database->prepare(
@@ -68,15 +79,7 @@ final class ProfileController extends Controller
                 'id' => $user['id'],
             ]);
             if ($emailChanged) {
-                $database->prepare('UPDATE email_verifications SET verified_at = NOW() WHERE user_id = :user_id AND verified_at IS NULL')
-                    ->execute(['user_id' => $user['id']]);
-                $database->prepare(
-                    'INSERT INTO email_verifications (user_id, token_hash, expires_at)
-                     VALUES (:user_id, :token_hash, DATE_ADD(NOW(), INTERVAL 60 MINUTE))'
-                )->execute([
-                    'user_id' => $user['id'],
-                    'token_hash' => hash('sha256', $verificationToken),
-                ]);
+                $verificationToken = (new AccountTokenService($database))->issueVerification((int) $user['id']);
             }
             $database->commit();
         } catch (Throwable $exception) {
@@ -87,14 +90,28 @@ final class ProfileController extends Controller
         }
         if ($emailChanged) {
             $config = require BACKEND_PATH . '/config/config.php';
-            $link = absolute_url('/verify-email/' . $verificationToken);
-            MailerFactory::make($config['mailer'] ?? ['driver' => 'log'])->send(
-                $email,
-                'Xác thực email - Nông Sản Sạch',
-                "Xác thực địa chỉ email mới tại:\n{$link}\n\nLiên kết có hiệu lực trong 60 phút."
-            );
-            if (($config['app']['debug'] ?? false) === true && ($config['mailer']['driver'] ?? 'log') === 'log') {
-                flash('mail_link', $link);
+            try {
+                $link = absolute_url('/verify-email/' . $verificationToken);
+                $result = (new MailService($database))->sendTemplate(
+                    $email,
+                    'Xác thực email - Nông Sản Sạch',
+                    'Xác thực địa chỉ email mới',
+                    ['Liên kết có hiệu lực trong 60 phút và chỉ dùng một lần.'],
+                    'Xác thực email',
+                    $link,
+                    ['type' => 'email_verification', 'user_id' => (int) $user['id']]
+                );
+                if (!$result['accepted']) {
+                    flash('error', 'Thông tin đã lưu, nhưng thư xác thực chưa thể xếp hàng. Vui lòng gửi lại từ hồ sơ.');
+                } elseif (!$result['delivered']) {
+                    flash('error', 'Thông tin đã lưu; email xác thực đang chờ gửi lại.');
+                }
+                if (($config['app']['debug'] ?? false) === true && (new MailService($database))->selectedDriver() === 'outbox') {
+                    flash('mail_link', $link);
+                }
+            } catch (Throwable) {
+                error_log('Profile verification email could not be queued.');
+                flash('error', 'Thông tin đã lưu, nhưng email xác thực chưa thể được gửi.');
             }
         }
         flash('success', 'Thông tin hồ sơ đã được cập nhật.');

@@ -6,6 +6,7 @@
     <title><?= e($title ?? 'Nông Sản Sạch') ?> - Nông Sản Sạch</title>
     <meta name="description" content="<?= e($metaDescription ?? 'Nông sản sạch theo mùa, minh bạch nguồn gốc từ các vùng miền Việt Nam.') ?>">
     <meta name="csrf-token" content="<?= e(Csrf::token()) ?>">
+    <meta name="app-base-url" content="<?= e(url('/')) ?>">
     <link rel="icon" type="image/svg+xml" href="<?= e(asset('/favicon.svg')) ?>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="<?= e(asset('/css/app.css')) ?>" rel="stylesheet">
@@ -34,6 +35,16 @@
                     <a class="nav-link" href="<?= e(url('/addresses')) ?>">Sổ địa chỉ</a>
                     <a class="nav-link" href="<?= e(url('/tai-khoan/don-hang')) ?>">Đơn hàng</a>
                     <a class="nav-link" href="<?= e(url('/tai-khoan/yeu-thich')) ?>">Yêu thích</a>
+                    <div class="nav-item dropdown">
+                        <button class="nav-link btn btn-link dropdown-toggle" id="notificationMenu" type="button"
+                                data-bs-toggle="dropdown" aria-expanded="false">
+                            Thông báo <span class="badge bg-warning text-dark d-none" id="notificationCount">0</span>
+                        </button>
+                        <div class="dropdown-menu dropdown-menu-end p-2" aria-labelledby="notificationMenu"
+                             id="notificationList" style="min-width:min(22rem,90vw);max-height:70vh;overflow:auto">
+                            <span class="dropdown-item-text text-muted">Đang tải thông báo…</span>
+                        </div>
+                    </div>
                     <?php if (Auth::can('dashboard.view')): ?><a class="nav-link" href="<?= e(url('/admin')) ?>">Quản trị</a><?php endif; ?>
                     <form class="d-inline" method="post" action="<?= e(url('/logout')) ?>">
                         <?= csrf_field() ?>
@@ -57,5 +68,6 @@
 <script src="<?= e(asset('/js/cart.js')) ?>"></script>
 <script src="<?= e(asset('/js/flash-sale.js')) ?>"></script>
 <script src="<?= e(asset('/js/customer-engagement.js')) ?>"></script>
+<?php if ($navUser): ?><script src="<?= e(asset('/js/notifications.js')) ?>"></script><?php endif; ?>
 </body>
 </html>

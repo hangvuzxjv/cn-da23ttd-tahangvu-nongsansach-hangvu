@@ -63,6 +63,47 @@ $input = [
 ];
 $orders = new OrderService($database);
 $first = $orders->place($userId, $input);
+$previousDriverQuery = $database->prepare("SELECT setting_value FROM settings WHERE setting_key = 'mailer.driver'");
+$previousDriverQuery->execute();
+$previousDriver = $previousDriverQuery->fetchColumn();
+$hasPreviousDriver = $previousDriver !== false;
+$database->prepare(
+    "INSERT INTO settings (setting_key, setting_value, description)
+     VALUES ('mailer.driver', 'smtp', 'Checkout mail-failure test')
+     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)"
+)->execute();
+$mailFailure = null;
+try {
+    $mailFailure = (new MailService(
+        $database,
+        ['mailer' => ['driver' => 'smtp', 'from_address' => 'no-reply@example.test', 'smtp' => []]],
+        static function (): void {
+            throw new RuntimeException('Simulated delivery failure');
+        }
+    ))->sendTemplate($email, 'Checkout test', 'Đơn hàng đã đặt', ['Email cố ý lỗi sau khi tạo đơn.']);
+} finally {
+    $database->prepare('DELETE FROM settings WHERE setting_key = \'mailer.driver\'')->execute();
+    if ($hasPreviousDriver) {
+        $database->prepare(
+            "INSERT INTO settings (setting_key, setting_value, description)
+             VALUES ('mailer.driver', :value, 'Restored after checkout mail-failure test')
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)"
+        )->execute(['value' => $previousDriver]);
+    }
+}
+$persistedOrder = $database->prepare('SELECT id FROM orders WHERE id = :id');
+$persistedOrder->execute(['id' => $first['id']]);
+if (!$mailFailure['accepted'] || !$mailFailure['queued'] || $mailFailure['delivered']
+    || $persistedOrder->fetchColumn() === false) {
+    throw new RuntimeException('A mail delivery failure prevented the placed order from remaining successful.');
+}
+$failedMail = $database->prepare('SELECT status, attempts FROM mail_outbox WHERE id = :id');
+$failedMail->execute(['id' => $mailFailure['id']]);
+$failedMailRow = $failedMail->fetch();
+if ($failedMailRow['status'] !== 'pending' || (int) $failedMailRow['attempts'] !== 1) {
+    throw new RuntimeException('The failed order email was not recorded in the outbox.');
+}
+$database->prepare('DELETE FROM mail_outbox WHERE id = :id')->execute(['id' => $mailFailure['id']]);
 $duplicate = $orders->place($userId, $input);
 if ($first['id'] !== $duplicate['id'] || empty($duplicate['existing'])) {
     throw new RuntimeException('A repeated submission created a second order.');
@@ -128,6 +169,28 @@ if ($refundedStatus['payment_status'] !== 'refunded' || $refundedStatus['status'
 $availableAfterRefund = $inventory->availableStock((int) $product['id']);
 if ($availableAfterRefund !== $availableBefore) {
     throw new RuntimeException('Refund did not restore the delivered order inventory.');
+}
+$orderStatusNotifications = $database->prepare(
+    "SELECT COUNT(*) FROM notifications n
+     JOIN order_status_history h ON h.id = n.source_id
+     WHERE n.user_id = :user_id AND n.source_type = 'order_status' AND h.order_id = :order_id"
+);
+$orderStatusNotifications->execute(['user_id' => $userId, 'order_id' => $delivery['id']]);
+$historyCount = $database->prepare('SELECT COUNT(*) FROM order_status_history WHERE order_id = :order_id');
+$historyCount->execute(['order_id' => $delivery['id']]);
+if ((int) $orderStatusNotifications->fetchColumn() !== (int) $historyCount->fetchColumn()) {
+    throw new RuntimeException('Order status notifications were missing or duplicated.');
+}
+$latestNotification = $database->prepare(
+    "SELECT id FROM notifications WHERE user_id = :user_id AND source_type = 'order_status'
+     ORDER BY id DESC LIMIT 1"
+);
+$latestNotification->execute(['user_id' => $userId]);
+$notificationId = (int) $latestNotification->fetchColumn();
+$notificationService = new NotificationService($database);
+if (!$notificationService->markRead($userId, $notificationId)
+    || $notificationService->markRead($userId, $notificationId)) {
+    throw new RuntimeException('Notification read state was not updated idempotently.');
 }
 
 printf(

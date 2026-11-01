@@ -999,6 +999,7 @@ final class CatalogAdminController extends Controller
             ['permission' => 'customers.view', 'label' => 'Khách hàng', 'url' => '/admin/customers'],
             ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
             ['permission' => 'flash_sales.view', 'label' => 'Flash Sale', 'url' => '/admin/flash-sales'],
+            ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
             ['permission' => 'batches.view', 'label' => 'Lô hàng', 'url' => '/admin/batches'],
             ['permission' => 'users.view', 'label' => 'Người dùng', 'url' => '/admin/users'],
         ];
