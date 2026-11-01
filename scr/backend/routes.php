@@ -62,6 +62,13 @@ $router->post('/addresses', [ProfileController::class, 'storeAddress'], ['auth',
 $router->post('/addresses/{id}', [ProfileController::class, 'updateAddress'], ['auth', 'csrf']);
 $router->post('/addresses/{id}/delete', [ProfileController::class, 'deleteAddress'], ['auth', 'csrf']);
 $router->get('/admin', [AdminController::class, 'index'], ['permission:dashboard.view']);
+$router->get('/admin/flash-sales', [FlashSaleAdminController::class, 'index'], ['permission:flash_sales.view']);
+$router->get('/admin/flash-sales/new', [FlashSaleAdminController::class, 'create'], ['permission:flash_sales.manage']);
+$router->get('/admin/flash-sales/products', [FlashSaleAdminController::class, 'products'], ['permission:flash_sales.view']);
+$router->post('/admin/flash-sales', [FlashSaleAdminController::class, 'save'], ['permission:flash_sales.manage', 'csrf']);
+$router->post('/admin/flash-sales/{id}/cancel', [FlashSaleAdminController::class, 'cancel'], ['permission:flash_sales.manage', 'csrf']);
+$router->post('/admin/flash-sales/{id}/delete', [FlashSaleAdminController::class, 'delete'], ['permission:flash_sales.manage', 'csrf']);
+$router->get('/admin/flash-sales/{id}', [FlashSaleAdminController::class, 'show'], ['permission:flash_sales.view']);
 $router->get('/admin/users', [AdminController::class, 'users'], ['permission:users.view']);
 $router->post('/admin/users/{id}/update', [AdminController::class, 'updateUser'], ['permission:users.manage', 'csrf']);
 $router->get('/admin/orders', [CommerceAdminController::class, 'orders'], ['permission:orders.view']);

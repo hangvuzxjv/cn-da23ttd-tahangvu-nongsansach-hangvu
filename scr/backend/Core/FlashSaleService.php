@@ -323,9 +323,30 @@ final class FlashSaleService
                 $activeNow = $campaign['status'] === 'active'
                     && $campaign['starts_at'] <= $this->localNowString()
                     && $campaign['ends_at'] > $this->localNowString();
+                $timesChanged = $campaign['starts_at'] !== $startsAt || $campaign['ends_at'] !== $endsAt;
+                if ($timesChanged) {
+                    $history = $this->database->prepare(
+                        'SELECT 1 FROM flash_sale_items fsi
+                         WHERE fsi.flash_sale_id = :campaign_id
+                           AND (
+                               EXISTS (
+                                   SELECT 1 FROM flash_sale_purchases fsp
+                                   WHERE fsp.flash_sale_item_id = fsi.id
+                               )
+                               OR EXISTS (
+                                   SELECT 1 FROM order_items oi
+                                   WHERE oi.flash_sale_item_id = fsi.id
+                               )
+                           )
+                         LIMIT 1'
+                    );
+                    $history->execute(['campaign_id' => $campaignId]);
+                    if ($history->fetchColumn()) {
+                        throw new InvalidArgumentException('Không thể đổi thời gian chương trình sau khi sản phẩm đã có đơn.');
+                    }
+                }
                 $itemsChanged = $this->existingItemsChanged($campaignId, $lines);
-                $changedTerms = $campaign['starts_at'] !== $startsAt
-                    || $campaign['ends_at'] !== $endsAt || $itemsChanged;
+                $changedTerms = $timesChanged || $itemsChanged;
                 if ($activeNow && $changedTerms && $reason === '') {
                     throw new InvalidArgumentException('Điều chỉnh chiến dịch đang chạy cần nhập lý do.');
                 }
@@ -398,6 +419,46 @@ final class FlashSaleService
         AuditLog::record($actorId, 'flash_sale_cancelled', 'flash_sale', $campaignId, trim($reason), $this->database);
     }
 
+    public function deleteCampaign(int $campaignId, int $actorId): void
+    {
+        $this->database->beginTransaction();
+        try {
+            $campaignQuery = $this->database->prepare('SELECT id FROM flash_sales WHERE id = :id FOR UPDATE');
+            $campaignQuery->execute(['id' => $campaignId]);
+            if (!$campaignQuery->fetchColumn()) {
+                throw new InvalidArgumentException('Không tìm thấy chương trình Flash Sale cần xóa.');
+            }
+            $orders = $this->database->prepare(
+                'SELECT 1
+                 FROM flash_sale_items fsi
+                 WHERE fsi.flash_sale_id = :campaign_id
+                   AND (
+                       EXISTS (
+                           SELECT 1 FROM flash_sale_purchases fsp
+                           WHERE fsp.flash_sale_item_id = fsi.id
+                       )
+                       OR EXISTS (
+                           SELECT 1 FROM order_items oi
+                           WHERE oi.flash_sale_item_id = fsi.id
+                       )
+                   )
+                 LIMIT 1'
+            );
+            $orders->execute(['campaign_id' => $campaignId]);
+            if ($orders->fetchColumn()) {
+                throw new InvalidArgumentException('Chương trình đã có đơn hàng; hãy hủy chương trình thay vì xóa.');
+            }
+            $this->database->prepare('DELETE FROM flash_sales WHERE id = :id')->execute(['id' => $campaignId]);
+            AuditLog::record($actorId, 'flash_sale_deleted', 'flash_sale', $campaignId, null, $this->database);
+            $this->database->commit();
+        } catch (Throwable $exception) {
+            if ($this->database->inTransaction()) {
+                $this->database->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
     public function duplicateCampaign(int $campaignId, int $actorId): int
     {
         $this->database->beginTransaction();
@@ -450,15 +511,29 @@ final class FlashSaleService
                         WHEN fs.starts_at > " . self::LOCAL_NOW_SQL . " THEN 'scheduled'
                         ELSE 'active'
                     END AS campaign_status,
-                    COUNT(DISTINCT fsi.id) AS item_count,
-                    COALESCE(SUM(CASE WHEN fsp.status IN ('reserved','confirmed') THEN fsp.quantity ELSE 0 END), 0) AS sold,
-                    COALESCE(SUM(CASE WHEN fsp.status IN ('reserved','confirmed') THEN fsp.quantity * fsi.sale_price ELSE 0 END), 0) AS revenue,
-                    COUNT(DISTINCT CASE WHEN fsp.status IN ('reserved','confirmed') THEN fsp.user_id END) AS buyers,
-                    COALESCE(SUM(fsi.quota), 0) AS quota
+                    COALESCE(item_stats.item_count, 0) AS item_count,
+                    COALESCE(item_stats.sold, 0) AS sold,
+                    COALESCE(item_stats.quota, 0) AS quota,
+                    COALESCE(purchase_stats.revenue, 0) AS revenue,
+                    COALESCE(purchase_stats.buyers, 0) AS buyers
              FROM flash_sales fs
-             LEFT JOIN flash_sale_items fsi ON fsi.flash_sale_id = fs.id
-             LEFT JOIN flash_sale_purchases fsp ON fsp.flash_sale_item_id = fsi.id
-             GROUP BY fs.id ORDER BY fs.starts_at DESC, fs.id DESC"
+             LEFT JOIN (
+                 SELECT flash_sale_id, COUNT(*) AS item_count,
+                        SUM(sold_quantity) AS sold, SUM(quota) AS quota
+                 FROM flash_sale_items GROUP BY flash_sale_id
+             ) item_stats ON item_stats.flash_sale_id = fs.id
+             LEFT JOIN (
+                 SELECT fsi.flash_sale_id,
+                        SUM(oi.line_total) AS revenue,
+                        COUNT(DISTINCT fsp.user_id) AS buyers
+                 FROM flash_sale_purchases fsp
+                 JOIN flash_sale_items fsi ON fsi.id = fsp.flash_sale_item_id
+                 LEFT JOIN order_items oi
+                   ON oi.order_id = fsp.order_id AND oi.flash_sale_item_id = fsp.flash_sale_item_id
+                 WHERE fsp.status IN ('reserved','confirmed')
+                 GROUP BY fsi.flash_sale_id
+             ) purchase_stats ON purchase_stats.flash_sale_id = fs.id
+             ORDER BY fs.starts_at DESC, fs.id DESC"
         )->fetchAll();
     }
 
@@ -482,8 +557,17 @@ final class FlashSaleService
         $items = $this->database->prepare(
             "SELECT fsi.*, p.name AS product_name, p.sku, p.price AS regular_price,
                     COALESCE(NULLIF(p.sale_price, 0), p.price) AS current_price,
-                    COALESCE(stock.available, 0) AS available_stock
+                    COALESCE(stock.available, 0) AS available_stock,
+                    COALESCE(purchases.revenue, 0) AS revenue
              FROM flash_sale_items fsi JOIN products p ON p.id = fsi.product_id
+             LEFT JOIN (
+                 SELECT fsp.flash_sale_item_id, SUM(oi.line_total) AS revenue
+                 FROM flash_sale_purchases fsp
+                 LEFT JOIN order_items oi
+                   ON oi.order_id = fsp.order_id AND oi.flash_sale_item_id = fsp.flash_sale_item_id
+                 WHERE fsp.status IN ('reserved','confirmed')
+                 GROUP BY fsp.flash_sale_item_id
+             ) purchases ON purchases.flash_sale_item_id = fsi.id
              LEFT JOIN (
                  SELECT b.product_id, SUM(GREATEST(0, b.quantity_remaining - COALESCE(r.reserved, 0))) AS available
                  FROM product_batches b
@@ -499,7 +583,45 @@ final class FlashSaleService
         );
         $items->execute(['id' => $campaignId]);
         $campaign['items'] = $items->fetchAll();
+        foreach ($campaign['items'] as &$item) {
+            $item['remaining'] = max(0, (int) $item['quota'] - (int) $item['sold_quantity']);
+        }
+        unset($item);
         return $campaign;
+    }
+
+    public function searchProducts(string $search): array
+    {
+        $search = trim($search);
+        if ($search === '') {
+            return [];
+        }
+        $query = $this->database->prepare(
+            "SELECT p.id, p.name, p.sku, p.price AS regular_price,
+                    COALESCE(NULLIF(p.sale_price, 0), p.price) AS current_price,
+                    COALESCE(stock.available, 0) AS available_stock
+             FROM products p
+             LEFT JOIN (
+                 SELECT b.product_id,
+                        SUM(GREATEST(0, b.quantity_remaining - COALESCE(r.reserved, 0))) AS available
+                 FROM product_batches b
+                 LEFT JOIN (
+                     SELECT batch_id, SUM(quantity) AS reserved
+                     FROM stock_reservations
+                     WHERE status = 'reserved' AND expires_at > NOW()
+                     GROUP BY batch_id
+                 ) r ON r.batch_id = b.id
+                 WHERE b.status = 'selling' AND b.inspection_result <> 'failed'
+                   AND (b.expires_at IS NULL OR b.expires_at >= CURDATE())
+                 GROUP BY b.product_id
+             ) stock ON stock.product_id = p.id
+             WHERE p.status = 'active' AND p.deleted_at IS NULL
+               AND (p.name LIKE :name_search OR p.sku LIKE :sku_search)
+             ORDER BY p.name, p.id LIMIT 30"
+        );
+        $term = '%' . mb_substr($search, 0, 100, 'UTF-8') . '%';
+        $query->execute(['name_search' => $term, 'sku_search' => $term]);
+        return $query->fetchAll();
     }
 
     public function exportStats(): void
@@ -572,7 +694,7 @@ final class FlashSaleService
              JOIN flash_sales fs ON fs.id = fsi.flash_sale_id
              WHERE fsi.product_id = :product_id AND fs.status <> 'cancelled'
                AND fs.starts_at < :ends_at AND fs.ends_at > :starts_at
-               AND (:campaign_id IS NULL OR fs.id <> :campaign_id)
+               AND (:campaign_id_null IS NULL OR fs.id <> :campaign_id_match)
              LIMIT 1"
         );
         foreach ($lines as $line) {
@@ -589,7 +711,8 @@ final class FlashSaleService
                 'product_id' => $line['product_id'],
                 'ends_at' => $endsAt,
                 'starts_at' => $startsAt,
-                'campaign_id' => $campaignId,
+                'campaign_id_null' => $campaignId,
+                'campaign_id_match' => $campaignId,
             ]);
             $overlap = $overlapQuery->fetchColumn();
             if ($overlap !== false) {
@@ -601,7 +724,14 @@ final class FlashSaleService
     private function persistItems(int $campaignId, array $lines): void
     {
         $existing = $this->database->prepare(
-            'SELECT id, product_id, sold_quantity FROM flash_sale_items WHERE flash_sale_id = :id FOR UPDATE'
+            'SELECT fsi.id, fsi.product_id, fsi.sold_quantity, fsi.sale_price, fsi.per_user_limit,
+                    EXISTS (
+                        SELECT 1 FROM flash_sale_purchases fsp WHERE fsp.flash_sale_item_id = fsi.id
+                    ) AS has_purchase,
+                    EXISTS (
+                        SELECT 1 FROM order_items oi WHERE oi.flash_sale_item_id = fsi.id
+                    ) AS has_order
+             FROM flash_sale_items fsi WHERE fsi.flash_sale_id = :id FOR UPDATE'
         );
         $existing->execute(['id' => $campaignId]);
         $old = [];
@@ -620,13 +750,23 @@ final class FlashSaleService
             if (isset($old[$line['product_id']]) && (int) $old[$line['product_id']]['sold_quantity'] > $line['quota']) {
                 throw new InvalidArgumentException('Quota không thể nhỏ hơn số suất đã bán.');
             }
+            if (isset($old[$line['product_id']])
+                && ((int) $old[$line['product_id']]['has_purchase'] > 0 || (int) $old[$line['product_id']]['has_order'] > 0)) {
+                $original = $old[$line['product_id']];
+                if ((int) $original['sale_price'] !== $line['sale_price']
+                    || (int) $original['per_user_limit'] !== $line['per_user_limit']) {
+                    throw new InvalidArgumentException('Không thể đổi giá flash hoặc giới hạn mua sau khi sản phẩm đã có đơn.');
+                }
+            }
             $upsert->execute(['campaign_id' => $campaignId] + $line);
             $kept[] = $line['product_id'];
         }
         foreach ($old as $productId => $oldRow) {
             if (!in_array($productId, $kept, true)) {
-                if ((int) $oldRow['sold_quantity'] > 0) {
-                    throw new InvalidArgumentException('Không thể xóa sản phẩm đã có lượt mua; hãy giữ dòng đó hoặc hủy chiến dịch.');
+                if ((int) $oldRow['sold_quantity'] > 0
+                    || (int) $oldRow['has_purchase'] > 0
+                    || (int) $oldRow['has_order'] > 0) {
+                    throw new InvalidArgumentException('Không thể gỡ sản phẩm đã có đơn; hãy giữ sản phẩm hoặc hủy chương trình.');
                 }
                 $this->database->prepare('DELETE FROM flash_sale_items WHERE id = :id')
                     ->execute(['id' => $oldRow['id']]);

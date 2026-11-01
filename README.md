@@ -114,6 +114,17 @@ $env:INVENTORY_TEST_DB_NAME = 'nongsan_flashsale_test'
 & 'C:\xampp\php\php.exe' setup\tests\flash-sale.php
 ```
 
+**8B. Quản trị Flash Sale:** Admin quản lý chiến dịch tại `/admin/flash-sales`; tạo/sửa thời gian và sản phẩm, tìm kiếm sản phẩm, theo dõi quota/đã bán/còn lại/doanh thu, hủy/ẩn hoặc xóa chương trình chưa có đơn. Các thao tác ghi dùng CSRF và quyền `flash_sales.manage`; chỉ vai trò admin hiện được cấp quyền Flash Sale. Trạng thái hiển thị được tính theo giờ máy chủ. Không cần migration mới cho giao diện quản trị.
+
+Kiểm thử luật quản trị trên cùng database thử `_test`:
+
+```powershell
+$env:INVENTORY_TEST_DB_NAME = 'nongsan_flashsale_test'
+& 'C:\xampp\php\php.exe' setup\tests\flash-sale-admin.php
+```
+
+Kiểm tra thủ công: đăng nhập admin để xác nhận menu và danh sách; tạo lịch nháp/sắp diễn ra; thử thời gian kết thúc trước bắt đầu, giá flash bằng/cao hơn giá hiện tại, sản phẩm trùng lịch, quota thấp hơn đã bán; tìm sản phẩm và xác nhận cảnh báo tồn kho; kiểm tra doanh thu/đã bán/còn lại; thử hủy chương trình có đơn và xác nhận không xóa được chương trình hoặc gỡ sản phẩm đã có đơn. Đăng nhập bằng nhân viên để xác nhận không truy cập được route Flash Sale.
+
 **5. Đơn hàng của người dùng mẫu:**
 
 ```sql
