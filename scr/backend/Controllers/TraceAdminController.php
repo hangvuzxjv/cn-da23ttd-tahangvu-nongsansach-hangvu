@@ -858,6 +858,9 @@ final class TraceAdminController extends Controller
     {
         $items = [
             ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
+            ['permission' => 'reports.view', 'label' => 'Báo cáo', 'url' => '/admin/reports'],
+            ['permission' => 'content.view', 'label' => 'Trang tĩnh', 'url' => '/admin/content/pages'],
+            ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
             ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
             ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
             ['permission' => 'reviews.view', 'label' => 'Đánh giá', 'url' => '/admin/reviews'],

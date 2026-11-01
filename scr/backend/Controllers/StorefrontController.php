@@ -255,7 +255,16 @@ final class StorefrontController extends Controller
     public function sitemap(): Response
     {
         $database = Database::connection();
-        $urls = [absolute_url('/') , absolute_url('/san-pham')];
+        $urls = [absolute_url('/'), absolute_url('/san-pham'), absolute_url('/lien-he')];
+        $pageSlugs = StaticPageService::publishedSlugs();
+        $pagePlaceholders = implode(',', array_fill(0, count($pageSlugs), '?'));
+        $pageQuery = $database->prepare(
+            "SELECT slug FROM pages WHERE status = 'published' AND slug IN (" . $pagePlaceholders . ')'
+        );
+        $pageQuery->execute($pageSlugs);
+        foreach ($pageQuery->fetchAll(PDO::FETCH_COLUMN) as $slug) {
+            $urls[] = absolute_url('/' . rawurlencode((string) $slug));
+        }
         foreach ([
             'SELECT slug FROM regions WHERE is_active = 1',
             'SELECT slug FROM categories WHERE is_active = 1',

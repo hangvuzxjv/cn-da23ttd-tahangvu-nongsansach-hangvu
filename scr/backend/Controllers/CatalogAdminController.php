@@ -990,6 +990,9 @@ final class CatalogAdminController extends Controller
     {
         $items = [
             ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
+            ['permission' => 'reports.view', 'label' => 'Báo cáo', 'url' => '/admin/reports'],
+            ['permission' => 'content.view', 'label' => 'Trang tĩnh', 'url' => '/admin/content/pages'],
+            ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
             ['permission' => 'regions.view', 'label' => 'Vùng miền', 'url' => '/admin/regions'],
             ['permission' => 'categories.view', 'label' => 'Danh mục', 'url' => '/admin/categories'],
             ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],

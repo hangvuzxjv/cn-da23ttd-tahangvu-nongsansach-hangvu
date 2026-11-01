@@ -443,16 +443,17 @@ Trên CSDL đã có dữ liệu, hãy **sao lưu trước**, sau đó chỉ áp 
 
 Routes mới: `POST /email/xac-minh/gui-lai`, `GET /notifications`, `POST /notifications/{id}/read`, `/admin/mail`, `POST /admin/mail/driver`, `POST /admin/mail/test`, `POST /admin/mail/{id}/resend`. Thao tác ghi có CSRF; APIs AJAX dùng `{ success, message, data }`. Dropdown thông báo polling tối thiểu 30 giây khi tab đang hiện.
 
-Chạy tất cả test trên **database thử riêng** có tên kết thúc `_test`, đã import schema + seed và áp dụng các migration trước đó cùng migration 9B:
+Chạy tất cả test trên **database thử riêng** có tên kết thúc `_test`, đã import schema + seed và áp dụng các migration 9A, 9B, 9C:
 
 ```powershell
-$env:INVENTORY_TEST_DB_NAME = 'nongsan_step9b_test'
+$env:INVENTORY_TEST_DB_NAME = 'nongsan_step9c_test'
 $tests = @(
   @('vnpay-signature.php'), @('redirect-helpers.php'), @('reconcile.php'),
   @('payment-flows.php'), @('flash-sale.php'), @('flash-sale-admin.php'),
   @('customer-engagement.php'), @('email-infrastructure.php'),
   @('fefo.php', '4', '1'), @('concurrency.php', '--cli'),
-  @('checkout-invariants.php'), @('checkout-concurrency.php')
+  @('checkout-invariants.php'), @('checkout-concurrency.php'),
+  @('dashboard-static-pages.php')
 )
 foreach ($test in $tests) {
   & 'C:\xampp\php\php.exe' (Join-Path 'setup\tests' $test[0]) @($test | Select-Object -Skip 1)
@@ -461,3 +462,11 @@ foreach ($test in $tests) {
 ```
 
 Kiểm tra thủ công: chọn từng kênh và gửi thư thử; cố ý dùng cấu hình sai để xác nhận thư được giữ trong outbox rồi gửi lại; đăng ký/xác minh, gửi lại xác minh, quên/đặt lại mật khẩu và thử token cũ/hết hạn; kiểm tra đặt hàng COD/VietQR/VNPay vẫn thành công khi email lỗi; cập nhật trạng thái đơn và xem cả email/thông báo chuông; bật Flash Sale cho sản phẩm yêu thích để kiểm tra thông báo; xác nhận admin che email người nhận, xem lỗi an toàn và nhân viên không có quyền quản lý mail. Chưa cấu hình kênh thật thì chọn `outbox`, không gửi thư kiểm thử ra ngoài.
+
+## Bước 9C: Dashboard, báo cáo và trang tĩnh
+
+Trên CSDL đang có dữ liệu, hãy **sao lưu trước**, sau đó chỉ áp dụng `setup/database/migrations/20261104_dashboard_static_content.sql`. Migration tạo bảng giới hạn gửi liên hệ, thêm các chỉ mục báo cáo nếu chưa có và thêm nội dung tiếng Việt mặc định mà không ghi đè nội dung đã chỉnh sửa. Không chạy lại `schema.sql` hoặc `seed.sql`.
+
+Dashboard doanh thu và `/admin/reports` chỉ có quyền `reports.view` (mặc định quản trị viên). Báo cáo gồm doanh thu theo ngày/sản phẩm/vùng/phương thức thanh toán, tồn nhập-xuất theo lô và Flash Sale; CSV được stream, có BOM UTF-8 và xử lý an toàn ô bắt đầu bằng ký tự công thức. Trang quản trị `/admin/content/pages` cho phép xuất bản/ẩn nội dung đã lọc whitelist; `/admin/contacts` quản lý tin nhắn và email nhận thông báo tùy chọn. Các trang khách hàng gồm `/gioi-thieu`, `/chinh-sach-doi-tra`, `/chinh-sach-van-chuyen`, `/chinh-sach-bao-mat`, `/dieu-khoan-su-dung`, `/cau-hoi-thuong-gap` và `/lien-he`.
+
+Test mới: `php setup/tests/dashboard-static-pages.php`; test này cũng đã được thêm vào danh sách chạy toàn bộ ở trên.

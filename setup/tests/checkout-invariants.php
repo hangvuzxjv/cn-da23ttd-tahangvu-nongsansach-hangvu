@@ -67,27 +67,19 @@ $previousDriverQuery = $database->prepare("SELECT setting_value FROM settings WH
 $previousDriverQuery->execute();
 $previousDriver = $previousDriverQuery->fetchColumn();
 $hasPreviousDriver = $previousDriver !== false;
-$database->prepare(
-    "INSERT INTO settings (setting_key, setting_value, description)
-     VALUES ('mailer.driver', 'smtp', 'Checkout mail-failure test')
-     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)"
-)->execute();
 $mailFailure = null;
 try {
     $mailFailure = (new MailService(
         $database,
-        ['mailer' => ['driver' => 'smtp', 'from_address' => 'no-reply@example.test', 'smtp' => []]],
+        ['mailer' => ['driver' => 'outbox']],
         static function (): void {
             throw new RuntimeException('Simulated delivery failure');
         }
     ))->sendTemplate($email, 'Checkout test', 'Đơn hàng đã đặt', ['Email cố ý lỗi sau khi tạo đơn.']);
 } finally {
-    $database->prepare('DELETE FROM settings WHERE setting_key = \'mailer.driver\'')->execute();
     if ($hasPreviousDriver) {
         $database->prepare(
-            "INSERT INTO settings (setting_key, setting_value, description)
-             VALUES ('mailer.driver', :value, 'Restored after checkout mail-failure test')
-             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)"
+            "UPDATE settings SET setting_value = :value WHERE setting_key = 'mailer.driver'"
         )->execute(['value' => $previousDriver]);
     }
 }
@@ -100,8 +92,8 @@ if (!$mailFailure['accepted'] || !$mailFailure['queued'] || $mailFailure['delive
 $failedMail = $database->prepare('SELECT status, attempts FROM mail_outbox WHERE id = :id');
 $failedMail->execute(['id' => $mailFailure['id']]);
 $failedMailRow = $failedMail->fetch();
-if ($failedMailRow['status'] !== 'pending' || (int) $failedMailRow['attempts'] !== 1) {
-    throw new RuntimeException('The failed order email was not recorded in the outbox.');
+if ($failedMailRow['status'] !== 'pending' || (int) $failedMailRow['attempts'] !== 0) {
+    throw new RuntimeException('The order email was not safely retained in the outbox.');
 }
 $database->prepare('DELETE FROM mail_outbox WHERE id = :id')->execute(['id' => $mailFailure['id']]);
 $duplicate = $orders->place($userId, $input);

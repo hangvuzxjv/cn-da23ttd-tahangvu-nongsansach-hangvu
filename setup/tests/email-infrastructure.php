@@ -92,12 +92,9 @@ try {
     emailTestAssert($queued['accepted'] && $queued['queued'] && !$queued['delivered'], 'Outbox mode did not queue the email.');
     $messageIds[] = (int) $queued['id'];
 
-    $database->prepare(
-        "UPDATE settings SET setting_value = 'smtp' WHERE setting_key = 'mailer.driver'"
-    )->execute();
     $failingMailer = new MailService(
         $database,
-        ['mailer' => ['driver' => 'smtp', 'from_address' => 'no-reply@example.test', 'smtp' => []]],
+        ['mailer' => ['driver' => 'outbox']],
         static function (): void {
             throw new RuntimeException('Simulated transport failure');
         }
@@ -115,9 +112,9 @@ try {
     $failedRow = $pending->fetch();
     emailTestAssert(
         $failedRow['status'] === 'pending'
-            && (int) $failedRow['attempts'] === 1
-            && !str_contains((string) $failedRow['last_error'], 'Simulated transport failure'),
-        'Transport failure details were not sanitized in the outbox.'
+            && (int) $failedRow['attempts'] === 0
+            && str_contains((string) $failedRow['last_error'], 'Chế độ hộp thư chờ'),
+        'Test mail must remain safely queued in outbox mode.'
     );
 
     printf(

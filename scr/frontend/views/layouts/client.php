@@ -61,9 +61,29 @@
 <?php if ($mailLink = flash('mail_link')): ?>
     <div class="container pt-3"><div class="alert alert-info mb-0">Liên kết email thử nghiệm (debug): <a href="<?= e($mailLink) ?>">Mở liên kết</a></div></div>
 <?php endif; ?>
+<?php
+$footerSlugs = StaticPageService::publishedSlugs();
+$footerPageQuery = Database::connection()->prepare(
+    "SELECT title, slug FROM pages WHERE status = 'published' AND slug IN (" . implode(',', array_fill(0, count($footerSlugs), '?')) . ')'
+);
+$footerPageQuery->execute($footerSlugs);
+$footerPages = $footerPageQuery->fetchAll();
+?>
 <main class="container py-5">
     <?= $content ?? '' ?>
 </main>
+<footer class="border-top bg-light py-4">
+    <div class="container">
+        <div class="row g-3">
+            <div class="col-12 col-md-6"><strong class="text-success">Nông Sản Sạch</strong><p class="small text-secondary mb-0 mt-2">Nông sản theo mùa, minh bạch nguồn gốc từ các vùng miền Việt Nam.</p></div>
+            <div class="col-12 col-md-6"><h2 class="h6">Thông tin cửa hàng</h2><ul class="list-unstyled small mb-0">
+                <?php foreach ($footerPages as $footerPage): ?><li><a href="<?= e(url('/' . $footerPage['slug'])) ?>"><?= e($footerPage['title']) ?></a></li><?php endforeach; ?>
+                <li><a href="<?= e(url('/lien-he')) ?>">Liên hệ</a></li>
+                <li><a href="<?= e(url('/sitemap.xml')) ?>">Sơ đồ trang</a></li>
+            </ul></div>
+        </div>
+    </div>
+</footer>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= e(asset('/js/cart.js')) ?>"></script>
 <script src="<?= e(asset('/js/flash-sale.js')) ?>"></script>

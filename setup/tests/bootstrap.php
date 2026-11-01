@@ -53,11 +53,21 @@ function inventoryTestDatabase(): PDO
         $database['port'],
         $database['name']
     );
-    return new PDO($dsn, $database['username'], $database['password'], [
+    $connection = new PDO($dsn, $database['username'], $database['password'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
+    $connection->exec(
+        "SET SESSION sql_mode = CONCAT(@@SESSION.sql_mode,
+            IF(FIND_IN_SET('ONLY_FULL_GROUP_BY', @@SESSION.sql_mode) = 0, ',ONLY_FULL_GROUP_BY', ''))"
+    );
+    $connection->exec(
+        "INSERT INTO settings (setting_key, setting_value, description)
+         VALUES ('mailer.driver', 'outbox', 'Forced outbox for automated tests')
+         ON DUPLICATE KEY UPDATE setting_value = 'outbox'"
+    );
+    return $connection;
 }
 
 if (PHP_SAPI !== 'cli') {

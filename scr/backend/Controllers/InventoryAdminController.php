@@ -685,6 +685,9 @@ final class InventoryAdminController extends Controller
     {
         $items = [
             ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
+            ['permission' => 'reports.view', 'label' => 'Báo cáo', 'url' => '/admin/reports'],
+            ['permission' => 'content.view', 'label' => 'Trang tĩnh', 'url' => '/admin/content/pages'],
+            ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
             ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
             ['permission' => 'flash_sales.view', 'label' => 'Flash Sale', 'url' => '/admin/flash-sales'],
             ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],

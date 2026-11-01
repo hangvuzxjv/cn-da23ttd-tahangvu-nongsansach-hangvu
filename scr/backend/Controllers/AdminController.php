@@ -23,10 +23,12 @@ final class AdminController extends Controller
              GROUP BY b.id, b.batch_code, p.name
              ORDER BY scan_count DESC, b.id DESC LIMIT 10'
         )->fetchAll();
+        $dashboard = Auth::can('reports.view') ? (new ReportService())->dashboard() : null;
         $this->view('admin/dashboard', [
             'title' => 'Quản trị',
             'user' => Auth::user(),
             'topScanned' => $topScanned,
+            'dashboard' => $dashboard,
             'menu' => $this->menu(),
         ], 'admin');
     }
@@ -154,6 +156,9 @@ final class AdminController extends Controller
     {
         $items = [
             ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
+            ['permission' => 'reports.view', 'label' => 'Báo cáo', 'url' => '/admin/reports'],
+            ['permission' => 'content.view', 'label' => 'Trang tĩnh', 'url' => '/admin/content/pages'],
+            ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
             ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
             ['permission' => 'orders.view', 'label' => 'Thanh toán', 'url' => '/admin/payments'],
             ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
