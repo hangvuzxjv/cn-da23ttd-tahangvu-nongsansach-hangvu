@@ -16,17 +16,32 @@ final class TraceAdminController extends Controller
     public function farms(): void
     {
         $database = Database::connection();
-        $farms = $database->query(
+        $total = (int) $database->query('SELECT COUNT(*) FROM farms')->fetchColumn();
+        $perPage = 20;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $farmQuery = $database->prepare(
             'SELECT f.*, r.name AS region_name,
                     (SELECT COUNT(*) FROM product_batches b WHERE b.farm_id = f.id) AS batch_count,
                     (SELECT COUNT(*) FROM products p WHERE p.farm_id = f.id) AS product_count
-             FROM farms f JOIN regions r ON r.id = f.region_id ORDER BY f.name'
-        )->fetchAll();
+             FROM farms f JOIN regions r ON r.id = f.region_id ORDER BY f.name
+             LIMIT :limit OFFSET :offset'
+        );
+        $farmQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $farmQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $farmQuery->execute();
+        $farms = $farmQuery->fetchAll();
         $regions = $database->query('SELECT id, name FROM regions WHERE level = 2 AND is_active = 1 ORDER BY name')->fetchAll();
         $this->adminView('admin/farms', [
             'title' => 'Nông trại',
             'farms' => $farms,
             'regions' => $regions,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/farms',
+            'paginationQuery' => [],
+            'paginationLabel' => 'nông trại',
             'menu' => $this->menu(),
             'success' => flash('success'),
             'error' => flash('error'),
@@ -184,14 +199,24 @@ final class TraceAdminController extends Controller
     public function batches(): void
     {
         $database = Database::connection();
-        $batches = $database->query(
+        $total = (int) $database->query('SELECT COUNT(*) FROM product_batches')->fetchColumn();
+        $perPage = 20;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $batchQuery = $database->prepare(
             'SELECT b.id, b.batch_code, b.harvested_at, b.packed_at, b.expires_at,
                     b.quantity_received, b.quantity_remaining, b.inspection_result, b.status,
                     p.name AS product_name, f.name AS farm_name,
                     (SELECT COUNT(*) FROM trace_scans s WHERE s.batch_id = b.id) AS scan_count
              FROM product_batches b JOIN products p ON p.id = b.product_id
-             LEFT JOIN farms f ON f.id = b.farm_id ORDER BY b.created_at DESC, b.id DESC LIMIT 300'
-        )->fetchAll();
+             LEFT JOIN farms f ON f.id = b.farm_id ORDER BY b.created_at DESC, b.id DESC
+             LIMIT :limit OFFSET :offset'
+        );
+        $batchQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $batchQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $batchQuery->execute();
+        $batches = $batchQuery->fetchAll();
         $products = $database->query("SELECT id, name, sku, farm_id FROM products WHERE deleted_at IS NULL ORDER BY name")->fetchAll();
         $farms = $database->query("SELECT id, name, region_id FROM farms WHERE status = 'active' ORDER BY name")->fetchAll();
         $this->adminView('admin/batches', [
@@ -199,6 +224,11 @@ final class TraceAdminController extends Controller
             'batches' => $batches,
             'products' => $products,
             'farms' => $farms,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/batches',
+            'paginationQuery' => [],
+            'paginationLabel' => 'lô hàng',
             'menu' => $this->menu(),
             'success' => flash('success'),
             'error' => flash('error'),

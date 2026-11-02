@@ -1,11 +1,13 @@
-<div class="text-center mb-4">
-    <div class="display-5 text-success">✓</div>
+<nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item active" aria-current="page">Đặt hàng thành công</li></ol></nav>
+<div class="order-confirmation-card mb-4">
+    <div class="card card-body text-center">
     <h1 class="h2">Đặt hàng thành công</h1>
     <?php $paymentMethodLabels = ['vnpay' => 'VNPay', 'bank_transfer' => 'VietQR', 'cod' => 'COD', 'online' => 'Thanh toán trực tuyến']; ?>
-    <p class="text-secondary">Mã đơn hàng <strong><?= e($order['order_no']) ?></strong>. Phương thức: <?= e($paymentMethodLabels[$payment['method'] ?? 'cod'] ?? ($payment['method'] ?? 'COD')) ?>.</p>
+    <p class="text-secondary mb-0">Mã đơn hàng <strong><?= e($order['order_no']) ?></strong>. Phương thức: <?= e($paymentMethodLabels[$payment['method'] ?? 'cod'] ?? ($payment['method'] ?? 'COD')) ?>.</p>
+    </div>
 </div>
-<?php if ($emailWarning): ?><div class="alert alert-warning mx-auto" style="max-width:760px"><?= e($emailWarning) ?></div><?php endif; ?>
-<div class="card mx-auto" style="max-width: 760px">
+<?php if ($emailWarning): ?><div class="alert alert-warning order-confirmation-card"><?= e($emailWarning) ?></div><?php endif; ?>
+<div class="card order-confirmation-card">
     <div class="card-body">
         <?php foreach ($items as $item): ?><div class="d-flex justify-content-between border-bottom py-2"><span><?php if (!empty($item['flash_sale_item_id'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?><?= e($item['product_name']) ?> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?><span class="d-block small text-secondary"><?= number_format((float) $item['unit_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?></span></span><strong><?= number_format((float) $item['line_total'], 0, ',', '.') ?> ₫</strong></div><?php endforeach; ?>
         <div class="d-flex justify-content-between pt-3"><span>Tạm tính</span><span><?= number_format((float) $order['subtotal'], 0, ',', '.') ?> ₫</span></div>

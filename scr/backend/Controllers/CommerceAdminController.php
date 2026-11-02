@@ -197,13 +197,28 @@ final class CommerceAdminController extends Controller
             $filters['to'] = '';
         }
         $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+        $countQuery = $database->prepare(
+            'SELECT COUNT(*) FROM payments p JOIN orders o ON o.id = p.order_id
+             JOIN users u ON u.id = o.user_id ' . $where
+        );
+        $countQuery->execute($parameters);
+        $total = (int) $countQuery->fetchColumn();
+        $perPage = 20;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
         $query = $database->prepare(
             'SELECT p.*, o.order_no, o.user_id, u.name AS customer_name
              FROM payments p JOIN orders o ON o.id = p.order_id
              JOIN users u ON u.id = o.user_id ' . $where . '
-             ORDER BY p.created_at DESC, p.id DESC LIMIT 200'
+             ORDER BY p.created_at DESC, p.id DESC LIMIT :limit OFFSET :offset'
         );
-        $query->execute($parameters);
+        foreach ($parameters as $name => $value) {
+            $query->bindValue(':' . $name, $value, PDO::PARAM_STR);
+        }
+        $query->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $query->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $query->execute();
         $totals = $database->query(
             "SELECT method, SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS received,
                     SUM(CASE WHEN status = 'refunded' THEN amount ELSE 0 END) AS refunded
@@ -214,6 +229,11 @@ final class CommerceAdminController extends Controller
             'payments' => $query->fetchAll(),
             'totals' => $totals,
             'filters' => $filters,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/payments',
+            'paginationQuery' => array_filter($filters, static fn (string $value): bool => $value !== ''),
+            'paginationLabel' => 'giao dịch thanh toán',
             'canManage' => Auth::can('orders.manage'),
             'success' => flash('success'),
             'error' => flash('error'),
@@ -347,13 +367,22 @@ final class CommerceAdminController extends Controller
     public function vouchers(): void
     {
         $database = Database::connection();
-        $vouchers = $database->query(
+        $total = (int) $database->query('SELECT COUNT(*) FROM vouchers')->fetchColumn();
+        $perPage = 20;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $voucherQuery = $database->prepare(
             'SELECT v.*,
                 (SELECT GROUP_CONCAT(category_id) FROM voucher_categories vc WHERE vc.voucher_id = v.id) AS category_ids,
                 (SELECT GROUP_CONCAT(product_id) FROM voucher_products vp WHERE vp.voucher_id = v.id) AS product_ids,
                 (SELECT COUNT(*) FROM voucher_usages vu WHERE vu.voucher_id = v.id AND vu.status = \'used\') AS active_uses
-             FROM vouchers v ORDER BY v.id DESC'
-        )->fetchAll();
+             FROM vouchers v ORDER BY v.id DESC LIMIT :limit OFFSET :offset'
+        );
+        $voucherQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $voucherQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $voucherQuery->execute();
+        $vouchers = $voucherQuery->fetchAll();
         $categories = $database->query('SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name')->fetchAll();
         $products = $database->query('SELECT id, name, sku FROM products WHERE status = \'active\' AND deleted_at IS NULL ORDER BY name')->fetchAll();
         $this->adminView('admin/vouchers', [
@@ -361,6 +390,11 @@ final class CommerceAdminController extends Controller
             'vouchers' => $vouchers,
             'categories' => $categories,
             'products' => $products,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/vouchers',
+            'paginationQuery' => [],
+            'paginationLabel' => 'voucher',
             'success' => flash('success'),
             'error' => flash('error'),
         ]);
@@ -458,10 +492,19 @@ final class CommerceAdminController extends Controller
     public function shipping(): void
     {
         $database = Database::connection();
-        $fees = $database->query(
+        $total = (int) $database->query('SELECT COUNT(*) FROM shipping_fees')->fetchColumn();
+        $perPage = 20;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $feeQuery = $database->prepare(
             'SELECT sf.*, r.name AS region_name FROM shipping_fees sf JOIN regions r ON r.id = sf.region_id
-             ORDER BY r.level, r.name'
-        )->fetchAll();
+             ORDER BY r.level, r.name LIMIT :limit OFFSET :offset'
+        );
+        $feeQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $feeQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $feeQuery->execute();
+        $fees = $feeQuery->fetchAll();
         $regions = $database->query('SELECT id, name, level FROM regions WHERE is_active = 1 AND level IN (1, 2) ORDER BY level, name')->fetchAll();
         $minimum = $database->query("SELECT setting_value FROM settings WHERE setting_key = 'free_shipping_minimum'")->fetchColumn();
         $this->adminView('admin/shipping', [
@@ -469,6 +512,11 @@ final class CommerceAdminController extends Controller
             'fees' => $fees,
             'regions' => $regions,
             'freeMinimum' => $minimum === false ? '500000' : $minimum,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/shipping',
+            'paginationQuery' => [],
+            'paginationLabel' => 'mức phí vận chuyển',
             'success' => flash('success'),
             'error' => flash('error'),
         ]);

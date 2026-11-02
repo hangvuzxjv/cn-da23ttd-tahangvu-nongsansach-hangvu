@@ -1,8 +1,8 @@
-<h1 class="h2 mb-4">Thanh toán và đặt hàng</h1>
+<header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/gio-hang')) ?>">Giỏ hàng</a></li><li class="breadcrumb-item active" aria-current="page">Thanh toán</li></ol></nav><h1 class="h2">Thanh toán và đặt hàng</h1><p class="text-secondary">Xác nhận địa chỉ nhận hàng, phương thức thanh toán và tổng đơn.</p></header>
 <?php foreach ($errors as $error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endforeach; ?>
-<div class="row g-4">
+<div class="row g-4 checkout-layout">
     <div class="col-lg-7">
-        <form method="post" action="<?= e(url('/thanh-toan/dat-hang')) ?>" id="placeOrderForm">
+        <form method="post" action="<?= e(url('/thanh-toan/dat-hang')) ?>" id="placeOrderForm" data-submit-once>
             <?= csrf_field() ?>
             <input type="hidden" name="idempotency_token" value="<?= e($checkoutToken) ?>">
             <div class="card mb-4">
@@ -20,11 +20,11 @@
                     </select>
                     <?php $useNewAddress = array_key_exists('address_id', $oldInput) ? empty($oldInput['address_id']) : $defaultAddress === null; ?>
                     <div id="newCheckoutAddress" class="row g-3 mt-1" <?= $useNewAddress ? '' : 'hidden' ?>>
-                        <div class="col-md-6"><label class="form-label">Người nhận</label><input class="form-control" name="recipient_name" value="<?= e($oldInput['recipient_name'] ?? Auth::user()['name']) ?>" maxlength="150" required <?= $useNewAddress ? '' : 'disabled' ?>></div>
-                        <div class="col-md-6"><label class="form-label">Điện thoại</label><input class="form-control" name="phone" value="<?= e($oldInput['phone'] ?? Auth::user()['phone']) ?>" required <?= $useNewAddress ? '' : 'disabled' ?>></div>
-                        <div class="col-md-6"><label class="form-label">Tỉnh/thành</label><select class="form-select" name="region_id" id="checkoutRegion" required <?= $useNewAddress ? '' : 'disabled' ?>><option value="">Chọn tỉnh/thành</option><?php foreach ($regions as $region): ?><option value="<?= (int) $region['id'] ?>" <?= (string) ($oldInput['region_id'] ?? '') === (string) $region['id'] ? 'selected' : '' ?>><?= e($region['name']) ?></option><?php endforeach; ?></select></div>
-                        <div class="col-md-6"><label class="form-label">Phường/xã</label><input class="form-control" name="ward" value="<?= e($oldInput['ward'] ?? '') ?>" <?= $useNewAddress ? '' : 'disabled' ?>></div>
-                        <div class="col-12"><label class="form-label">Địa chỉ cụ thể</label><input class="form-control" name="address_line" value="<?= e($oldInput['address_line'] ?? '') ?>" maxlength="255" required <?= $useNewAddress ? '' : 'disabled' ?>></div>
+                        <div class="col-md-6"><label class="form-label" for="checkoutRecipientName">Người nhận</label><input class="form-control" id="checkoutRecipientName" name="recipient_name" value="<?= e($oldInput['recipient_name'] ?? Auth::user()['name']) ?>" maxlength="150" required <?= $useNewAddress ? '' : 'disabled' ?>></div>
+                        <div class="col-md-6"><label class="form-label" for="checkoutPhone">Điện thoại</label><input class="form-control" id="checkoutPhone" name="phone" value="<?= e($oldInput['phone'] ?? Auth::user()['phone']) ?>" required <?= $useNewAddress ? '' : 'disabled' ?>></div>
+                        <div class="col-md-6"><label class="form-label" for="checkoutRegion">Tỉnh/thành</label><select class="form-select" name="region_id" id="checkoutRegion" required <?= $useNewAddress ? '' : 'disabled' ?>><option value="">Chọn tỉnh/thành</option><?php foreach ($regions as $region): ?><option value="<?= (int) $region['id'] ?>" <?= (string) ($oldInput['region_id'] ?? '') === (string) $region['id'] ? 'selected' : '' ?>><?= e($region['name']) ?></option><?php endforeach; ?></select></div>
+                        <div class="col-md-6"><label class="form-label" for="checkoutWard">Phường/xã</label><input class="form-control" id="checkoutWard" name="ward" value="<?= e($oldInput['ward'] ?? '') ?>" <?= $useNewAddress ? '' : 'disabled' ?>></div>
+                        <div class="col-12"><label class="form-label" for="checkoutAddressLine">Địa chỉ cụ thể</label><input class="form-control" id="checkoutAddressLine" name="address_line" value="<?= e($oldInput['address_line'] ?? '') ?>" maxlength="255" required <?= $useNewAddress ? '' : 'disabled' ?>></div>
                     </div>
                 </div>
             </div>
@@ -44,7 +44,7 @@
         </form>
     </div>
     <div class="col-lg-5">
-        <div class="card">
+        <div class="card checkout-summary">
             <div class="card-header"><h2 class="h5 mb-0">Đơn hàng của bạn</h2></div>
             <div class="card-body">
                 <?php foreach ($cart['items'] as $item): ?>
@@ -58,7 +58,7 @@
                     </div>
                 <?php endforeach; ?>
                 <hr>
-                <form id="voucherPreviewForm" method="post" action="<?= e(url('/thanh-toan/xem-voucher')) ?>">
+                <form id="voucherPreviewForm" method="post" action="<?= e(url('/thanh-toan/xem-voucher')) ?>" data-ajax-form>
                     <?= csrf_field() ?>
                     <label class="form-label" for="voucherCode">Mã giảm giá</label>
                     <div class="input-group">

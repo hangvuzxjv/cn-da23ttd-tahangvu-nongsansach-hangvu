@@ -1,5 +1,6 @@
 <section class="mx-auto trace-lookup-card">
-    <div class="text-center mb-4"><div class="display-4 text-secondary" aria-hidden="true">⌕</div><h1 class="h2">Chưa tìm thấy mã lô</h1>
+    <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item active" aria-current="page">Truy xuất nguồn gốc</li></ol></nav>
+    <div class="text-center mb-4"><h1 class="h2">Chưa tìm thấy mã lô</h1>
         <?php if (!empty($batchCode)): ?><p class="text-secondary">Không tìm thấy mã <code><?= e($batchCode) ?></code>. Vui lòng kiểm tra ký tự trên nhãn và thử lại.</p><?php else: ?><p class="text-secondary">Nhập mã lô trên nhãn sản phẩm để xem thông tin nguồn gốc.</p><?php endif; ?>
     </div>
     <form method="get" action="<?= e(url('/truy-xuat')) ?>">

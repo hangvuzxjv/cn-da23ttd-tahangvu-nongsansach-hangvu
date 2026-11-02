@@ -1,5 +1,6 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
     <div>
+        <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/tai-khoan/don-hang')) ?>">Đơn hàng của tôi</a></li><li class="breadcrumb-item active" aria-current="page"><?= e($order['order_no']) ?></li></ol></nav>
         <h1 class="h2 mb-1">Chờ thanh toán</h1>
         <p class="text-secondary mb-0">Đơn hàng <?= e($order['order_no']) ?></p>
     </div>
@@ -22,7 +23,7 @@
         <div class="card">
             <div class="card-header"><h2 class="h5 mb-0">Quét mã VietQR để chuyển khoản</h2></div>
             <div class="card-body text-center">
-                <div class="mx-auto mb-3" style="max-width:320px"><?= $qrSvg ?></div>
+                <div class="payment-qr mx-auto mb-3"><?= $qrSvg ?></div>
                 <p class="mb-1">Ngân hàng BIN: <strong><?= e($bankSettings['vietqr_bank_bin']) ?></strong></p>
                 <p class="mb-1">Số tài khoản: <strong><?= e($bankSettings['vietqr_account_number']) ?></strong></p>
                 <p class="mb-1">Chủ tài khoản: <strong><?= e($bankSettings['vietqr_account_name']) ?></strong></p>
@@ -54,17 +55,3 @@
         </div>
     </div>
 </div>
-<script>
-(() => {
-    const timer = document.getElementById('paymentCountdown');
-    if (!timer) return;
-    const deadline = new Date(timer.dataset.deadline.replace(' ', 'T')).getTime();
-    const render = () => {
-        const remaining = Math.max(0, Math.floor((deadline - Date.now()) / 1000));
-        timer.textContent = `${Math.floor(remaining / 60)} phút ${remaining % 60} giây`;
-        if (remaining === 0) window.location.reload();
-    };
-    render();
-    window.setInterval(render, 1000);
-})();
-</script>

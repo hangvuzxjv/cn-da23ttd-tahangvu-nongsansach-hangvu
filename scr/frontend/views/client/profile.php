@@ -1,5 +1,5 @@
+<header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item active" aria-current="page">Tài khoản</li></ol></nav><h1 class="h2">Hồ sơ của tôi</h1><p class="text-secondary">Cập nhật thông tin liên hệ và bảo mật tài khoản.</p></header>
 <div class="row g-4">
-    <div class="col-12"><h1 class="h2">Hồ sơ của tôi</h1></div>
     <div class="col-lg-6">
         <div class="card"><div class="card-body">
             <h2 class="h5">Thông tin tài khoản</h2>

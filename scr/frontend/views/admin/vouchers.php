@@ -7,6 +7,7 @@
         <button class="btn btn-success">Tạo voucher</button>
     </form>
 </div></details>
+<?php if (!$vouchers): ?><div class="empty-state">Chưa có voucher.</div><?php else: ?>
 <div class="accordion" id="voucherList"><?php foreach ($vouchers as $index=>$voucher): ?>
     <details class="card mb-2"><summary class="card-header d-flex justify-content-between"><span><strong><?= e($voucher['code']) ?></strong> · <?= e($voucher['status']) ?></span><span>Dùng <?= (int) $voucher['active_uses'] ?> / <?= e($voucher['usage_limit'] ?? '∞') ?></span></summary>
     <div class="card-body"><form method="post" action="<?= e(url('/admin/vouchers/' . $voucher['id'])) ?>"><?= csrf_field() ?>
@@ -15,3 +16,5 @@
         <button class="btn btn-primary">Lưu thay đổi</button>
     </form></div></details>
 <?php endforeach; ?></div>
+<?php endif; ?>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

@@ -1,8 +1,8 @@
 <div class="row justify-content-center"><div class="col-12 col-lg-8">
-    <div class="mb-4"><h1 class="h2 mb-2">Liên hệ Nông Sản Sạch</h1><p class="text-secondary">Cần tư vấn sản phẩm, đơn hàng hoặc nguồn gốc nông sản? Gửi lời nhắn, cửa hàng sẽ phản hồi sớm.</p></div>
+    <header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item active" aria-current="page">Liên hệ</li></ol></nav><h1 class="h2 mb-2">Liên hệ Nông Sản Sạch</h1><p class="text-secondary">Cần tư vấn sản phẩm, đơn hàng hoặc nguồn gốc nông sản? Gửi lời nhắn, cửa hàng sẽ phản hồi sớm.</p></header>
     <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
     <?php if (!empty($error)): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
-    <form class="card card-body" method="post" action="<?= e(url('/lien-he')) ?>">
+    <form class="card card-body" method="post" action="<?= e(url('/lien-he')) ?>" data-submit-once>
         <?= csrf_field() ?>
         <div class="visually-hidden" aria-hidden="true"><label for="contactCompany">Để trống trường này</label><input id="contactCompany" name="company" tabindex="-1" autocomplete="off"></div>
         <div class="row g-3">

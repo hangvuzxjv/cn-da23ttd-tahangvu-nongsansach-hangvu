@@ -11,7 +11,7 @@
         <form class="row g-2" method="post" action="<?= e(url('/admin/regions')) ?>">
             <?= csrf_field() ?>
             <div class="col-md-3"><label class="form-label">Tên</label><input class="form-control" name="name" required></div>
-            <div class="col-md-3"><label class="form-label">Miền cha (để trống để tạo miền)</label><select class="form-select" name="parent_id"><option value="">Miền cấp 1</option><?php foreach ($regions as $item): if ((int) $item['level'] === 1): ?><option value="<?= (int) $item['id'] ?>"><?= e($item['name']) ?></option><?php endif; endforeach; ?></select></div>
+            <div class="col-md-3"><label class="form-label">Miền cha (để trống để tạo miền)</label><select class="form-select" name="parent_id"><option value="">Miền cấp 1</option><?php foreach ($regionOptions as $item): if ((int) $item['level'] === 1): ?><option value="<?= (int) $item['id'] ?>"><?= e($item['name']) ?></option><?php endif; endforeach; ?></select></div>
             <div class="col-md-3"><label class="form-label">Slug (để trống tự tạo)</label><input class="form-control" name="slug"></div>
             <div class="col-md-3"><label class="form-label">Mô tả</label><input class="form-control" name="description"></div>
             <div class="col-12 form-check ms-2"><input class="form-check-input" id="new_region_active" name="is_active" type="checkbox" checked><label class="form-check-label" for="new_region_active">Hiển thị</label></div>
@@ -23,6 +23,7 @@
     <table class="table align-middle mb-0">
         <thead><tr><th>Miền / Tỉnh, vùng</th><th>Slug</th><th>Mô tả</th><th>Sản phẩm</th><th>Hiển thị</th><?php if ($canManage): ?><th>Thao tác</th><?php endif; ?></tr></thead>
         <tbody>
+        <?php if (!$regions): ?><tr><td colspan="<?= $canManage ? 6 : 5 ?>" class="text-center text-secondary py-4">Chưa có vùng miền.</td></tr><?php endif; ?>
         <?php foreach ($regions as $region): ?>
             <tr class="<?= (int) $region['level'] === 1 ? 'table-success' : '' ?>">
                 <td><?= (int) $region['level'] === 2 ? '<span class="ms-4">↳ </span>' : '<strong>' ?><?= e($region['name']) ?><?= (int) $region['level'] === 1 ? '</strong>' : '' ?></td>
@@ -37,7 +38,7 @@
                                 <?= csrf_field() ?>
                                 <label class="form-label">Tên</label><input class="form-control mb-2" name="name" value="<?= e($region['name']) ?>" required>
                                 <?php if ((int) $region['level'] === 2): ?>
-                                    <label class="form-label">Miền cha</label><select class="form-select mb-2" name="parent_id" required><?php foreach ($regions as $parent): if ((int) $parent['level'] === 1): ?><option value="<?= (int) $parent['id'] ?>" <?= (int) $parent['id'] === (int) $region['parent_id'] ? 'selected' : '' ?>><?= e($parent['name']) ?></option><?php endif; endforeach; ?></select>
+                                    <label class="form-label">Miền cha</label><select class="form-select mb-2" name="parent_id" required><?php foreach ($regionOptions as $parent): if ((int) $parent['level'] === 1): ?><option value="<?= (int) $parent['id'] ?>" <?= (int) $parent['id'] === (int) $region['parent_id'] ? 'selected' : '' ?>><?= e($parent['name']) ?></option><?php endif; endforeach; ?></select>
                                 <?php else: ?><input type="hidden" name="parent_id" value="0"><?php endif; ?>
                                 <label class="form-label">Slug</label><input class="form-control mb-2" name="slug" value="<?= e($region['slug']) ?>">
                                 <label class="form-label">Mô tả</label><textarea class="form-control mb-2" name="description"><?= e($region['description']) ?></textarea>
@@ -55,3 +56,4 @@
         </tbody>
     </table>
 </div>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

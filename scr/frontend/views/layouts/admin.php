@@ -12,11 +12,11 @@
     <link href="<?= e(asset('/css/app.css')) ?>" rel="stylesheet">
 </head>
 <body class="bg-light">
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+<nav class="navbar navbar-dark admin-topbar">
     <div class="container">
         <a class="navbar-brand" href="<?= e(url('/admin')) ?>">Quản trị Nông Sản Sạch</a>
-        <button class="navbar-toggler d-md-none" type="button" data-bs-toggle="collapse" data-bs-target="#adminNavigation" aria-controls="adminNavigation" aria-expanded="false" aria-label="Mở menu quản trị">
-            <span class="navbar-toggler-icon"></span>
+        <button class="btn btn-outline-light admin-menu-toggle d-lg-none" type="button" data-bs-toggle="collapse" data-bs-target="#adminNavigation" aria-controls="adminNavigation" aria-expanded="false">
+            Mở menu
         </button>
         <div class="d-flex gap-2 align-items-center admin-topbar-actions">
             <a class="btn btn-outline-light btn-sm" href="<?= e(url('/')) ?>">Trang chủ</a>
@@ -28,18 +28,25 @@
     </div>
 </nav>
 <div class="container-fluid py-4 admin-shell">
-    <div class="row g-4">
-        <aside class="col-12 col-md-3 col-lg-2 admin-sidebar">
-            <nav class="collapse nav nav-pills flex-column bg-white border rounded p-2 admin-navigation" id="adminNavigation" aria-label="Menu quản trị">
-                <?php foreach (($menu ?? []) as $item): ?>
-                    <a class="nav-link" href="<?= e(url($item['url'])) ?>"><?= e($item['label']) ?></a>
-                <?php endforeach; ?>
-            </nav>
-        </aside>
-        <main class="col-12 col-md-9 col-lg-10 admin-content">
+    <aside class="admin-sidebar">
+        <nav class="collapse admin-navigation" id="adminNavigation" aria-label="Menu quản trị">
+            <?php foreach (AdminNavigation::groups() as $group): ?>
+                <section class="admin-navigation__group">
+                    <h2><?= e($group['label']) ?></h2>
+                    <div class="nav nav-pills flex-column">
+                        <?php foreach ($group['items'] as $item): ?>
+                            <a class="nav-link<?= $item['active'] ? ' active' : '' ?>" href="<?= e(url($item['url'])) ?>"<?= $item['active'] ? ' aria-current="page"' : '' ?>><?= e($item['label']) ?></a>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+            <?php endforeach; ?>
+        </nav>
+    </aside>
+    <main class="admin-content">
+        <div class="admin-page-surface">
             <?= $content ?? '' ?>
-        </main>
-    </div>
+        </div>
+    </main>
 </div>
 <script src="<?= e(asset('/js/vendor/bootstrap.bundle.min.js')) ?>"></script>
 <script src="<?= e(asset('/js/reviews-admin.js')) ?>"></script>

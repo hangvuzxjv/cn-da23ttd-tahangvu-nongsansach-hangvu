@@ -2,10 +2,10 @@
     <div id="homeBanners" class="carousel slide mb-5" data-bs-ride="carousel">
         <div class="carousel-inner rounded-3 overflow-hidden">
             <?php foreach ($banners as $index => $banner): ?><div class="carousel-item <?= $index === 0 ? 'active' : '' ?>">
-                <?php if ($banner['link_url']): ?><a href="<?= e($banner['link_url']) ?>"><?php endif; ?>
+                <?php if ($banner['link_url']): ?><a class="home-banner-link" href="<?= e($banner['link_url']) ?>"><?php endif; ?>
                 <img class="d-block w-100 home-banner" src="<?= e(asset($banner['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($banner['title']) ?>" <?= $index > 0 ? 'loading="lazy"' : 'fetchpriority="high"' ?>>
-                <div class="carousel-caption d-none d-md-block"><h1><?= e($banner['title']) ?></h1></div>
                 <?php if ($banner['link_url']): ?></a><?php endif; ?>
+                <div class="home-banner-caption"><h1><?= e($banner['title']) ?></h1></div>
             </div><?php endforeach; ?>
         </div>
         <?php if (count($banners) > 1): ?><button class="carousel-control-prev" type="button" data-bs-target="#homeBanners" data-bs-slide="prev"><span class="carousel-control-prev-icon" aria-hidden="true"></span><span class="visually-hidden">Trước</span></button><button class="carousel-control-next" type="button" data-bs-target="#homeBanners" data-bs-slide="next"><span class="carousel-control-next-icon" aria-hidden="true"></span><span class="visually-hidden">Tiếp</span></button><?php endif; ?>
@@ -25,7 +25,18 @@
 </section>
 
 <section class="mb-5">
-    <div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h3 mb-0">Khám phá vùng miền</h2><a href="<?= e(url('/san-pham')) ?>">Xem tất cả</a></div>
+    <div class="page-section-heading"><h2 class="h3 mb-0">Danh mục nông sản</h2><a href="<?= e(url('/san-pham')) ?>">Xem tất cả</a></div>
+    <div class="category-grid">
+        <?php foreach ($categories as $category): ?>
+            <a class="category-tile" href="<?= e(url('/danh-muc/' . $category['slug'])) ?>">
+                <span><strong><?= e($category['name']) ?></strong><small><?= e($category['description'] ?: 'Khám phá sản phẩm theo mùa') ?></small></span>
+            </a>
+        <?php endforeach; ?>
+    </div>
+</section>
+
+<section class="mb-5">
+    <div class="page-section-heading"><h2 class="h3 mb-0">Khám phá vùng miền</h2><a href="<?= e(url('/san-pham')) ?>">Xem tất cả</a></div>
     <div class="row row-cols-1 row-cols-md-3 g-3"><?php foreach ($regions as $region): ?>
         <div class="col"><a class="region-card d-block rounded-3 p-4 text-decoration-none" href="<?= e(url('/vung-mien/' . $region['slug'])) ?>"><h3 class="h4"><?= e($region['name']) ?></h3><p class="mb-0"><?= e($region['description'] ?: 'Khám phá đặc sản từ ' . $region['name']) ?></p></a></div>
     <?php endforeach; ?></div>
@@ -90,7 +101,7 @@
                             </div>
                             <div class="small text-secondary">Đã bán <span data-sold-count><?= (int) $sale['sold_quantity'] ?></span>/<?= (int) $sale['quota'] ?></div>
                             <div class="progress mt-1 mb-3" role="progressbar" aria-label="Tiến độ Flash Sale" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $soldPercent ?>">
-                                <div class="progress-bar bg-danger" data-sold-progress style="width: <?= $soldPercent ?>%"></div>
+                                <div class="progress-bar bg-danger" data-sold-progress data-progress="<?= $soldPercent ?>"></div>
                             </div>
                             <div class="mt-auto" data-flash-action>
                                 <?php if (!$saleActive): ?>
@@ -119,11 +130,20 @@
     </section>
 <?php endif; ?>
 
-<section class="mb-5"><div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h3 mb-0">Sản phẩm nổi bật</h2><a href="<?= e(url('/san-pham')) ?>">Xem cửa hàng</a></div><?php $products = $featured; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
-<section><div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h3 mb-0">Sản phẩm mới</h2><a href="<?= e(url('/san-pham?sort=newest')) ?>">Xem tất cả</a></div><?php $products = $newest; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
+<section class="mb-5"><div class="page-section-heading"><h2 class="h3 mb-0">Sản phẩm nổi bật</h2><a href="<?= e(url('/san-pham')) ?>">Xem cửa hàng</a></div><?php $products = $featured; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
+<section class="mb-5"><div class="page-section-heading"><h2 class="h3 mb-0">Sản phẩm mới</h2><a href="<?= e(url('/san-pham?sort=newest')) ?>">Xem tất cả</a></div><?php $products = $newest; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
+<section class="mb-5"><div class="page-section-heading"><h2 class="h3 mb-0">Sản phẩm bán chạy</h2><a href="<?= e(url('/san-pham?sort=best_selling')) ?>">Xem tất cả</a></div><?php $products = $bestselling; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
 <?php if ($recentProducts): ?>
     <section class="mt-5">
-        <h2 class="h3 mb-3">Sản phẩm bạn đã xem gần đây</h2>
+        <div class="page-section-heading"><h2 class="h3 mb-0">Sản phẩm bạn đã xem gần đây</h2></div>
         <?php $products = $recentProducts; require FRONTEND_PATH . '/views/client/product-cards.php'; ?>
     </section>
 <?php endif; ?>
+<section class="trust-panel">
+    <div class="page-section-heading"><div><p class="page-eyebrow">An tâm từ nông trại đến bàn ăn</p><h2 class="h3 mb-0">Vì sao chọn Nông Sản Sạch?</h2></div></div>
+    <div class="trust-grid">
+        <article class="trust-card"><h3 class="h5">Nguồn gốc rõ ràng</h3><p class="mb-0">Mỗi lô hàng có thông tin nông trại, ngày thu hoạch và hành trình truy xuất.</p></article>
+        <article class="trust-card"><h3 class="h5">Giao hàng tận nơi</h3><p class="mb-0">Phí vận chuyển được tính minh bạch theo địa chỉ trước khi bạn xác nhận đơn.</p></article>
+        <article class="trust-card"><h3 class="h5">Thanh toán linh hoạt</h3><p class="mb-0">Chọn COD, chuyển khoản VietQR hoặc thanh toán trực tuyến qua VNPay.</p></article>
+    </div>
+</section>

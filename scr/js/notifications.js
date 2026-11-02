@@ -1,49 +1,64 @@
 (() => {
     const list = document.getElementById('notificationList');
+    const itemsList = document.querySelector('[data-notification-items]');
     const count = document.getElementById('notificationCount');
+    const markAllButtons = document.querySelectorAll('[data-mark-all-notifications], #markAllNotificationsRead');
+    const message = document.querySelector('[data-notification-message]');
+    const pageMessage = document.querySelector('[data-notification-page-message]');
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
     const baseUrl = document.querySelector('meta[name="app-base-url"]')?.content || '/';
-    if (!list || !count) return;
+    if (!list || !itemsList || !count) return;
 
     const render = (data) => {
         count.textContent = String(data.unread_count || 0);
         count.classList.toggle('d-none', !data.unread_count);
-        list.replaceChildren();
+        markAllButtons.forEach((button) => { button.disabled = !data.unread_count; });
+        itemsList.replaceChildren();
         if (!data.items?.length) {
             const empty = document.createElement('span');
             empty.className = 'dropdown-item-text text-muted';
             empty.textContent = 'Chưa có thông báo.';
-            list.append(empty);
+            itemsList.append(empty);
             return;
         }
-        data.items.forEach((item) => {
+        data.items.slice(0, 8).forEach((item) => {
             const link = document.createElement('a');
-            link.className = `dropdown-item text-wrap${item.read_at ? '' : ' fw-semibold'}`;
+            link.className = `notification-item${item.read_at ? '' : ' is-unread'}`;
             const target = typeof item.link_url === 'string' && /^\/(?!\/)/.test(item.link_url)
                 ? `${baseUrl.replace(/\/$/, '')}${item.link_url}`
                 : '/';
             link.href = target;
             const title = document.createElement('span');
-            title.className = 'd-block';
+            title.className = 'notification-item__title';
             title.textContent = item.title;
             const detail = document.createElement('small');
-            detail.className = 'text-muted';
+            detail.className = 'notification-item__message';
             detail.textContent = item.message;
-            link.append(title, detail);
+            const time = document.createElement('time');
+            time.className = 'notification-item__time';
+            time.dateTime = item.created_at;
+            time.textContent = new Date(item.created_at.replace(' ', 'T')).toLocaleString('vi-VN', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+            });
+            link.append(title, detail, time);
             if (!item.read_at) {
                 link.addEventListener('click', async (event) => {
                     event.preventDefault();
                     try {
-                        await fetch(`${baseUrl.replace(/\/$/, '')}/notifications/${encodeURIComponent(item.id)}/read`, {
+                        const response = await fetch(`${baseUrl.replace(/\/$/, '')}/notifications/${encodeURIComponent(item.id)}/read`, {
                             method: 'POST',
                             headers: { 'X-CSRF-Token': csrf, Accept: 'application/json' },
                         });
-                    } finally {
+                        const result = await response.json();
+                        if (!response.ok || !result.success) throw new Error(result.message || 'Chưa thể cập nhật thông báo.');
                         window.location.assign(target);
+                    } catch (error) {
+                        if (message) message.textContent = error.message || 'Chưa thể cập nhật thông báo.';
                     }
                 });
             }
-            list.append(link);
+            itemsList.append(link);
         });
     };
 
@@ -53,10 +68,35 @@
             const response = await fetch(`${baseUrl.replace(/\/$/, '')}/notifications`, { headers: { Accept: 'application/json' } });
             const result = await response.json();
             if (response.ok && result.success) render(result.data);
+            else if (message) message.textContent = result.message || 'Chưa thể tải thông báo.';
         } catch {
-            list.textContent = 'Chưa thể tải thông báo.';
+            if (message) message.textContent = 'Chưa thể tải thông báo.';
         }
     };
+
+    markAllButtons.forEach((button) => button.addEventListener('click', async () => {
+        button.disabled = true;
+        if (message) message.textContent = '';
+        if (pageMessage) pageMessage.textContent = '';
+        try {
+            const response = await fetch(`${baseUrl.replace(/\/$/, '')}/notifications/0/read`, {
+                method: 'POST',
+                headers: { 'X-CSRF-Token': csrf, Accept: 'application/json' },
+                body: new URLSearchParams({ _all: '1' }),
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) throw new Error(result.message || 'Chưa thể cập nhật thông báo.');
+            if (button.hasAttribute('data-reload-after-read')) {
+                window.location.reload();
+                return;
+            }
+            await refresh();
+        } catch (error) {
+            const output = button.hasAttribute('data-reload-after-read') ? pageMessage : message;
+            if (output) output.textContent = error.message || 'Chưa thể cập nhật thông báo.';
+            button.disabled = false;
+        }
+    }));
 
     document.getElementById('resend-verification-form')?.addEventListener('submit', async (event) => {
         event.preventDefault();

@@ -23,7 +23,8 @@
     <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h5 mb-0">Danh sách lô</h2><button class="btn btn-sm btn-outline-primary">In tem các lô đã chọn</button></div>
     <div class="table-responsive bg-white border rounded"><table class="table align-middle mb-0">
         <thead><tr><th><span class="visually-hidden">Chọn</span></th><th>Mã lô</th><th>Sản phẩm / nông trại</th><th>Ngày</th><th>Số lượng</th><th>Kiểm định</th><th>Trạng thái</th><th>Lượt quét</th><th></th></tr></thead>
-        <tbody><?php foreach ($batches as $batch): ?><tr>
+        <tbody><?php if (!$batches): ?><tr><td colspan="9" class="text-center text-secondary py-4">Chưa có lô hàng.</td></tr><?php endif; ?>
+        <?php foreach ($batches as $batch): ?><tr>
             <td><input class="form-check-input" type="checkbox" name="ids[]" value="<?= (int) $batch['id'] ?>" aria-label="Chọn <?= e($batch['batch_code']) ?>"></td>
             <td><code><?= e($batch['batch_code']) ?></code></td><td><?= e($batch['product_name']) ?><br><span class="text-secondary"><?= e($batch['farm_name']) ?></span></td>
             <td>Thu hoạch: <?= e($batch['harvested_at']) ?><br>Hạn: <?= e($batch['expires_at']) ?></td>
@@ -33,3 +34,4 @@
         </tr><?php endforeach; ?></tbody>
     </table></div>
 </form>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

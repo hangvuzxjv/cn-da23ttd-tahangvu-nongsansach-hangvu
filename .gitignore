@@ -4,3 +4,4 @@
 !/scr/backend/storage/logs/.gitkeep
 /scr/uploads/*
 !/scr/uploads/.gitkeep
+/tmp/ui-check/

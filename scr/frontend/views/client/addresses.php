@@ -1,4 +1,4 @@
-<h1 class="h2 mb-4">Sổ địa chỉ</h1>
+<header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/profile')) ?>">Tài khoản</a></li><li class="breadcrumb-item active" aria-current="page">Sổ địa chỉ</li></ol></nav><h1 class="h2">Sổ địa chỉ</h1><p class="text-secondary">Quản lý địa chỉ nhận hàng đã lưu trong tài khoản.</p></header>
 <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if (!empty($error)): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
 <div class="row g-4">
@@ -32,12 +32,12 @@
         </div></div>
     </div>
     <div class="col-lg-7">
-        <?php if (!$addresses): ?><div class="alert alert-light border">Bạn chưa lưu địa chỉ nào.</div><?php endif; ?>
+        <?php if (!$addresses): ?><div class="empty-state"><h2 class="h5">Chưa có địa chỉ</h2><p class="text-secondary mb-0">Thêm địa chỉ để thuận tiện cho lần đặt hàng tiếp theo.</p></div><?php endif; ?>
         <?php foreach ($addresses as $address): ?>
             <div class="card mb-3"><div class="card-body">
                 <div class="d-flex justify-content-between">
                     <h2 class="h6"><?= e($address['recipient_name']) ?> <?= (int) $address['is_default'] === 1 ? '<span class="badge text-bg-success">Mặc định</span>' : '' ?></h2>
-                    <form method="post" action="<?= e(url('/addresses/' . $address['id'] . '/delete')) ?>" onsubmit="return confirm('Xóa địa chỉ này?')">
+                    <form method="post" action="<?= e(url('/addresses/' . $address['id'] . '/delete')) ?>" data-confirm="Bạn có chắc muốn xóa địa chỉ này?">
                         <?= csrf_field() ?><button class="btn btn-sm btn-outline-danger" type="submit">Xóa</button>
                     </form>
                 </div>

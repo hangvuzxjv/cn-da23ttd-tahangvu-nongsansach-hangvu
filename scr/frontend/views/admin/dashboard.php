@@ -1,10 +1,27 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 dashboard-page">
     <div>
         <h1 class="h2">Bảng điều khiển</h1>
-        <p class="text-secondary mb-0">Xin chào <?= e($user['name'] ?? '') ?> · Vai trò: <?= e($user['role'] ?? '') ?></p>
+        <?php $roleNames = ['admin' => 'Quản trị viên', 'staff_sales' => 'Nhân viên bán hàng', 'staff_warehouse' => 'Nhân viên kho']; ?>
+        <p class="text-secondary mb-0">Xin chào <?= e($user['name'] ?? '') ?> · Vai trò: <?= e($roleNames[$user['role'] ?? ''] ?? ($user['role'] ?? '')) ?></p>
     </div>
     <a class="btn btn-outline-success" href="<?= e(url('/profile')) ?>">Hồ sơ</a>
 </div>
+
+<?php if ($dashboard === null && !empty($quickLinks)): ?>
+    <section class="card admin-quick-access mt-4">
+        <div class="card-body">
+            <h2 class="h5">Truy cập nhanh</h2>
+            <div class="admin-quick-access__links">
+                <?php foreach ($quickLinks as $link): ?>
+                    <a class="admin-quick-access__link" href="<?= e(url($link['url'])) ?>">
+                        <span><?= e($link['label']) ?></span>
+                        <small><?= e($link['group']) ?></small>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </section>
+<?php endif; ?>
 
 <?php if ($dashboard !== null): ?>
     <?php
@@ -101,14 +118,16 @@
             </div></section>
         </div>
     </div>
-    <div class="mt-3"><a href="<?= e(url('/admin/reports')) ?>">Mở trang báo cáo đầy đủ</a></div>
+    <div class="mt-3"><a class="btn btn-outline-success" href="<?= e(url('/admin/reports')) ?>">Mở trang báo cáo</a></div>
 <?php endif; ?>
 
-<section class="card mt-4"><div class="card-body">
-    <h2 class="h5">Top lô được quét nhiều</h2>
-    <?php if (empty($topScanned)): ?><p class="text-secondary mb-0">Chưa có lượt quét nguồn gốc.</p><?php else: ?>
-        <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Mã lô</th><th>Sản phẩm</th><th>Lượt quét</th><th></th></tr></thead><tbody>
-            <?php foreach ($topScanned as $batch): ?><tr><td><code><?= e($batch['batch_code']) ?></code></td><td><?= e($batch['product_name']) ?></td><td><?= (int) $batch['scan_count'] ?></td><td><a href="<?= e(url('/admin/batches/' . $batch['id'])) ?>">Chi tiết</a></td></tr><?php endforeach; ?>
-        </tbody></table></div>
-    <?php endif; ?>
-</div></section>
+<?php if (!empty($canViewBatches)): ?>
+    <section class="card mt-4"><div class="card-body">
+        <h2 class="h5">Top lô được quét nhiều</h2>
+        <?php if (empty($topScanned)): ?><div class="empty-state">Chưa có lượt quét nguồn gốc.</div><?php else: ?>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Mã lô</th><th>Sản phẩm</th><th>Lượt quét</th><th></th></tr></thead><tbody>
+                <?php foreach ($topScanned as $batch): ?><tr><td><code><?= e($batch['batch_code']) ?></code></td><td><?= e($batch['product_name']) ?></td><td><?= (int) $batch['scan_count'] ?></td><td><a href="<?= e(url('/admin/batches/' . $batch['id'])) ?>">Chi tiết</a></td></tr><?php endforeach; ?>
+            </tbody></table></div>
+        <?php endif; ?>
+    </div></section>
+<?php endif; ?>

@@ -2,10 +2,13 @@
 <?php $statusLabel = $order['status'] === 'pending' && $order['payment_status'] === 'pending'
     ? (($order['payment']['method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán')
     : ($statusLabels[$order['status']] ?? $order['status']); ?>
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
-    <div><h1 class="h2 mb-1">Đơn <?= e($order['order_no']) ?></h1><span class="badge text-bg-success"><?= e($statusLabel) ?></span></div>
+<?php $statusTone = in_array($order['status'], ['completed'], true) ? 'success' : (in_array($order['status'], ['cancelled', 'refunded'], true) ? 'danger' : (in_array($order['status'], ['pending', 'confirmed', 'processing'], true) ? 'warning' : 'neutral')); ?>
+<header class="page-heading">
+    <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/tai-khoan/don-hang')) ?>">Đơn hàng của tôi</a></li><li class="breadcrumb-item active" aria-current="page"><?= e($order['order_no']) ?></li></ol></nav>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div><h1 class="h2 mb-1">Đơn <?= e($order['order_no']) ?></h1><span class="status-badge status-badge--<?= $statusTone ?>"><?= e($statusLabel) ?></span></div>
     <a class="btn btn-outline-secondary" href="<?= e(url('/tai-khoan/don-hang')) ?>">Danh sách đơn</a>
-</div>
+</div></header>
 <?php if ($success): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
 <div class="row g-4">
@@ -35,14 +38,15 @@
                 $paymentStatusLabels = ['pending' => 'chờ thanh toán', 'paid' => 'đã thanh toán', 'failed' => 'thanh toán thất bại', 'refunded' => 'đã hoàn tiền'];
                 $paymentStatus = $order['payment_status'] === 'paid' ? 'paid' : $order['payment']['status'];
                 ?>
-                <p class="small mt-2 mb-0">Phương thức: <?= e($paymentMethodLabels[$order['payment']['method']] ?? $order['payment']['method']) ?> - <?= e($paymentStatusLabels[$paymentStatus] ?? $paymentStatus) ?></p>
+                <?php $paymentTone = $paymentStatus === 'paid' ? 'success' : (in_array($paymentStatus, ['failed', 'refunded'], true) ? 'danger' : 'warning'); ?>
+                <p class="small mt-2 mb-0">Phương thức: <?= e($paymentMethodLabels[$order['payment']['method']] ?? $order['payment']['method']) ?> · <span class="status-badge status-badge--<?= $paymentTone ?>"><?= e($paymentStatusLabels[$paymentStatus] ?? $paymentStatus) ?></span></p>
             <?php endif; ?>
             <?php if ($order['customer_note']): ?><p class="small text-secondary mt-3">Ghi chú: <?= e($order['customer_note']) ?></p><?php endif; ?>
         </div></div>
         <div class="d-flex gap-2">
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'bank_transfer'): ?><a class="btn btn-success" href="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan')) ?>">Mở thanh toán VietQR</a><?php endif; ?>
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'vnpay'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan/vnpay')) ?>"><?= csrf_field() ?><button class="btn btn-success">Thanh toán lại qua VNPay</button></form><?php endif; ?>
-            <?php if ($order['status'] === 'pending'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/huy')) ?>" onsubmit="return confirm('Hủy đơn hàng này?')"><?= csrf_field() ?><input class="form-control form-control-sm mb-2" name="reason" value="Khách hàng hủy đơn" maxlength="500" required><button class="btn btn-outline-danger">Hủy đơn</button></form><?php endif; ?>
+            <?php if ($order['status'] === 'pending'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/huy')) ?>" data-confirm="Bạn có chắc muốn hủy đơn hàng này?"><?= csrf_field() ?><label class="visually-hidden" for="cancelReason">Lý do hủy đơn</label><input class="form-control form-control-sm mb-2" id="cancelReason" name="reason" value="Khách hàng hủy đơn" maxlength="500" required><button class="btn btn-outline-danger">Hủy đơn</button></form><?php endif; ?>
             <form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/mua-lai')) ?>"><?= csrf_field() ?><button class="btn btn-outline-success">Mua lại</button></form>
         </div>
     </div>

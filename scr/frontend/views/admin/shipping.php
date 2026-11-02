@@ -27,3 +27,4 @@
 </tr><?php endforeach; ?>
 <?php if (!$fees): ?><tr><td colspan="5" class="text-secondary">Chưa có cấu hình.</td></tr><?php endif; ?>
 </tbody></table></div>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

@@ -14,8 +14,8 @@
                 <div class="card-body d-flex flex-column">
                     <h3 class="h6"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['slug'])) ?>"><?= e($item['name']) ?></a></h3>
                     <?php if ((int) ($item['review_count'] ?? 0) > 0): ?>
-                        <div class="small text-warning mb-2" aria-label="Đánh giá <?= number_format((float) $item['average_rating'], 1) ?> trên 5 sao">
-                            &#9733; <?= number_format((float) $item['average_rating'], 1) ?> <span class="text-secondary">(<?= (int) $item['review_count'] ?>)</span>
+                        <div class="small text-secondary mb-2">
+                            Đánh giá <?= number_format((float) $item['average_rating'], 1) ?>/5 (<?= (int) $item['review_count'] ?>)
                         </div>
                     <?php else: ?>
                         <div class="small text-secondary mb-2">Chưa có đánh giá</div>

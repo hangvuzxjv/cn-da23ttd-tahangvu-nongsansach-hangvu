@@ -39,4 +39,5 @@
     <?php if (!$rows): ?><tr><td colspan="<?= $canManage ? 9 : 8 ?>" class="text-secondary">Không tìm thấy lô phù hợp.</td></tr><?php endif; ?>
     </tbody>
 </table></div>
-<p class="text-secondary small">Hiển thị tối đa 500 lô mỗi trang kết quả; tệp CSV xuất toàn bộ theo bộ lọc.</p>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>
+<p class="text-secondary small">Tệp CSV xuất toàn bộ lô theo bộ lọc.</p>

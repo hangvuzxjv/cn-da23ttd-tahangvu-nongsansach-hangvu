@@ -2,8 +2,8 @@
 <div class="row g-4 mb-5">
     <div class="col-lg-6">
         <?php $mainImage = $images[0] ?? ['image_url' => '/img/product-placeholder.svg', 'alt_text' => $product['name']]; ?>
-        <img id="productMainImage" class="img-fluid rounded border w-100 product-detail-image" src="<?= e(asset($mainImage['image_url'])) ?>" alt="<?= e($mainImage['alt_text'] ?: $product['name']) ?>">
-        <?php if (count($images) > 1): ?><div class="d-flex gap-2 mt-2 overflow-auto"><?php foreach ($images as $image): ?><button class="btn p-0 border product-gallery-thumb" type="button" data-image="<?= e(asset($image['image_url'])) ?>" data-alt="<?= e($image['alt_text'] ?: $product['name']) ?>"><img src="<?= e(asset($image['image_url'])) ?>" alt="" loading="lazy"></button><?php endforeach; ?></div><?php endif; ?>
+        <img id="productMainImage" class="img-fluid rounded border w-100 product-detail-image" src="<?= e(asset($mainImage['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($mainImage['alt_text'] ?: $product['name']) ?>">
+        <?php if (count($images) > 1): ?><div class="d-flex gap-2 mt-2 overflow-auto"><?php foreach ($images as $image): ?><button class="btn p-0 border product-gallery-thumb" type="button" aria-label="Xem ảnh <?= e($image['alt_text'] ?: $product['name']) ?>" data-image="<?= e(asset($image['image_url'])) ?>" data-alt="<?= e($image['alt_text'] ?: $product['name']) ?>"><img src="<?= e(asset($image['image_url'])) ?>" alt="" loading="lazy"></button><?php endforeach; ?></div><?php endif; ?>
     </div>
     <div class="col-lg-6">
         <div class="text-success mb-2"><a href="<?= e(url('/danh-muc/' . $product['category_slug'])) ?>"><?= e($product['category_name']) ?></a></div>
@@ -48,7 +48,7 @@
                             <form data-cart-add="<?= e(url('/gio-hang/them')) ?>" data-login-url="<?= e($flashLoginUrl) ?>">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
-                                <div class="input-group" style="max-width:22rem">
+                                <div class="input-group product-buy-controls">
                                     <input class="form-control" type="number" name="quantity" data-max-buy="<?= (int) $flashSale['max_buy_quantity'] ?>" value="1" min="1" max="<?= (int) $flashSale['max_buy_quantity'] ?>" aria-label="Số lượng sản phẩm">
                                     <span class="input-group-text"><?= e($product['unit']) ?></span>
                                     <button class="btn btn-danger" type="submit">Thêm Flash Sale vào giỏ</button>
@@ -74,7 +74,7 @@
             <form class="mt-3" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
                 <?= csrf_field() ?>
                 <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
-                <div class="input-group" style="max-width: 22rem">
+                <div class="input-group product-buy-controls">
                     <input class="form-control" type="number" name="quantity" value="1" min="1" max="<?= (int) $product['actual_stock'] ?>" aria-label="Số lượng sản phẩm">
                     <span class="input-group-text"><?= e($product['unit']) ?></span>
                     <button class="btn btn-success" type="submit">Thêm vào giỏ</button>
@@ -110,8 +110,8 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
             <h2 class="h4 mb-1">Đánh giá sản phẩm</h2>
-            <div class="text-warning" aria-label="Điểm trung bình <?= number_format((float) $reviewSummary['average_rating'], 1) ?> trên 5 sao">
-                <strong>&#9733; <?= number_format((float) $reviewSummary['average_rating'], 1) ?>/5</strong>
+            <div class="text-secondary" aria-label="Điểm trung bình <?= number_format((float) $reviewSummary['average_rating'], 1) ?> trên 5 sao">
+                <strong>Điểm trung bình <?= number_format((float) $reviewSummary['average_rating'], 1) ?>/5</strong>
                 <span class="text-secondary">(<?= (int) $reviewSummary['review_count'] ?> đánh giá đã duyệt)</span>
             </div>
         </div>
@@ -123,7 +123,7 @@
                 <div class="col-12 col-sm-6 col-lg-4 d-flex align-items-center gap-2 small">
                     <span class="text-nowrap"><?= $stars ?> sao</span>
                     <div class="progress flex-grow-1" role="progressbar" aria-label="<?= $stars ?> sao" aria-valuenow="<?= $percent ?>" aria-valuemin="0" aria-valuemax="100">
-                        <div class="progress-bar bg-warning" style="width: <?= $percent ?>%"></div>
+                        <div class="progress-bar bg-warning" data-progress="<?= $percent ?>"></div>
                     </div>
                     <span class="text-secondary"><?= $count ?></span>
                 </div>
@@ -168,7 +168,7 @@
                         <strong><?= e($review['customer_name']) ?></strong>
                         <time class="small text-secondary" datetime="<?= e(date(DATE_ATOM, strtotime($review['created_at']))) ?>"><?= e($review['created_at']) ?></time>
                     </div>
-                    <div class="text-warning" aria-label="<?= (int) $review['rating'] ?> trên 5 sao"><?= str_repeat('★', (int) $review['rating']) ?><?= str_repeat('☆', 5 - (int) $review['rating']) ?></div>
+                    <div class="small text-secondary">Đánh giá <?= (int) $review['rating'] ?>/5</div>
                     <?php if ($review['title']): ?><h3 class="h6 mt-1"><?= e($review['title']) ?></h3><?php endif; ?>
                     <p class="mb-0"><?= nl2br(e($review['content'])) ?></p>
                 </article>
@@ -194,10 +194,3 @@
     </section>
 <?php endif; ?>
 <section><h2 class="h4 mb-3">Sản phẩm liên quan</h2><?php $products = $related; require FRONTEND_PATH . '/views/client/product-cards.php'; ?></section>
-<script>
-document.querySelectorAll('[data-image]').forEach((button) => button.addEventListener('click', () => {
-    const main = document.getElementById('productMainImage');
-    main.src = button.dataset.image;
-    main.alt = button.dataset.alt;
-}));
-</script>

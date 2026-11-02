@@ -44,7 +44,7 @@
                 const { wishlisted } = result.data;
                 let removedLastWishlistItem = false;
                 if (button) {
-                    button.textContent = wishlisted ? '♥' : '♡';
+                    button.classList.toggle('is-saved', wishlisted);
                     button.setAttribute('aria-pressed', wishlisted ? 'true' : 'false');
                     button.setAttribute(
                         'aria-label',

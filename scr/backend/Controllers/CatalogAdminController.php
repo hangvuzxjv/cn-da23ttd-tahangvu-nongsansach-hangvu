@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 final class CatalogAdminController extends Controller
 {
+    private const ADMIN_LIST_PAGE_SIZE = 20;
+
     public function regions(): void
     {
-        $regions = Database::connection()->query(
+        $database = Database::connection();
+        $total = (int) $database->query('SELECT COUNT(*) FROM regions')->fetchColumn();
+        $pages = max(1, (int) ceil($total / self::ADMIN_LIST_PAGE_SIZE));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $regionQuery = $database->prepare(
             'SELECT r.*, COUNT(DISTINCT child.id) AS child_count,
                     COUNT(DISTINCT p.id) AS product_count,
                     COUNT(DISTINCT f.id) AS farm_count
@@ -14,11 +21,22 @@ final class CatalogAdminController extends Controller
              LEFT JOIN regions child ON child.parent_id = r.id
              LEFT JOIN products p ON p.region_id = r.id
              LEFT JOIN farms f ON f.region_id = r.id
-             GROUP BY r.id ORDER BY r.level, r.parent_id, r.name'
-        )->fetchAll();
+             GROUP BY r.id ORDER BY r.level, r.parent_id, r.name
+             LIMIT :limit OFFSET :offset'
+        );
+        $regionQuery->bindValue(':limit', self::ADMIN_LIST_PAGE_SIZE, PDO::PARAM_INT);
+        $regionQuery->bindValue(':offset', ($page - 1) * self::ADMIN_LIST_PAGE_SIZE, PDO::PARAM_INT);
+        $regionQuery->execute();
+        $regions = $regionQuery->fetchAll();
         $this->view('admin/regions', [
             'title' => 'Vùng miền',
             'regions' => $regions,
+            'regionOptions' => $database->query('SELECT id, name, level, parent_id FROM regions ORDER BY level, parent_id, name')->fetchAll(),
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/regions',
+            'paginationQuery' => [],
+            'paginationLabel' => 'vùng miền',
             'canManage' => Auth::can('regions.manage'),
             'menu' => $this->menu(),
             'errors' => form_errors(),
@@ -140,19 +158,34 @@ final class CatalogAdminController extends Controller
 
     public function categories(): void
     {
-        $categories = Database::connection()->query(
+        $database = Database::connection();
+        $total = (int) $database->query('SELECT COUNT(*) FROM categories')->fetchColumn();
+        $pages = max(1, (int) ceil($total / self::ADMIN_LIST_PAGE_SIZE));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $categoryQuery = $database->prepare(
             'SELECT c.*, p.name AS parent_name, COUNT(DISTINCT child.id) AS child_count,
                     COUNT(DISTINCT product.id) AS product_count
              FROM categories c
              LEFT JOIN categories p ON p.id = c.parent_id
              LEFT JOIN categories child ON child.parent_id = c.id
              LEFT JOIN products product ON product.category_id = c.id
-             GROUP BY c.id ORDER BY c.parent_id, c.sort_order, c.name'
-        )->fetchAll();
+             GROUP BY c.id ORDER BY c.parent_id, c.sort_order, c.name
+             LIMIT :limit OFFSET :offset'
+        );
+        $categoryQuery->bindValue(':limit', self::ADMIN_LIST_PAGE_SIZE, PDO::PARAM_INT);
+        $categoryQuery->bindValue(':offset', ($page - 1) * self::ADMIN_LIST_PAGE_SIZE, PDO::PARAM_INT);
+        $categoryQuery->execute();
+        $categories = $categoryQuery->fetchAll();
         $this->view('admin/categories', [
             'title' => 'Danh mục',
             'categories' => $categories,
-            'parents' => Database::connection()->query('SELECT id, name FROM categories ORDER BY sort_order, name')->fetchAll(),
+            'parents' => $database->query('SELECT id, name FROM categories ORDER BY sort_order, name')->fetchAll(),
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/categories',
+            'paginationQuery' => [],
+            'paginationLabel' => 'danh mục',
             'canManage' => Auth::can('categories.manage'),
             'menu' => $this->menu(),
             'errors' => form_errors(),

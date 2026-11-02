@@ -10,6 +10,7 @@
 <?php foreach ($stocktakes as $stocktake): ?><tr><td><?= e($stocktake['stocktake_no']) ?></td><td><?= e($stocktake['created_at']) ?></td><td><?= e($stocktake['creator_name'] ?? '—') ?></td><td><?= (int) $stocktake['item_count'] ?></td><td><?= e($stocktake['status']) ?></td><td><a href="<?= e(url('/admin/inventory/stocktakes?id=' . $stocktake['id'])) ?>">Mở</a></td></tr><?php endforeach; ?>
 <?php if (!$stocktakes): ?><tr><td colspan="6" class="text-secondary">Chưa có đợt kiểm kê.</td></tr><?php endif; ?>
 </tbody></table></div>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>
 <?php if ($selectedId): ?>
     <h2 class="h4">Chi tiết đợt #<?= $selectedId ?></h2>
     <?php $isDraft = false; foreach ($stocktakes as $stocktake) { if ((int) $stocktake['id'] === $selectedId && $stocktake['status'] === 'draft') { $isDraft = true; break; } } ?>

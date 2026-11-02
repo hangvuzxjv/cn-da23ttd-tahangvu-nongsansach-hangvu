@@ -42,3 +42,4 @@
         </tbody>
     </table>
 </div>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

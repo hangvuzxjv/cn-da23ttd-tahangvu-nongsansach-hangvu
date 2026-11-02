@@ -24,7 +24,8 @@
 
 <div class="table-responsive bg-white border rounded"><table class="table align-middle mb-0">
     <thead><tr><th>Nông trại</th><th>Địa chỉ / vùng</th><th>Chứng nhận</th><th>Liên kết</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-    <tbody><?php foreach ($farms as $farm): ?><tr>
+    <tbody><?php if (!$farms): ?><tr><td colspan="6" class="text-center text-secondary py-4">Chưa có nông trại.</td></tr><?php endif; ?>
+    <?php foreach ($farms as $farm): ?><tr>
         <td><?= e($farm['name']) ?><?php if ($farm['image_url']): ?><br><img class="farm-admin-thumb mt-2" src="<?= e(asset($farm['image_url'])) ?>" alt=""><?php endif; ?></td>
         <td><?= e($farm['address']) ?><br><span class="text-secondary"><?= e($farm['region_name']) ?></span></td>
         <td><?= e($farm['certifications']) ?><?= $farm['certification_number'] ? '<br>Số: ' . e($farm['certification_number']) : '' ?><?= $farm['certification_expires_at'] ? '<br>Hết hạn: ' . e($farm['certification_expires_at']) : '' ?><?php if ($farm['certificate_image_url']): ?><br><a href="<?= e(asset($farm['certificate_image_url'])) ?>" target="_blank" rel="noopener">Xem giấy chứng nhận</a><?php endif; ?></td>
@@ -52,3 +53,4 @@
         <form class="mt-2" method="post" action="<?= e(url('/admin/farms/' . $farm['id'] . '/delete')) ?>" onsubmit="return confirm('Xóa nông trại? Sẽ bị chặn nếu còn sản phẩm hoặc lô liên kết.')"><?= csrf_field() ?><button class="btn btn-sm btn-outline-danger">Xóa</button></form></td>
     </tr><?php endforeach; ?></tbody>
 </table></div>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

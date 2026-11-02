@@ -10,10 +10,10 @@ $wishlistIsSaved = in_array((int) $wishlistProductId, array_map('intval', $wishl
       <?= !empty($removeFromWishlist) ? 'data-remove-on-toggle="1"' : '' ?>>
     <?= csrf_field() ?>
     <input type="hidden" name="product_id" value="<?= (int) $wishlistProductId ?>">
-    <button class="btn btn-light rounded-circle shadow-sm" type="submit"
+    <button class="btn btn-light rounded-circle shadow-sm<?= $wishlistIsSaved ? ' is-saved' : '' ?>" type="submit"
             aria-label="<?= $wishlistIsSaved ? 'Bỏ yêu thích ' : 'Thêm yêu thích ' ?><?= e($wishlistProductName) ?>"
             aria-pressed="<?= $wishlistIsSaved ? 'true' : 'false' ?>"
-            data-wishlist-heart><?= $wishlistIsSaved ? '&#9829;' : '&#9825;' ?></button>
+            data-wishlist-heart><svg class="wishlist-heart" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"></path></svg></button>
     <span class="position-absolute top-100 end-0 small text-danger bg-white border rounded p-1"
           data-wishlist-feedback role="status" aria-live="polite" hidden></span>
 </form>

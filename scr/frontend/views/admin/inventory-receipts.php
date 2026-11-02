@@ -47,3 +47,4 @@
     <?php if (!$receipts): ?><tr><td colspan="7" class="text-secondary">Chưa có phiếu nhập.</td></tr><?php endif; ?>
     </tbody>
 </table></div>
+<?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

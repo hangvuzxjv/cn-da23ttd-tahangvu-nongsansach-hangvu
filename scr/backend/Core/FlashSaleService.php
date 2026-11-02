@@ -556,10 +556,9 @@ final class FlashSaleService
         }
     }
 
-    public function adminCampaigns(): array
+    public function adminCampaigns(?int $limit = null, int $offset = 0): array
     {
-        return $this->database->query(
-            "SELECT fs.*,
+        $sql = "SELECT fs.*,
                     CASE
                         WHEN fs.status IN ('draft','cancelled') THEN fs.status
                         WHEN fs.ends_at <= " . self::LOCAL_NOW_SQL . " THEN 'ended'
@@ -588,8 +587,17 @@ final class FlashSaleService
                  WHERE fsp.status IN ('reserved','confirmed')
                  GROUP BY fsi.flash_sale_id
              ) purchase_stats ON purchase_stats.flash_sale_id = fs.id
-             ORDER BY fs.starts_at DESC, fs.id DESC"
-        )->fetchAll();
+             ORDER BY fs.starts_at DESC, fs.id DESC";
+        if ($limit !== null) {
+            $sql .= ' LIMIT :limit OFFSET :offset';
+        }
+        $query = $this->database->prepare($sql);
+        if ($limit !== null) {
+            $query->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $query->bindValue(':offset', $offset, PDO::PARAM_INT);
+        }
+        $query->execute();
+        return $query->fetchAll();
     }
 
     public function campaignForAdmin(int $campaignId): ?array

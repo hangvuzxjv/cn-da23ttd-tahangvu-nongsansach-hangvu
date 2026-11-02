@@ -7,16 +7,34 @@ final class FlashSaleAdminController extends Controller
     public function index(): void
     {
         $error = null;
+        $total = 0;
+        $page = 1;
+        $pages = 1;
         try {
-            $campaigns = (new FlashSaleService())->adminCampaigns();
+            $database = Database::connection();
+            $total = (int) $database->query('SELECT COUNT(*) FROM flash_sales')->fetchColumn();
+            $perPage = 20;
+            $pages = max(1, (int) ceil($total / $perPage));
+            $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+            $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+            $campaigns = (new FlashSaleService())->adminCampaigns($perPage, ($page - 1) * $perPage);
         } catch (Throwable $exception) {
             error_log('Flash Sale admin list failed: ' . $exception->getMessage());
             $campaigns = [];
+            $total = 0;
+            $page = 1;
+            $pages = 1;
             $error = 'Không thể tải danh sách Flash Sale lúc này. Vui lòng thử lại sau.';
         }
         $this->view('admin/flash-sales', [
             'title' => 'Flash Sale',
             'campaigns' => $campaigns,
+            'total' => $total,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/flash-sales',
+            'paginationQuery' => [],
+            'paginationLabel' => 'chương trình Flash Sale',
             'error' => $error,
             'menu' => (new AdminController())->menu(),
         ], 'admin');

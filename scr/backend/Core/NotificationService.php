@@ -28,6 +28,37 @@ final class NotificationService
         return ['items' => $items, 'unread_count' => (int) $unread->fetchColumn()];
     }
 
+    public function forUserPage(int $userId, int $page, int $perPage = 20): array
+    {
+        $this->announceFlashSales($userId);
+        $perPage = min(max($perPage, 1), 50);
+        $count = $this->database->prepare('SELECT COUNT(*) FROM notifications WHERE user_id = :user_id');
+        $count->execute(['user_id' => $userId]);
+        $total = (int) $count->fetchColumn();
+        $pages = max(1, (int) ceil($total / $perPage));
+        $page = min(max($page, 1), $pages);
+        $statement = $this->database->prepare(
+            'SELECT id, title, message, link_url, read_at, created_at
+             FROM notifications WHERE user_id = :user_id
+             ORDER BY created_at DESC, id DESC LIMIT :limit OFFSET :offset'
+        );
+        $statement->bindValue(':user_id', $userId, PDO::PARAM_INT);
+        $statement->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $statement->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $statement->execute();
+        $items = $statement->fetchAll();
+        $unread = $this->database->prepare('SELECT COUNT(*) FROM notifications WHERE user_id = :user_id AND read_at IS NULL');
+        $unread->execute(['user_id' => $userId]);
+
+        return [
+            'items' => $items,
+            'unread_count' => (int) $unread->fetchColumn(),
+            'page' => $page,
+            'pages' => $pages,
+            'total' => $total,
+        ];
+    }
+
     public function markRead(int $userId, int $notificationId): bool
     {
         $statement = $this->database->prepare(
@@ -36,6 +67,16 @@ final class NotificationService
         );
         $statement->execute(['id' => $notificationId, 'user_id' => $userId]);
         return $statement->rowCount() > 0;
+    }
+
+    public function markAllRead(int $userId): int
+    {
+        $statement = $this->database->prepare(
+            'UPDATE notifications SET read_at = NOW()
+             WHERE user_id = :user_id AND read_at IS NULL'
+        );
+        $statement->execute(['user_id' => $userId]);
+        return $statement->rowCount();
     }
 
     public function notifyOrderStatus(int $userId, int $orderId, int $historyId, string $orderNo, string $status): void

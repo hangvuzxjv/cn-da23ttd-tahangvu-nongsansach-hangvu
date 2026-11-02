@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 final class AdminController extends Controller
 {
+    private const USER_PAGE_SIZE = 20;
+
     private const SECTIONS = [
         'orders' => ['permission' => 'orders.view', 'title' => 'Đơn hàng'],
         'vouchers' => ['permission' => 'vouchers.view', 'title' => 'Voucher'],
@@ -16,20 +18,25 @@ final class AdminController extends Controller
 
     public function index(): void
     {
-        $topScanned = Database::connection()->query(
-            'SELECT b.id, b.batch_code, p.name AS product_name, COUNT(s.id) AS scan_count
-             FROM trace_scans s JOIN product_batches b ON b.id = s.batch_id
-             JOIN products p ON p.id = b.product_id
-             GROUP BY b.id, b.batch_code, p.name
-             ORDER BY scan_count DESC, b.id DESC LIMIT 10'
-        )->fetchAll();
+        $canViewBatches = Auth::can('batches.view');
+        $topScanned = $canViewBatches
+            ? Database::connection()->query(
+                'SELECT b.id, b.batch_code, p.name AS product_name, COUNT(s.id) AS scan_count
+                 FROM trace_scans s JOIN product_batches b ON b.id = s.batch_id
+                 JOIN products p ON p.id = b.product_id
+                 GROUP BY b.id, b.batch_code, p.name
+                 ORDER BY scan_count DESC, b.id DESC LIMIT 10'
+            )->fetchAll()
+            : [];
         $dashboard = Auth::can('reports.view') ? (new ReportService())->dashboard() : null;
         $this->view('admin/dashboard', [
             'title' => 'Quản trị',
             'user' => Auth::user(),
             'topScanned' => $topScanned,
+            'canViewBatches' => $canViewBatches,
             'dashboard' => $dashboard,
             'menu' => $this->menu(),
+            'quickLinks' => AdminNavigation::quickLinks(),
         ], 'admin');
     }
 
@@ -68,17 +75,34 @@ final class AdminController extends Controller
         } else {
             $role = '';
         }
+        $database = Database::connection();
+        $where = $conditions ? ' WHERE ' . implode(' AND ', $conditions) : '';
+        $count = $database->prepare('SELECT COUNT(*) FROM users' . $where);
+        $count->execute($parameters);
+        $total = (int) $count->fetchColumn();
+        $pages = max(1, (int) ceil($total / self::USER_PAGE_SIZE));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = max(1, $requestedPage === false ? 1 : $requestedPage);
+        $page = min($page, $pages);
         $sql = 'SELECT id, name, email, phone, role, status, created_at FROM users'
-            . ($conditions ? ' WHERE ' . implode(' AND ', $conditions) : '')
-            . ' ORDER BY id DESC LIMIT 200';
-        $statement = Database::connection()->prepare($sql);
-        $statement->execute($parameters);
+            . $where . ' ORDER BY id DESC LIMIT :limit OFFSET :offset';
+        $statement = $database->prepare($sql);
+        foreach ($parameters as $name => $value) {
+            $statement->bindValue(':' . $name, $value, PDO::PARAM_STR);
+        }
+        $statement->bindValue(':limit', self::USER_PAGE_SIZE, PDO::PARAM_INT);
+        $statement->bindValue(':offset', ($page - 1) * self::USER_PAGE_SIZE, PDO::PARAM_INT);
+        $statement->execute();
         $this->view('admin/users', [
             'title' => 'Quản lý người dùng',
             'users' => $statement->fetchAll(),
             'query' => $query,
             'role' => $role,
             'roles' => $validRoles,
+            'page' => $page,
+            'pages' => $pages,
+            'total' => $total,
+            'listUrl' => url('/admin/users'),
             'currentUserId' => (int) Auth::user()['id'],
             'canManage' => Auth::can('users.manage'),
             'menu' => $this->menu(),
@@ -89,16 +113,45 @@ final class AdminController extends Controller
 
     public function customers(): void
     {
-        $statement = Database::connection()->query(
+        $database = Database::connection();
+        $query = trim((string) ($_GET['q'] ?? ''));
+        $parameters = [];
+        $where = "role = 'customer'";
+        if ($query !== '') {
+            $where .= ' AND (name LIKE :name_query OR email LIKE :email_query OR phone LIKE :phone_query)';
+            $search = '%' . $query . '%';
+            $parameters = [
+                'name_query' => $search,
+                'email_query' => $search,
+                'phone_query' => $search,
+            ];
+        }
+        $count = $database->prepare('SELECT COUNT(*) FROM users WHERE ' . $where);
+        $count->execute($parameters);
+        $total = (int) $count->fetchColumn();
+        $pages = max(1, (int) ceil($total / self::USER_PAGE_SIZE));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $statement = $database->prepare(
             "SELECT id, name, email, phone, role, status, created_at FROM users
-             WHERE role = 'customer' ORDER BY id DESC LIMIT 200"
+             WHERE " . $where . ' ORDER BY id DESC LIMIT :limit OFFSET :offset'
         );
+        foreach ($parameters as $name => $value) {
+            $statement->bindValue(':' . $name, $value, PDO::PARAM_STR);
+        }
+        $statement->bindValue(':limit', self::USER_PAGE_SIZE, PDO::PARAM_INT);
+        $statement->bindValue(':offset', ($page - 1) * self::USER_PAGE_SIZE, PDO::PARAM_INT);
+        $statement->execute();
         $this->view('admin/users', [
             'title' => 'Khách hàng',
             'users' => $statement->fetchAll(),
-            'query' => '',
+            'query' => $query,
             'role' => 'customer',
             'roles' => ['customer'],
+            'page' => $page,
+            'pages' => $pages,
+            'total' => $total,
+            'listUrl' => url('/admin/customers'),
             'currentUserId' => (int) Auth::user()['id'],
             'canManage' => false,
             'menu' => $this->menu(),
@@ -154,27 +207,14 @@ final class AdminController extends Controller
 
     public function menu(): array
     {
-        $items = [
-            ['permission' => 'dashboard.view', 'label' => 'Bảng điều khiển', 'url' => '/admin'],
-            ['permission' => 'reports.view', 'label' => 'Báo cáo', 'url' => '/admin/reports'],
-            ['permission' => 'content.view', 'label' => 'Trang tĩnh', 'url' => '/admin/content/pages'],
-            ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
-            ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
-            ['permission' => 'orders.view', 'label' => 'Thanh toán', 'url' => '/admin/payments'],
-            ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
-            ['permission' => 'shipping.view', 'label' => 'Phí vận chuyển', 'url' => '/admin/shipping'],
-            ['permission' => 'reviews.view', 'label' => 'Đánh giá', 'url' => '/admin/reviews'],
-            ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
-            ['permission' => 'customers.view', 'label' => 'Khách hàng', 'url' => '/admin/customers'],
-            ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
-            ['permission' => 'flash_sales.view', 'label' => 'Flash Sale', 'url' => '/admin/flash-sales'],
-            ['permission' => 'batches.view', 'label' => 'Lô hàng', 'url' => '/admin/batches'],
-            ['permission' => 'farms.view', 'label' => 'Nông trại', 'url' => '/admin/farms'],
-            ['permission' => 'regions.view', 'label' => 'Vùng miền', 'url' => '/admin/regions'],
-            ['permission' => 'categories.view', 'label' => 'Danh mục', 'url' => '/admin/categories'],
-            ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],
-            ['permission' => 'users.view', 'label' => 'Người dùng', 'url' => '/admin/users'],
-        ];
-        return array_values(array_filter($items, static fn (array $item): bool => Auth::can($item['permission'])));
+        $items = [];
+        foreach (AdminNavigation::groups() as $group) {
+            foreach ($group['items'] as $item) {
+                unset($item['active']);
+                $items[] = $item;
+            }
+        }
+
+        return $items;
     }
 }

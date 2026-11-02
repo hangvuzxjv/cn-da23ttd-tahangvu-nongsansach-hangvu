@@ -13,6 +13,9 @@ final class AdminMailController extends Controller
         $brevoConfigured = false;
         $fromConfigured = false;
         $error = null;
+        $total = 0;
+        $page = 1;
+        $pages = 1;
         try {
             $database = Database::connection();
             $status = (string) ($_GET['status'] ?? '');
@@ -24,11 +27,23 @@ final class AdminMailController extends Controller
             } else {
                 $status = '';
             }
+            $where = $conditions ? ' WHERE ' . implode(' AND ', $conditions) : '';
+            $countQuery = $database->prepare('SELECT COUNT(*) FROM mail_outbox' . $where);
+            $countQuery->execute($parameters);
+            $total = (int) $countQuery->fetchColumn();
+            $perPage = 20;
+            $pages = max(1, (int) ceil($total / $perPage));
+            $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+            $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
             $sql = 'SELECT id, recipient, subject, driver, status, attempts, last_error, created_at, sent_at
-                    FROM mail_outbox' . ($conditions ? ' WHERE ' . implode(' AND ', $conditions) : '')
-                . ' ORDER BY id DESC LIMIT 200';
+                    FROM mail_outbox' . $where . ' ORDER BY id DESC LIMIT :limit OFFSET :offset';
             $statement = $database->prepare($sql);
-            $statement->execute($parameters);
+            foreach ($parameters as $name => $value) {
+                $statement->bindValue(':' . $name, $value, PDO::PARAM_STR);
+            }
+            $statement->bindValue(':limit', $perPage, PDO::PARAM_INT);
+            $statement->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+            $statement->execute();
             $messages = $statement->fetchAll();
             foreach ($messages as &$message) {
                 $message['masked_recipient'] = MailService::maskedRecipient((string) $message['recipient']);
@@ -51,6 +66,11 @@ final class AdminMailController extends Controller
             'title' => 'Email và hộp thư chờ',
             'messages' => $messages,
             'status' => $status,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/mail',
+            'paginationQuery' => $status === '' ? [] : ['status' => $status],
+            'paginationLabel' => 'email',
             'driver' => $driver,
             'smtpConfigured' => $smtpConfigured,
             'brevoConfigured' => $brevoConfigured,

@@ -1,10 +1,10 @@
-<div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-4">
+<header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item active" aria-current="page">Flash Sale</li></ol></nav><div class="d-flex flex-wrap justify-content-between align-items-end gap-2">
     <div>
         <h1 class="h2 mb-1">Flash Sale</h1>
         <p class="text-secondary mb-0">Ưu đãi có giới hạn suất; giá và tồn kho được xác nhận lại khi đặt hàng.</p>
     </div>
     <a class="btn btn-outline-success" href="<?= e(url('/san-pham')) ?>">Xem tất cả sản phẩm</a>
-</div>
+</div></header>
 <?php if (!$campaigns): ?>
     <div class="alert alert-light border">Hiện chưa có chương trình Flash Sale đang diễn ra hoặc sắp bắt đầu.</div>
 <?php endif; ?>
@@ -58,7 +58,7 @@ $hasActiveCampaign = (bool) array_filter(
                 ?>
                 <div class="col" data-flash-item="<?= (int) $item['flash_sale_item_id'] ?>"
                      data-quota="<?= (int) $item['quota'] ?>" data-sold="<?= (int) $item['sold_quantity'] ?>">
-                    <article class="card h-100 shadow-sm border-<?= $active ? 'danger' : 'secondary' ?> position-relative">
+                    <article class="card h-100 shadow-sm border-<?= $active ? 'danger' : 'secondary' ?> position-relative product-card product-card--flash">
                         <?php
                         $wishlistProductId = (int) $item['product_id'];
                         $wishlistProductName = $item['product_name'];
@@ -66,17 +66,18 @@ $hasActiveCampaign = (bool) array_filter(
                         require FRONTEND_PATH . '/views/client/wishlist-button.php';
                         ?>
                         <a class="catalog-card-image" href="<?= e(url('/san-pham/' . $item['product_slug'])) ?>">
-                            <img class="card-img-top" src="<?= e(asset($item['image_url'])) ?>" alt="<?= e($item['product_name']) ?>" loading="lazy">
+                            <img class="card-img-top" src="<?= e(asset($item['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($item['product_name']) ?>" loading="lazy">
                         </a>
                         <div class="card-body d-flex flex-column">
                             <h3 class="h6"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['product_slug'])) ?>"><?= e($item['product_name']) ?></a></h3>
+                            <?php if (!empty($item['region_name'])): ?><span class="product-card__region"><?= e($item['region_name']) ?></span><?php endif; ?>
                             <div class="mb-2"><del class="small text-secondary"><?= number_format((float) $item['normal_price'], 0, ',', '.') ?> ₫</del>
                                 <span class="badge text-bg-danger"><?= $discountPercent ?>% giảm</span>
                                 <div class="fw-bold fs-5 text-danger"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫ <span class="small text-secondary">/ <?= e($item['unit']) ?></span></div>
                             </div>
                             <div class="small text-secondary">Đã bán <span data-sold-count><?= (int) $item['sold_quantity'] ?></span>/<?= (int) $item['quota'] ?></div>
                             <div class="progress mt-1 mb-3" role="progressbar" aria-label="Tiến độ Flash Sale" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $soldPercent ?>">
-                                <div class="progress-bar bg-danger" data-sold-progress style="width: <?= $soldPercent ?>%"></div>
+                                <div class="progress-bar bg-danger" data-sold-progress data-progress="<?= $soldPercent ?>"></div>
                             </div>
                             <div class="mt-auto" data-flash-action>
                                 <?php if (!$active): ?>

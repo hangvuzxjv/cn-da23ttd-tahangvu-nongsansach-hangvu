@@ -70,7 +70,7 @@ $statusNames = [
                         <p class="small text-muted mb-0">Giá Flash Sale phải thấp hơn giá bán hiện tại. Các suất vẫn được kiểm tra tồn kho thật khi đặt hàng.</p>
                     </div>
                     <?php if ($editable): ?>
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-2 admin-flash-sale-search">
                             <input id="product-search" class="form-control" type="search" placeholder="Tìm tên hoặc mã sản phẩm" autocomplete="off">
                             <button id="search-products" class="btn btn-outline-secondary text-nowrap" type="button">Tìm sản phẩm</button>
                         </div>

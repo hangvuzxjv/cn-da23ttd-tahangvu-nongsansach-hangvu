@@ -65,6 +65,21 @@ foreach (['client.php', 'admin.php', 'error.php'] as $layout) {
     uiDesignAssert(str_contains($markup, '/css/vendor/bootstrap.min.css'), 'Layout must load local Bootstrap CSS.');
 }
 
+$clientViews = glob(FRONTEND_PATH . '/views/client/*.php') ?: [];
+uiDesignAssert($clientViews !== [], 'Customer views should be available for design checks.');
+foreach ($clientViews as $viewPath) {
+    $markup = file_get_contents($viewPath);
+    uiDesignAssert(is_string($markup), 'Unable to read customer view ' . basename($viewPath));
+    uiDesignAssert(
+        !preg_match('/<style\b|\sstyle\s*=/i', $markup),
+        'Customer view must not contain embedded styling: ' . basename($viewPath)
+    );
+    uiDesignAssert(
+        !preg_match('/<script\b/i', $markup),
+        'Customer view must load behavior from local JavaScript assets: ' . basename($viewPath)
+    );
+}
+
 $clientLayout = file_get_contents(FRONTEND_PATH . '/views/layouts/client.php');
 $adminLayout = file_get_contents(FRONTEND_PATH . '/views/layouts/admin.php');
 uiDesignAssert(
@@ -75,6 +90,12 @@ uiDesignAssert(
         && str_contains((string) $adminLayout, 'data-bs-target="#adminNavigation"')
         && str_contains((string) $adminLayout, '/js/vendor/bootstrap.bundle.min.js'),
     'Existing customer selectors and the responsive admin navigation contract must remain available.'
+);
+uiDesignAssert(
+    str_contains((string) $clientLayout, '/js/ui.js')
+        && str_contains((string) $clientLayout, '/js/cart.js')
+        && str_contains((string) $clientLayout, '/js/flash-sale.js'),
+    'Customer behavior must remain loaded from local JavaScript assets.'
 );
 
 ob_start();

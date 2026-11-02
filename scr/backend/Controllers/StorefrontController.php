@@ -19,8 +19,13 @@ final class StorefrontController extends Controller
             'SELECT id, name, slug, description FROM regions
              WHERE level = 1 AND is_active = 1 ORDER BY id'
         )->fetchAll();
+        $categories = $database->query(
+            'SELECT id, name, slug, description FROM categories
+             WHERE is_active = 1 AND parent_id IS NULL ORDER BY sort_order, name LIMIT 8'
+        )->fetchAll();
         $featured = $this->fetchProducts('p.is_featured = 1', [], 'p.created_at DESC', 8);
         $newest = $this->fetchProducts('1 = 1', [], 'p.created_at DESC', 8);
+        $bestselling = $this->fetchProducts('1 = 1', [], 'COALESCE(sales.sold, 0) DESC, p.created_at DESC', 8);
         $userId = $this->currentUserId();
         $engagement = new CustomerEngagementService($database);
         $recentProducts = $this->recentlyViewedProducts();
@@ -42,8 +47,10 @@ final class StorefrontController extends Controller
             'metaDescription' => 'Khám phá nông sản sạch, truy xuất nguồn gốc từ các vùng miền Việt Nam.',
             'banners' => $banners,
             'regions' => $regions,
+            'categories' => $categories,
             'featured' => $featured,
             'newest' => $newest,
+            'bestselling' => $bestselling,
             'flashSaleCampaign' => $homeFlashSale,
             'flashSaleServerTime' => $flashService->serverTime(),
             'flashSaleLoggedIn' => $userId !== null,
@@ -465,7 +472,8 @@ final class StorefrontController extends Controller
                     COALESCE(stock.quantity, 0) AS actual_stock,
                     COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url,
                     COALESCE(review_summary.average_rating, 0) AS average_rating,
-                    COALESCE(review_summary.review_count, 0) AS review_count
+                    COALESCE(review_summary.review_count, 0) AS review_count,
+                    r.name AS region_name
              FROM products p
              LEFT JOIN ' . $this->availableStockSubquery() . ' stock ON stock.product_id = p.id
              LEFT JOIN (
@@ -476,6 +484,12 @@ final class StorefrontController extends Controller
                  SELECT product_id, AVG(rating) AS average_rating, COUNT(*) AS review_count
                  FROM reviews WHERE status = \'published\' GROUP BY product_id
              ) review_summary ON review_summary.product_id = p.id
+             LEFT JOIN (
+                 SELECT oi.product_id, SUM(oi.quantity) AS sold
+                 FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                 WHERE o.status NOT IN (\'cancelled\', \'refunded\') AND oi.product_id IS NOT NULL
+                 GROUP BY oi.product_id
+             ) sales ON sales.product_id = p.id
              JOIN categories c ON c.id = p.category_id AND c.is_active = 1
              JOIN regions r ON r.id = p.region_id AND r.is_active = 1
              WHERE p.status = \'active\' AND p.deleted_at IS NULL AND ' . $extraCondition . '

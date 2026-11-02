@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 final class InventoryAdminController extends Controller
 {
+    private const ADMIN_LIST_PAGE_SIZE = 20;
+
     public function index(): void
     {
         $database = Database::connection();
@@ -49,7 +51,20 @@ final class InventoryAdminController extends Controller
 
     public function stock(): void
     {
-        $rows = $this->stockRows((string) ($_GET['filter'] ?? ''), trim((string) ($_GET['q'] ?? '')), 500);
+        $filter = (string) ($_GET['filter'] ?? '');
+        $query = trim((string) ($_GET['q'] ?? ''));
+        (new PaymentService())->expirePending();
+        (new InventoryService())->expireReservations();
+        $total = $this->stockRowsCount($filter, $query);
+        $pages = max(1, (int) ceil($total / self::ADMIN_LIST_PAGE_SIZE));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $rows = $this->stockRows(
+            $filter,
+            $query,
+            self::ADMIN_LIST_PAGE_SIZE,
+            ($page - 1) * self::ADMIN_LIST_PAGE_SIZE
+        );
         $products = Database::connection()->query(
             'SELECT id, name, sku, total_stock, min_stock FROM products WHERE deleted_at IS NULL ORDER BY name'
         )->fetchAll();
@@ -57,8 +72,13 @@ final class InventoryAdminController extends Controller
             'title' => 'Tồn kho',
             'rows' => $rows,
             'products' => $products,
-            'query' => trim((string) ($_GET['q'] ?? '')),
-            'filter' => (string) ($_GET['filter'] ?? ''),
+            'query' => $query,
+            'filter' => $filter,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/inventory/stock',
+            'paginationQuery' => array_filter(['q' => $query, 'filter' => $filter], static fn (string $value): bool => $value !== ''),
+            'paginationLabel' => 'lô tồn kho',
             'warningDays' => $this->expiryWarningDays(),
             'canManage' => Auth::can('inventory.manage'),
             'success' => flash('success'),
@@ -68,6 +88,8 @@ final class InventoryAdminController extends Controller
 
     public function exportCsv(): void
     {
+        (new PaymentService())->expirePending();
+        (new InventoryService())->expireReservations();
         $rows = $this->stockRows((string) ($_GET['filter'] ?? ''), trim((string) ($_GET['q'] ?? '')), null);
         header('Content-Type: text/csv; charset=UTF-8');
         header('Content-Disposition: attachment; filename="inventory-stock.csv"');
@@ -150,16 +172,30 @@ final class InventoryAdminController extends Controller
     public function receipts(): void
     {
         $database = Database::connection();
-        $receipts = $database->query(
+        $total = (int) $database->query('SELECT COUNT(*) FROM warehouse_receipts')->fetchColumn();
+        $perPage = self::ADMIN_LIST_PAGE_SIZE;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $receiptQuery = $database->prepare(
             'SELECT r.*, f.name AS farm_name, u.name AS receiver_name,
                     (SELECT COUNT(*) FROM warehouse_receipt_items i WHERE i.receipt_id = r.id) AS item_count
              FROM warehouse_receipts r LEFT JOIN farms f ON f.id = r.supplier_farm_id
              LEFT JOIN users u ON u.id = r.received_by
-             ORDER BY r.id DESC LIMIT 100'
-        )->fetchAll();
+             ORDER BY r.id DESC LIMIT :limit OFFSET :offset'
+        );
+        $receiptQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $receiptQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $receiptQuery->execute();
+        $receipts = $receiptQuery->fetchAll();
         $this->adminView('admin/inventory-receipts', [
             'title' => 'Phiếu nhập kho',
             'receipts' => $receipts,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/inventory/receipts',
+            'paginationQuery' => [],
+            'paginationLabel' => 'phiếu nhập kho',
             'farms' => $database->query('SELECT id, name FROM farms WHERE status = \'active\' ORDER BY name')->fetchAll(),
             'products' => $database->query('SELECT id, name, sku, farm_id FROM products WHERE deleted_at IS NULL ORDER BY name')->fetchAll(),
             'batches' => $database->query(
@@ -368,11 +404,21 @@ final class InventoryAdminController extends Controller
     public function stocktakes(): void
     {
         $database = Database::connection();
-        $stocktakes = $database->query(
+        $total = (int) $database->query('SELECT COUNT(*) FROM stocktakes')->fetchColumn();
+        $perPage = self::ADMIN_LIST_PAGE_SIZE;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $stocktakeQuery = $database->prepare(
             'SELECT s.*, u.name AS creator_name,
                     (SELECT COUNT(*) FROM stocktake_items i WHERE i.stocktake_id = s.id) AS item_count
-             FROM stocktakes s LEFT JOIN users u ON u.id = s.created_by ORDER BY s.id DESC LIMIT 100'
-        )->fetchAll();
+             FROM stocktakes s LEFT JOIN users u ON u.id = s.created_by
+             ORDER BY s.id DESC LIMIT :limit OFFSET :offset'
+        );
+        $stocktakeQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stocktakeQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $stocktakeQuery->execute();
+        $stocktakes = $stocktakeQuery->fetchAll();
         $selectedId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT);
         $items = [];
         if ($selectedId) {
@@ -389,6 +435,11 @@ final class InventoryAdminController extends Controller
             'stocktakes' => $stocktakes,
             'items' => $items,
             'selectedId' => (int) $selectedId,
+            'page' => $page,
+            'pages' => $pages,
+            'paginationUrl' => '/admin/inventory/stocktakes',
+            'paginationQuery' => $selectedId ? ['id' => (int) $selectedId] : [],
+            'paginationLabel' => 'đợt kiểm kê',
             'canManage' => Auth::can('inventory.manage'),
             'success' => flash('success'),
             'error' => flash('error'),
@@ -563,10 +614,50 @@ final class InventoryAdminController extends Controller
         }
     }
 
-    private function stockRows(string $filter, string $search, ?int $limit): array
+    private function stockRows(string $filter, string $search, ?int $limit, int $offset = 0): array
     {
-        (new PaymentService())->expirePending();
-        (new InventoryService())->expireReservations();
+        [$conditions, $parameters] = $this->stockConditions($filter, $search);
+        $sql = 'SELECT b.id AS batch_id, b.batch_code, b.expires_at, b.status, b.quantity_remaining,
+                       b.average_unit_cost, p.id AS product_id, p.name AS product_name, p.sku, p.total_stock, p.min_stock,
+                       COALESCE(r.quantity, 0) AS reserved_quantity,
+                       GREATEST(0, b.quantity_remaining - COALESCE(r.quantity, 0)) AS available_quantity
+                FROM product_batches b
+                JOIN products p ON p.id = b.product_id
+                LEFT JOIN (
+                    SELECT batch_id, SUM(quantity) AS quantity
+                    FROM stock_reservations
+                    WHERE status = \'reserved\' AND expires_at > NOW()
+                    GROUP BY batch_id
+                ) r ON r.batch_id = b.id'
+                . ($conditions ? ' WHERE ' . implode(' AND ', $conditions) : '')
+                . ' ORDER BY b.expires_at IS NULL, b.expires_at, p.name, b.id';
+        if ($limit !== null) {
+            $sql .= ' LIMIT :limit OFFSET :offset';
+        }
+        $query = Database::connection()->prepare($sql);
+        foreach ($parameters as $key => $value) {
+            $query->bindValue(':' . $key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
+        }
+        if ($limit !== null) {
+            $query->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $query->bindValue(':offset', $offset, PDO::PARAM_INT);
+        }
+        $query->execute();
+        return $query->fetchAll();
+    }
+
+    private function stockRowsCount(string $filter, string $search): int
+    {
+        [$conditions, $parameters] = $this->stockConditions($filter, $search);
+        $sql = 'SELECT COUNT(*) FROM product_batches b JOIN products p ON p.id = b.product_id'
+            . ($conditions ? ' WHERE ' . implode(' AND ', $conditions) : '');
+        $query = Database::connection()->prepare($sql);
+        $query->execute($parameters);
+        return (int) $query->fetchColumn();
+    }
+
+    private function stockConditions(string $filter, string $search): array
+    {
         $conditions = [];
         $parameters = [];
         $validFilters = ['low', 'near_expiry', 'expired', 'out_of_stock'];
@@ -591,32 +682,7 @@ final class InventoryAdminController extends Controller
             $parameters['sku_search'] = '%' . $search . '%';
             $parameters['batch_search'] = '%' . $search . '%';
         }
-        $sql = 'SELECT b.id AS batch_id, b.batch_code, b.expires_at, b.status, b.quantity_remaining,
-                       b.average_unit_cost, p.id AS product_id, p.name AS product_name, p.sku, p.total_stock, p.min_stock,
-                       COALESCE(r.quantity, 0) AS reserved_quantity,
-                       GREATEST(0, b.quantity_remaining - COALESCE(r.quantity, 0)) AS available_quantity
-                FROM product_batches b
-                JOIN products p ON p.id = b.product_id
-                LEFT JOIN (
-                    SELECT batch_id, SUM(quantity) AS quantity
-                    FROM stock_reservations
-                    WHERE status = \'reserved\' AND expires_at > NOW()
-                    GROUP BY batch_id
-                ) r ON r.batch_id = b.id'
-                . ($conditions ? ' WHERE ' . implode(' AND ', $conditions) : '')
-                . ' ORDER BY b.expires_at IS NULL, b.expires_at, p.name, b.id';
-        if ($limit !== null) {
-            $sql .= ' LIMIT :limit';
-        }
-        $query = Database::connection()->prepare($sql);
-        foreach ($parameters as $key => $value) {
-            $query->bindValue(':' . $key, $value, is_int($value) ? PDO::PARAM_INT : PDO::PARAM_STR);
-        }
-        if ($limit !== null) {
-            $query->bindValue(':limit', $limit, PDO::PARAM_INT);
-        }
-        $query->execute();
-        return $query->fetchAll();
+        return [$conditions, $parameters];
     }
 
     private function movementFilters(): array
