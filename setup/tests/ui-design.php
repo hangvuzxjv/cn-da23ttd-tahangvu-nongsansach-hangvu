@@ -23,6 +23,12 @@ $requiredAssets = [
     ROOT_PATH . '/css/app.css',
     ROOT_PATH . '/js/vendor/bootstrap.bundle.min.js',
     ROOT_PATH . '/favicon.svg',
+    ROOT_PATH . '/js/home-banners.js',
+    ROOT_PATH . '/img/banners/banner-1.svg',
+    ROOT_PATH . '/img/banners/banner-2.svg',
+    ROOT_PATH . '/img/banners/banner-3.svg',
+    ROOT_PATH . '/img/banners/banner-4.svg',
+    ROOT_PATH . '/img/banners/banner-5.svg',
 ];
 foreach ($requiredAssets as $assetPath) {
     uiDesignAssert(is_file($assetPath), 'Required local design asset is missing: ' . basename($assetPath));
@@ -96,6 +102,37 @@ uiDesignAssert(
         && str_contains((string) $clientLayout, '/js/cart.js')
         && str_contains((string) $clientLayout, '/js/flash-sale.js'),
     'Customer behavior must remain loaded from local JavaScript assets.'
+);
+uiDesignAssert(
+    !str_contains((string) $clientLayout, 'client-trace-search')
+        && !str_contains((string) $clientLayout, 'traceLookupNav'),
+    'Customer navigation must not contain the duplicate batch lookup form.'
+);
+$traceabilityView = file_get_contents(FRONTEND_PATH . '/views/client/traceability.php');
+$productView = file_get_contents(FRONTEND_PATH . '/views/client/product.php');
+uiDesignAssert(
+    is_string($traceabilityView)
+        && str_contains($traceabilityView, 'trace-farm-card__media')
+        && str_contains($traceabilityView, 'traceability-qr')
+        && is_string($productView)
+        && str_contains($productView, 'trace-batch-actions')
+        && str_contains($productView, 'trace-batch-qr'),
+    'Customer QR placement must use the compact traceability components.'
+);
+$homeView = file_get_contents(FRONTEND_PATH . '/views/client/home.php');
+$bannerScript = file_get_contents(ROOT_PATH . '/js/home-banners.js');
+uiDesignAssert(
+    is_string($homeView)
+        && str_contains($homeView, 'data-interval="6000"')
+        && str_contains($homeView, 'aria-label="Tạm dừng/Phát"')
+        && !str_contains($homeView, '>Trước<')
+        && !str_contains($homeView, '>Tiếp<')
+        && !str_contains($homeView, '>Tạm dừng<')
+        && is_string($bannerScript)
+        && str_contains($bannerScript, 'reducedMotionQuery')
+        && str_contains($bannerScript, 'pointerenter')
+        && str_contains($bannerScript, 'visibilitychange'),
+    'Homepage carousel must use icon-only controls and keep autoplay in reduced-motion mode.'
 );
 
 ob_start();

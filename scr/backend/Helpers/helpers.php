@@ -5,6 +5,18 @@ function e(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function catalog_normalized_name(string $value): string
+{
+    $value = trim(mb_strtolower($value, 'UTF-8'));
+    $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+    return preg_replace('/[^a-z0-9]+/', '', strtolower($ascii ?: $value)) ?? '';
+}
+
+function flash_sale_display_name(string $name): string
+{
+    return preg_replace('/\A\s*flash\s*sale\s*[·:–-]?\s*/iu', '', trim($name)) ?: trim($name);
+}
+
 function url(string $path = ''): string
 {
     if (preg_match('/\Ahttps?:\/\//i', $path) === 1) {

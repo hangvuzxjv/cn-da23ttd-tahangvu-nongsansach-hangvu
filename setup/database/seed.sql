@@ -294,8 +294,8 @@ INSERT INTO reviews (user_id, product_id, order_id, rating, title, content, stat
 VALUES (1, 7, 1, 5, 'Sản phẩm mẫu', 'Đánh giá mẫu cho dữ liệu phát triển.', 'published');
 INSERT INTO wishlists (user_id, product_id) VALUES (1, 8);
 -- The sample banner uses a bundled SVG, not an external placeholder URL.
-INSERT INTO banners (title, image_url, link_url, sort_order, status)
-VALUES ('Nông sản sạch theo mùa', '/img/banner-fresh.svg', '/san-pham/xoai-cat-hoa-loc', 1, 'active');
+INSERT INTO banners (title, description, image_url, button_label, link_url, sort_order, status)
+VALUES ('Nông sản sạch theo mùa', 'Chọn sản phẩm theo mùa, rõ nguồn gốc.', '/img/banner-fresh.svg', 'Xem sản phẩm', '/san-pham', 1, 'active');
 INSERT INTO pages (title, slug, content, status, published_at)
 VALUES ('Giới thiệu', 'gioi-thieu', '<p>Trang giới thiệu mẫu.</p>', 'published', NOW());
 INSERT INTO contacts (name, email, subject, message, status)

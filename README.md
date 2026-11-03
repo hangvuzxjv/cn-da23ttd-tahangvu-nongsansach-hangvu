@@ -40,7 +40,10 @@ Hướng dẫn triển khai shared hosting InfinityFree (không SSH/cron) và c�
 
 ## Tài khoản dữ liệu mẫu
 
-Tất cả tài khoản sau dùng mật khẩu thử `password` (bcrypt). Chỉ dùng để phát triển:
+Tài khoản mẫu dùng mật khẩu mạnh `NongSanDemo!2026#Viet`. Đây chỉ là mật khẩu
+phát triển/kiểm thử; phải đổi toàn bộ mật khẩu trước khi đưa hệ thống lên
+hosting hoặc chia sẻ cho người dùng thật. Các địa chỉ `@example.test` chỉ là
+địa chỉ giả, hệ thống không gửi email thật tới đó:
 
 | Vai trò | Email |
 |---|---|
@@ -48,8 +51,9 @@ Tất cả tài khoản sau dùng mật khẩu thử `password` (bcrypt). Chỉ 
 | admin | `admin@example.com` |
 | staff_sales | `sales@example.com` |
 | staff_warehouse | `warehouse@example.com` |
+| customer | `demo.customer01@example.test` đến `demo.customer10@example.test` |
 
-Seed có 3 miền, 10 tỉnh/vùng, 6 danh mục, 10 nông trại, 20 sản phẩm, 130 lô hàng (mỗi lô có 6 sự kiện truy xuất), một phiếu nhập, 6 đơn hàng mẫu, 6 voucher, phí ship, và một Flash Sale có thời gian bắt đầu/kết thúc tương đối với lúc import. Các chứng nhận và hồ sơ nông trại trong seed là dữ liệu minh họa, không phải xác nhận chứng nhận thực tế.
+Seed có 3 miền, 10 tỉnh/vùng, 6 danh mục, 10 nông trại, 20 sản phẩm, 130 lô hàng (mỗi lô có 6 sự kiện truy xuất), một phiếu nhập, 6 đơn hàng mẫu, 6 voucher, phí ship, và một Flash Sale có thời gian bắt đầu/kết thúc tương đối với lúc import. Bộ nạp mở rộng trong `setup/database/sample-data/` bổ sung 10 khách hàng, 36 đơn trong 60 ngày, 5 chiến dịch Flash Sale, voucher, 72 đánh giá, giỏ hàng, yêu thích, thông báo, liên hệ, trang tĩnh và banner. Các chứng nhận và hồ sơ nông trại trong seed là dữ liệu minh họa, không phải xác nhận chứng nhận thực tế.
 
 ## Kiểm tra dữ liệu sau import
 
@@ -106,6 +110,39 @@ WHERE fs.status IN ('scheduled','active')
 Kết quả: chương trình đang diễn ra được xác định theo giờ máy chủ; migration Flash Sale cũng thêm một chương trình sắp diễn ra để kiểm tra lịch.
 
 Với database đã có dữ liệu, sao lưu trước rồi áp dụng lần lượt `setup/database/migrations/20261030_flash_sales.sql` và `setup/database/migrations/20261101_flash_sale_sample_campaigns.sql`; không chạy lại `schema.sql` hoặc `seed.sql`.
+
+### Dữ liệu mẫu sản phẩm mở rộng
+
+Migration `setup/database/migrations/20261106_product_metadata.sql` chỉ thêm
+các cột metadata nullable cho sản phẩm cũ: mùa vụ, dinh dưỡng, sơ chế và sử
+dụng, từ khóa, SEO title và SEO description. Quy cách được biểu diễn bằng sản
+phẩm riêng để giữ nguyên luồng giỏ hàng, lô tồn kho và Flash Sale hiện có.
+Chạy migration sau khi đã sao lưu:
+
+```powershell
+& 'C:\xampp\php\php.exe' setup\database\apply-migration.php setup/database/migrations/20261106_product_metadata.sql
+& 'C:\xampp\php\php.exe' setup\database\sample-data\load.php
+```
+
+Trên hosting không có PHP CLI, chạy file migration trong phpMyAdmin rồi chạy
+`setup/database/sample-data/load.php` trên môi trường có PHP CLI hoặc nạp theo
+hướng dẫn tại [setup/database/sample-data/README.md](./setup/database/sample-data/README.md).
+Script nạp có thể chạy lặp lại, nhận diện theo slug và tên chuẩn hóa, còn mã lô
+dùng tiền tố `DEMO-`; gỡ dữ liệu mẫu bằng
+`php setup/database/sample-data/load.php --remove`.
+
+Nếu database đã từng có cả seed cũ và dữ liệu mẫu, chạy
+`setup/database/sample-data/merge-duplicates.php` trước khi nạp lại. Script gộp
+trong một transaction, chuyển tham chiếu sang bản ghi giữ lại và thay nội dung
+giữ chỗ ở phần hiển thị khách hàng. Sau đó áp dụng
+`setup/database/migrations/20261107_unique_catalog_slugs.sql` để thêm khóa
+`UNIQUE` idempotent cho slug vùng, danh mục, nông trại và sản phẩm:
+
+```powershell
+& 'C:\xampp\php\php.exe' setup\database\sample-data\merge-duplicates.php
+& 'C:\xampp\php\php.exe' setup\database\apply-migration.php setup\database\migrations\20261107_unique_catalog_slugs.sql
+& 'C:\xampp\php\php.exe' setup\database\sample-data\load.php
+```
 
 Kiểm thử lõi trên database riêng đã chuẩn bị schema/seed và có tên kết thúc bằng `_test` (không dùng database đang có dữ liệu):
 
@@ -383,7 +420,7 @@ Các bài kiểm thử chạy trên CSDL riêng `nongsan_step7_commerce_test` t�
 - `php setup/tests/checkout-concurrency.php`: **đạt** — hai người mua một đơn vị tồn: 1 thành công/1 bị từ chối, tồn cuối 0; 20 người dùng voucher còn 1 lượt: đúng 1 thành công/19 bị từ chối, `used_count=1`.
 - `php setup/tests/reconcile.php`: **đạt** — 0 lô lệch tổng movement, 0 sản phẩm lệch tồn lô, 0 tồn âm.
 - PHP lint: **đạt**, 91 tệp không lỗi cú pháp; `git diff --check`: **đạt**.
-- Luồng được kiểm tra trực tiếp qua service/DB, chưa thực hiện browser E2E trong phiên này. Đăng nhập bằng tài khoản seed trong phần “Tài khoản dữ liệu mẫu”; mật khẩu demo `password` chỉ dùng local.
+- Luồng được kiểm tra trực tiếp qua service/DB, chưa thực hiện browser E2E trong phiên này. Đăng nhập bằng tài khoản trong phần “Tài khoản dữ liệu mẫu”; mật khẩu demo chỉ dùng local và phải đổi trước khi triển khai.
 
 ### Cách chạy bài kiểm thử
 

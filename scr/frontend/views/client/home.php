@@ -1,14 +1,25 @@
+<?php
+$banners = array_values(array_filter(
+    $banners,
+    static fn (array $banner): bool => (string) ($banner['image_url'] ?? '') !== '/img/banner-fresh.svg'
+));
+?>
 <?php if ($banners): ?>
-    <div id="homeBanners" class="carousel slide mb-5" data-bs-ride="carousel">
-        <div class="carousel-inner rounded-3 overflow-hidden">
-            <?php foreach ($banners as $index => $banner): ?><div class="carousel-item <?= $index === 0 ? 'active' : '' ?>">
-                <?php if ($banner['link_url']): ?><a class="home-banner-link" href="<?= e($banner['link_url']) ?>"><?php endif; ?>
-                <img class="d-block w-100 home-banner" src="<?= e(asset($banner['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($banner['title']) ?>" <?= $index > 0 ? 'loading="lazy"' : 'fetchpriority="high"' ?>>
-                <?php if ($banner['link_url']): ?></a><?php endif; ?>
-                <div class="home-banner-caption"><h1><?= e($banner['title']) ?></h1></div>
-            </div><?php endforeach; ?>
+    <div id="homeBanners" class="home-banner-slider mb-5" data-home-banner-slider data-interval="6000">
+        <div class="home-banner-slider__track">
+            <?php foreach ($banners as $index => $banner): ?><article class="home-banner-slide<?= $index === 0 ? ' is-active' : '' ?>" data-home-banner-slide aria-hidden="<?= $index === 0 ? 'false' : 'true' ?>">
+                <img class="home-banner" src="<?= e(asset($banner['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($banner['title']) ?>" <?= $index > 0 ? 'loading="lazy"' : 'fetchpriority="high"' ?>>
+                <div class="home-banner-caption"><h1><?= e($banner['title']) ?></h1><?php if (!empty($banner['description'])): ?><p><?= e($banner['description']) ?></p><?php endif; ?><?php if (!empty($banner['button_label']) && !empty($banner['link_url'])): ?><a class="btn btn-success" href="<?= e($banner['link_url']) ?>"><?= e($banner['button_label']) ?></a><?php endif; ?></div>
+            </article><?php endforeach; ?>
         </div>
-        <?php if (count($banners) > 1): ?><button class="carousel-control-prev" type="button" data-bs-target="#homeBanners" data-bs-slide="prev"><span class="carousel-control-prev-icon" aria-hidden="true"></span><span class="visually-hidden">Trước</span></button><button class="carousel-control-next" type="button" data-bs-target="#homeBanners" data-bs-slide="next"><span class="carousel-control-next-icon" aria-hidden="true"></span><span class="visually-hidden">Tiếp</span></button><?php endif; ?>
+        <?php if (count($banners) > 1): ?>
+            <div class="home-banner-slider__controls" aria-label="Điều khiển banner">
+                <button class="home-banner-slider__arrow home-banner-slider__arrow--prev" type="button" data-home-banner-prev aria-label="Banner trước"></button>
+                <div class="home-banner-slider__dots"><?php foreach ($banners as $index => $banner): ?><button type="button" data-home-banner-dot="<?= $index ?>" aria-label="Chuyển đến banner <?= $index + 1 ?>" class="<?= $index === 0 ? 'is-active' : '' ?>"></button><?php endforeach; ?></div>
+                <button class="home-banner-slider__arrow home-banner-slider__arrow--next" type="button" data-home-banner-next aria-label="Banner tiếp theo"></button>
+                <button class="home-banner-slider__pause" type="button" data-home-banner-pause aria-label="Tạm dừng/Phát" aria-pressed="false"></button>
+            </div>
+        <?php endif; ?>
     </div>
 <?php else: ?>
     <section class="p-4 p-md-5 mb-5 rounded-3 home-hero">
@@ -57,7 +68,7 @@
         <div class="small text-danger mb-2" data-flash-poll-message role="status" aria-live="polite"></div>
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <div>
-                <h2 class="h3 mb-1"><a class="link-dark text-decoration-none" href="<?= e(url('/flash-sale')) ?>">Flash Sale · <?= e($flashSaleCampaign['name']) ?></a></h2>
+                <h2 class="h3 mb-1"><a class="link-dark text-decoration-none" href="<?= e(url('/flash-sale')) ?>">Flash Sale<?= flash_sale_display_name($flashSaleCampaign['name']) !== '' ? ' · ' . e(flash_sale_display_name($flashSaleCampaign['name'])) : '' ?></a></h2>
                 <span class="text-secondary"><?= $saleActive ? 'Kết thúc sau' : 'Bắt đầu sau' ?>:
                     <strong class="text-danger" data-countdown data-countdown-target="<?= e($saleTarget->format(DATE_ATOM)) ?>">Đang đồng bộ giờ máy chủ…</strong>
                 </span>
@@ -65,7 +76,7 @@
             <a class="btn btn-outline-success" href="<?= e(url('/flash-sale')) ?>">Xem tất cả Flash Sale</a>
         </div>
         <?php if (!$saleActive): ?><div class="alert alert-info py-2">Chương trình chưa bắt đầu; các sản phẩm chưa thể mua theo giá Flash Sale.</div><?php endif; ?>
-        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3">
+        <div class="row row-cols-2 row-cols-lg-3 row-cols-xl-4 g-3 product-card-grid">
             <?php foreach (array_slice($flashSaleCampaign['items'], 0, 8) as $sale): ?>
                 <?php
                 $discountPercent = (int) $sale['normal_price'] > 0
@@ -92,12 +103,15 @@
                             <img class="card-img-top" src="<?= e(asset($sale['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($sale['product_name']) ?>" loading="lazy">
                         </a>
                         <div class="card-body d-flex flex-column">
-                            <div class="small text-danger"><?= e($flashSaleCampaign['name']) ?></div>
-                            <h3 class="h6"><a class="link-dark" href="<?= e(url('/san-pham/' . $sale['product_slug'])) ?>"><?= e($sale['product_name']) ?></a></h3>
-                            <?php if (!empty($sale['region_name'])): ?><span class="product-card__region"><?= e($sale['region_name']) ?></span><?php endif; ?>
-                            <div class="mb-2"><del class="small text-secondary"><?= number_format((float) $sale['normal_price'], 0, ',', '.') ?> ₫</del>
+                            <div class="small text-danger product-card__campaign"><?= e($flashSaleCampaign['name']) ?></div>
+                            <h3 class="h6 product-card__title"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $sale['product_slug'])) ?>"><?= e($sale['product_name']) ?></a></h3>
+                            <div class="product-card__meta">
+                                <?php if (!empty($sale['region_name'])): ?><span class="product-card__region"><?= e($sale['region_name']) ?></span><?php endif; ?>
+                                <span class="product-card__rating product-card__rating--empty">Flash Sale</span>
+                            </div>
+                            <div class="product-card__price-row"><del class="small text-secondary"><?= number_format((float) $sale['normal_price'], 0, ',', '.') ?> ₫</del>
                                 <span class="badge text-bg-danger"><?= $discountPercent ?>% giảm</span>
-                                <div class="fw-bold fs-5 text-danger"><?= number_format((float) $sale['sale_price'], 0, ',', '.') ?> ₫ <span class="small text-secondary">/ <?= e($sale['unit']) ?></span></div>
+                                <span class="fw-bold text-danger product-card__price"><?= number_format((float) $sale['sale_price'], 0, ',', '.') ?> ₫ <span class="small text-secondary product-card__unit">/ <?= e($sale['unit']) ?></span></span>
                             </div>
                             <div class="small text-secondary">Đã bán <span data-sold-count><?= (int) $sale['sold_quantity'] ?></span>/<?= (int) $sale['quota'] ?></div>
                             <div class="progress mt-1 mb-3" role="progressbar" aria-label="Tiến độ Flash Sale" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $soldPercent ?>">

@@ -8,6 +8,8 @@
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
     const baseUrl = document.querySelector('meta[name="app-base-url"]')?.content || '/';
     if (!list || !itemsList || !count) return;
+    const csrfHeaders = { 'X-CSRF-Token': csrf, Accept: 'application/json' };
+    const csrfBody = () => new URLSearchParams({ _token: csrf });
 
     const render = (data) => {
         count.textContent = String(data.unread_count || 0);
@@ -48,7 +50,9 @@
                     try {
                         const response = await fetch(`${baseUrl.replace(/\/$/, '')}/notifications/${encodeURIComponent(item.id)}/read`, {
                             method: 'POST',
-                            headers: { 'X-CSRF-Token': csrf, Accept: 'application/json' },
+                            headers: csrfHeaders,
+                            body: csrfBody(),
+                            credentials: 'same-origin',
                         });
                         const result = await response.json();
                         if (!response.ok || !result.success) throw new Error(result.message || 'Chưa thể cập nhật thông báo.');
@@ -81,8 +85,9 @@
         try {
             const response = await fetch(`${baseUrl.replace(/\/$/, '')}/notifications/0/read`, {
                 method: 'POST',
-                headers: { 'X-CSRF-Token': csrf, Accept: 'application/json' },
-                body: new URLSearchParams({ _all: '1' }),
+                headers: { ...csrfHeaders, 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                body: new URLSearchParams({ _all: '1', _token: csrf }),
+                credentials: 'same-origin',
             });
             const result = await response.json();
             if (!response.ok || !result.success) throw new Error(result.message || 'Chưa thể cập nhật thông báo.');
@@ -108,7 +113,8 @@
             const response = await fetch(form.action, {
                 method: 'POST',
                 body: new FormData(form),
-                headers: { Accept: 'application/json' },
+                headers: { ...csrfHeaders, 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
             });
             const result = await response.json();
             output.textContent = result.message;

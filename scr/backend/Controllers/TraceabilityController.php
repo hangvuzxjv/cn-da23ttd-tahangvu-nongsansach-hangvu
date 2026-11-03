@@ -109,6 +109,7 @@ final class TraceabilityController extends Controller
             'inspectionLabel' => $inspectionLabels[$batch['inspection_result']] ?? $batch['inspection_result'],
             'mapsUrl' => 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode((string) $mapsQuery),
             'scanCount' => $this->scanCount((int) $batch['id']),
+            'qrUrl' => url('/qr/' . rawurlencode((string) $batch['batch_code'])),
         ]);
     }
 

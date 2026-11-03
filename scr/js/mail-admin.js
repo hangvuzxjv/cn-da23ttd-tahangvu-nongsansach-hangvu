@@ -3,6 +3,9 @@
     const message = document.getElementById('mail-admin-message');
 
     const submit = async (url, body = null) => {
+        if (body instanceof FormData && !body.has('_token')) {
+            body.set('_token', csrf);
+        }
         const headers = { 'X-CSRF-Token': csrf, Accept: 'application/json' };
         if (body) headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8';
         const response = await fetch(url, { method: 'POST', headers, body });

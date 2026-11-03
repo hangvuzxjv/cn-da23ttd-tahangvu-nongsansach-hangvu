@@ -82,6 +82,12 @@ $router->get('/admin/reports.csv', [AdminReportsController::class, 'exportCsv'],
 $router->get('/admin/reports', [AdminReportsController::class, 'index'], ['permission:reports.view']);
 $router->get('/admin/content/pages', [AdminContentController::class, 'pages'], ['permission:content.view']);
 $router->post('/admin/content/pages/{id}', [AdminContentController::class, 'savePage'], ['permission:content.manage', 'csrf']);
+$router->get('/admin/content/banners', [AdminContentController::class, 'banners'], ['permission:content.view']);
+$router->get('/admin/content/banners/{id}/edit', [AdminContentController::class, 'editBanner'], ['permission:content.view']);
+$router->post('/admin/content/banners', [AdminContentController::class, 'saveBanner'], ['permission:content.manage', 'csrf']);
+$router->post('/admin/content/banners/{id}', [AdminContentController::class, 'saveBanner'], ['permission:content.manage', 'csrf']);
+$router->post('/admin/content/banners/{id}/toggle', [AdminContentController::class, 'toggleBanner'], ['permission:content.manage', 'csrf']);
+$router->post('/admin/content/banners/{id}/delete', [AdminContentController::class, 'deleteBanner'], ['permission:content.manage', 'csrf']);
 $router->get('/admin/contacts', [AdminContentController::class, 'contacts'], ['permission:contacts.view']);
 $router->post('/admin/contacts/{id}/status', [AdminContentController::class, 'updateContact'], ['permission:contacts.manage', 'csrf']);
 $router->post('/admin/contacts/notification-email', [AdminContentController::class, 'saveContactEmail'], ['permission:contacts.manage', 'csrf']);

@@ -131,6 +131,9 @@ final class ProfileController extends Controller
         if (!password_verify($current, $hash)) {
             $errors['current_password'] = 'Mật khẩu hiện tại không đúng.';
         }
+        if ($hash !== '' && password_verify($password, $hash)) {
+            $errors['new_password'] = 'Mật khẩu mới phải khác mật khẩu hiện tại';
+        }
         if (strlen($password) > 72 || preg_match('/\A(?=.{8,}\z)(?=.*\p{L})(?=.*\d).+\z/uD', $password) !== 1) {
             $errors['new_password'] = 'Mật khẩu mới cần ít nhất 8 ký tự, có chữ và số, tối đa 72 byte.';
         }
@@ -151,6 +154,7 @@ final class ProfileController extends Controller
                 ->execute(['user_id' => $user['id']]);
             AuditLog::record((int) $user['id'], 'password_changed', 'user', (int) $user['id']);
             $database->commit();
+            session_regenerate_id(true);
         } catch (Throwable $exception) {
             if ($database->inTransaction()) {
                 $database->rollBack();

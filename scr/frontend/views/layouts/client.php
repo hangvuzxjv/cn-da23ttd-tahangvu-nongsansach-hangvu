@@ -33,11 +33,6 @@
                     <svg class="client-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 11.1a2 2 0 0 0 2 1.6h8.5a2 2 0 0 0 1.9-1.4L22 8H6"></path><circle cx="10" cy="20" r="1"></circle><circle cx="18" cy="20" r="1"></circle></svg>
                     <span>Giỏ hàng</span><span class="badge bg-light text-success" id="miniCartCount"><?= $navCartCount ?></span>
                 </a>
-                <form class="client-trace-search" method="get" action="<?= e(url('/truy-xuat')) ?>">
-                    <label class="visually-hidden" for="traceLookupNav">Mã lô cần truy xuất</label>
-                    <input class="form-control form-control-sm" id="traceLookupNav" name="batch_code" placeholder="Mã lô" required>
-                    <button class="btn btn-sm btn-outline-light" type="submit">Tra cứu</button>
-                </form>
                 <?php if ($navUser): ?>
                     <div class="nav-item dropdown client-notification-dropdown">
                         <button class="nav-link btn btn-link dropdown-toggle" id="notificationMenu" type="button"
@@ -128,6 +123,7 @@ $footerPages = $footerPageQuery->fetchAll();
 <script src="<?= e(asset('/js/ui.js')) ?>"></script>
 <script src="<?= e(asset('/js/cart.js')) ?>"></script>
 <script src="<?= e(asset('/js/flash-sale.js')) ?>"></script>
+<script src="<?= e(asset('/js/home-banners.js')) ?>"></script>
 <script src="<?= e(asset('/js/customer-engagement.js')) ?>"></script>
 <?php if ($navUser): ?><script src="<?= e(asset('/js/notifications.js')) ?>"></script><?php endif; ?>
 </body>

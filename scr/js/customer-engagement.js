@@ -1,18 +1,22 @@
 (() => {
     async function sendForm(form) {
+        const body = new FormData(form);
+        if (!body.has('_token')) {
+            body.set('_token', document.querySelector('meta[name="csrf-token"]')?.content || '');
+        }
         const response = await fetch(form.dataset.endpoint || form.action, {
             method: 'POST',
             headers: {
                 Accept: 'application/json',
                 'X-Requested-With': 'XMLHttpRequest'
             },
-            body: new FormData(form),
+            body,
             credentials: 'same-origin'
         });
-        const body = await response.text();
+        const responseBody = await response.text();
         let result;
         try {
-            result = JSON.parse(body);
+            result = JSON.parse(responseBody);
         } catch (error) {
             console.error('Phản hồi không phải JSON.', { status: response.status, error });
             throw new Error('Máy chủ trả về phản hồi không hợp lệ. Vui lòng tải lại trang.');

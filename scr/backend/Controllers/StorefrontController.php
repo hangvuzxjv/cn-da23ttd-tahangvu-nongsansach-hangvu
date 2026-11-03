@@ -10,10 +10,10 @@ final class StorefrontController extends Controller
         (new InventoryService())->expireReservations();
         $database = Database::connection();
         $banners = $database->query(
-            "SELECT title, image_url, link_url FROM banners
+            "SELECT title, description, image_url, button_label, link_url FROM banners
              WHERE status = 'active' AND (starts_at IS NULL OR starts_at <= NOW())
                AND (ends_at IS NULL OR ends_at >= NOW())
-             ORDER BY sort_order, id LIMIT 5"
+             ORDER BY sort_order, id"
         )->fetchAll();
         $regions = $database->query(
             'SELECT id, name, slug, description FROM regions
@@ -204,8 +204,8 @@ final class StorefrontController extends Controller
         $batchQuery->execute(['product_id' => $product['id']]);
         $stock = (int) $product['actual_stock'];
         $this->view('client/product', [
-            'title' => $product['name'],
-            'metaDescription' => $product['short_description'] ?: mb_substr(strip_tags((string) $product['description']), 0, 155, 'UTF-8'),
+            'title' => ($product['seo_title'] ?? null) ?: $product['name'],
+            'metaDescription' => ($product['seo_description'] ?? null) ?: ($product['short_description'] ?: mb_substr(strip_tags((string) $product['description']), 0, 155, 'UTF-8')),
             'product' => $product,
             'flashSale' => $flashDeal,
             'flashSaleServerTime' => $flashService->serverTime(),

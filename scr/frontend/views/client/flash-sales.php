@@ -42,7 +42,7 @@ $hasActiveCampaign = (bool) array_filter(
             </div>
         </div>
         <?php if (!$active): ?><div class="alert alert-info py-2">Chương trình chưa bắt đầu; nút mua sẽ mở khi đến giờ theo máy chủ.</div><?php endif; ?>
-        <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-3 row-cols-xl-4 g-3">
+        <div class="row row-cols-2 row-cols-lg-3 row-cols-xl-4 g-3 product-card-grid">
             <?php foreach ($campaign['items'] as $item): ?>
                 <?php
                 $discountPercent = (int) $item['normal_price'] > 0
@@ -69,11 +69,14 @@ $hasActiveCampaign = (bool) array_filter(
                             <img class="card-img-top" src="<?= e(asset($item['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($item['product_name']) ?>" loading="lazy">
                         </a>
                         <div class="card-body d-flex flex-column">
-                            <h3 class="h6"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['product_slug'])) ?>"><?= e($item['product_name']) ?></a></h3>
-                            <?php if (!empty($item['region_name'])): ?><span class="product-card__region"><?= e($item['region_name']) ?></span><?php endif; ?>
-                            <div class="mb-2"><del class="small text-secondary"><?= number_format((float) $item['normal_price'], 0, ',', '.') ?> ₫</del>
+                            <h3 class="h6 product-card__title"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['product_slug'])) ?>"><?= e($item['product_name']) ?></a></h3>
+                            <div class="product-card__meta">
+                                <?php if (!empty($item['region_name'])): ?><span class="product-card__region"><?= e($item['region_name']) ?></span><?php endif; ?>
+                                <span class="product-card__rating product-card__rating--empty">Flash Sale</span>
+                            </div>
+                            <div class="product-card__price-row"><del class="small text-secondary"><?= number_format((float) $item['normal_price'], 0, ',', '.') ?> ₫</del>
                                 <span class="badge text-bg-danger"><?= $discountPercent ?>% giảm</span>
-                                <div class="fw-bold fs-5 text-danger"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫ <span class="small text-secondary">/ <?= e($item['unit']) ?></span></div>
+                                <span class="fw-bold text-danger product-card__price"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫ <span class="small text-secondary product-card__unit">/ <?= e($item['unit']) ?></span></span>
                             </div>
                             <div class="small text-secondary">Đã bán <span data-sold-count><?= (int) $item['sold_quantity'] ?></span>/<?= (int) $item['quota'] ?></div>
                             <div class="progress mt-1 mb-3" role="progressbar" aria-label="Tiến độ Flash Sale" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $soldPercent ?>">

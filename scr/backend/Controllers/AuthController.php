@@ -251,6 +251,9 @@ final class AuthController extends Controller
         if ($confirmation !== $password) {
             $errors['password_confirmation'] = 'Mật khẩu nhập lại không khớp.';
         }
+        if ($errors === [] && (new AccountTokenService())->passwordMatchesCurrent($token, $password)) {
+            $errors['password'] = 'Mật khẩu mới phải khác mật khẩu hiện tại';
+        }
         if ($errors !== []) {
             $this->failValidation('/reset-password/' . rawurlencode($token), [], $errors);
         }

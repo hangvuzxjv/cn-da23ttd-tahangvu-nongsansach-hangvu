@@ -77,6 +77,7 @@ final class AdminNavigation
                 'label' => 'Nội dung và liên hệ',
                 'items' => [
                     ['permission' => 'content.view', 'label' => 'Nội dung', 'url' => '/admin/content/pages'],
+                    ['permission' => 'content.view', 'label' => 'Banner', 'url' => '/admin/content/banners'],
                     ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
                     ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
                 ],

@@ -128,5 +128,20 @@ final class AccountTokenService
             }
             throw $exception;
         }
+
+    }
+
+    public function passwordMatchesCurrent(string $token, string $password): bool
+    {
+        $query = $this->database->prepare(
+            'SELECT u.password
+             FROM password_resets r
+             JOIN users u ON u.id = r.user_id
+             WHERE r.token_hash = :token_hash AND r.used_at IS NULL AND r.expires_at > NOW()
+             LIMIT 1'
+        );
+        $query->execute(['token_hash' => hash('sha256', $token)]);
+        $hash = $query->fetchColumn();
+        return is_string($hash) && password_verify($password, $hash);
     }
 }

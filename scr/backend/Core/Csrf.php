@@ -20,6 +20,9 @@ final class Csrf
         }
 
         $submittedToken = $request->input('_token');
+        if (!is_string($submittedToken) || $submittedToken === '') {
+            $submittedToken = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
+        }
         if (!is_string($submittedToken) || !hash_equals(self::token(), $submittedToken)) {
             if ($request->expectsJson()) {
                 throw new HttpException(419, 'Phiên làm việc đã hết hạn. Hãy tải lại trang và thử lại.');

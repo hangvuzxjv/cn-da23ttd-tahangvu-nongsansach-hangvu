@@ -26,7 +26,7 @@
             <div class="border border-danger rounded p-3 mb-3" data-flash-sale-root data-server-time="<?= e($flashSaleServerTime) ?>"
                  data-progress-url="<?= e(url('/flash-sale/status')) ?>" data-has-active="1">
                 <div class="d-flex flex-wrap justify-content-between gap-2">
-                    <strong class="text-danger">Flash Sale · <?= e($flashSale['campaign_name']) ?></strong>
+                    <strong class="text-danger">Flash Sale<?= flash_sale_display_name($flashSale['campaign_name']) !== '' ? ' · ' . e(flash_sale_display_name($flashSale['campaign_name'])) : '' ?></strong>
                     <span class="small">Kết thúc sau <strong data-countdown data-countdown-target="<?= e($flashSaleEnd->format(DATE_ATOM)) ?>">Đang đồng bộ giờ máy chủ…</strong></span>
                 </div>
                 <div class="mt-2" data-flash-item="<?= (int) $flashSale['flash_sale_item_id'] ?>"
@@ -70,6 +70,14 @@
             <?php if ($product['certifications'] || $product['farm_certifications']): ?><dt class="col-sm-4">Chứng nhận</dt><dd class="col-sm-8"><?= e(implode(' · ', array_filter([$product['certifications'], $product['farm_certifications']]))) ?></dd><?php endif; ?>
             <?php if ($product['suggested_shelf_life_days']): ?><dt class="col-sm-4">Hạn dùng gợi ý</dt><dd class="col-sm-8"><?= (int) $product['suggested_shelf_life_days'] ?> ngày</dd><?php endif; ?>
         </dl>
+        <?php if (($product['season'] ?? null) || ($product['nutrition'] ?? null) || ($product['preparation'] ?? null) || ($product['tags'] ?? null)): ?>
+            <div class="product-metadata border-top pt-3 mt-3">
+                <?php if ($product['season'] ?? null): ?><p><strong>Mùa vụ:</strong> <?= e($product['season']) ?></p><?php endif; ?>
+                <?php if ($product['nutrition'] ?? null): ?><p><strong>Dinh dưỡng:</strong> <?= e($product['nutrition']) ?></p><?php endif; ?>
+                <?php if ($product['preparation'] ?? null): ?><p><strong>Sơ chế và sử dụng:</strong> <?= e($product['preparation']) ?></p><?php endif; ?>
+                <?php if ($product['tags'] ?? null): ?><p><strong>Từ khóa:</strong> <?= e($product['tags']) ?></p><?php endif; ?>
+            </div>
+        <?php endif; ?>
         <?php if (!$flashSale && (int) $product['actual_stock'] > 0): ?>
             <form class="mt-3" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
                 <?= csrf_field() ?>
@@ -99,7 +107,12 @@
                 <td><?= e($batch['harvested_at']) ?></td>
                 <td><?= e($batch['expires_at'] ?: 'Không có hạn') ?></td>
                 <td><?= (int) $batch['quantity_remaining'] ?></td>
-                <td><a class="btn btn-sm btn-outline-success" href="<?= e(url('/truy-xuat/' . $batch['batch_code'])) ?>">Xem nguồn gốc</a></td>
+                <td>
+                    <div class="trace-batch-actions">
+                        <img class="trace-batch-qr border rounded p-1" src="<?= e(url('/qr/' . rawurlencode($batch['batch_code']))) ?>" alt="Mã QR truy xuất <?= e($batch['batch_code']) ?>" width="64" height="64">
+                        <a class="btn btn-sm btn-outline-success" href="<?= e(url('/truy-xuat/' . rawurlencode($batch['batch_code']))) ?>">Xem nguồn gốc</a>
+                    </div>
+                </td>
             </tr><?php endforeach; ?></tbody>
         </table></div>
     <?php else: ?>

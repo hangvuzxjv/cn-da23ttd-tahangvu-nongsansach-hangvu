@@ -507,6 +507,12 @@ final class CatalogAdminController extends Controller
             'short_description' => $this->postText('short_description'),
             'description' => $this->postText('description'),
             'storage_instructions' => $this->postText('storage_instructions'),
+            'season' => $this->postText('season'),
+            'nutrition' => $this->postText('nutrition'),
+            'preparation' => $this->postText('preparation'),
+            'tags' => $this->postText('tags'),
+            'seo_title' => $this->postText('seo_title'),
+            'seo_description' => $this->postText('seo_description'),
             'certifications' => $this->postText('certifications'),
             'status' => $this->postText('status') ?: 'draft',
             'is_featured' => $this->postChecked('is_featured') ? 1 : 0,
@@ -569,6 +575,11 @@ final class CatalogAdminController extends Controller
         if (mb_strlen($input['short_description'], 'UTF-8') > 500) {
             $errors['short_description'] = 'Mô tả ngắn tối đa 500 ký tự.';
         }
+        foreach (['season' => 255, 'tags' => 500, 'seo_title' => 255, 'seo_description' => 500] as $field => $maxLength) {
+            if (mb_strlen($input[$field], 'UTF-8') > $maxLength) {
+                $errors[$field] = 'Trường này vượt quá ' . $maxLength . ' ký tự.';
+            }
+        }
         $shelfLife = $input['suggested_shelf_life_days'] === '' ? null : filter_var($input['suggested_shelf_life_days'], FILTER_VALIDATE_INT);
         if ($input['suggested_shelf_life_days'] !== '' && ($shelfLife === false || $shelfLife < 0 || $shelfLife > 65535)) {
             $errors['suggested_shelf_life_days'] = 'Hạn dùng gợi ý phải là số ngày hợp lệ.';
@@ -605,6 +616,12 @@ final class CatalogAdminController extends Controller
                 'sale_price' => $salePrice,
                 'suggested_shelf_life_days' => $shelfLife,
                 'storage_instructions' => $input['storage_instructions'],
+                'season' => $input['season'],
+                'nutrition' => $input['nutrition'],
+                'preparation' => $input['preparation'],
+                'tags' => $input['tags'],
+                'seo_title' => $input['seo_title'],
+                'seo_description' => $input['seo_description'],
                 'certifications' => $input['certifications'],
                 'short_description' => $input['short_description'],
                 'status' => $input['status'],
@@ -616,11 +633,13 @@ final class CatalogAdminController extends Controller
                 $statement = $database->prepare(
                     'INSERT INTO products
                      (category_id, region_id, farm_id, name, slug, sku, unit, price, sale_price,
-                      suggested_shelf_life_days, storage_instructions, certifications, short_description,
+                      suggested_shelf_life_days, storage_instructions, season, nutrition, preparation, tags,
+                      seo_title, seo_description, certifications, short_description,
                       status, is_featured, min_stock, description)
                      VALUES
                      (:category_id, :region_id, :farm_id, :name, :slug, :sku, :unit, :price, :sale_price,
-                      :suggested_shelf_life_days, :storage_instructions, :certifications, :short_description,
+                      :suggested_shelf_life_days, :storage_instructions, :season, :nutrition, :preparation, :tags,
+                      :seo_title, :seo_description, :certifications, :short_description,
                       :status, :is_featured, :min_stock, :description)'
                 );
                 $statement->execute($values);
@@ -631,6 +650,8 @@ final class CatalogAdminController extends Controller
                     'UPDATE products SET category_id = :category_id, region_id = :region_id, farm_id = :farm_id,
                         name = :name, slug = :slug, sku = :sku, unit = :unit, price = :price, sale_price = :sale_price,
                         suggested_shelf_life_days = :suggested_shelf_life_days, storage_instructions = :storage_instructions,
+                        season = :season, nutrition = :nutrition, preparation = :preparation, tags = :tags,
+                        seo_title = :seo_title, seo_description = :seo_description,
                         certifications = :certifications, short_description = :short_description, status = :status,
                         is_featured = :is_featured, min_stock = :min_stock, description = :description WHERE id = :id AND deleted_at IS NULL'
                 );

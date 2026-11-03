@@ -1,4 +1,5 @@
 (() => {
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
     document.querySelectorAll('form[data-review-admin-action]').forEach((form) => {
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -9,8 +10,16 @@
             try {
                 const response = await fetch(form.action, {
                     method: 'POST',
-                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                    body: new FormData(form),
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-Token': csrf
+                    },
+                    body: (() => {
+                        const body = new FormData(form);
+                        if (!body.has('_token')) body.set('_token', csrf);
+                        return body;
+                    })(),
                     credentials: 'same-origin'
                 });
                 const body = await response.text();

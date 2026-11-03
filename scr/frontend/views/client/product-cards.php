@@ -1,4 +1,4 @@
-<div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-3">
+<div class="row row-cols-2 row-cols-lg-3 row-cols-xl-4 g-3 product-card-grid">
     <?php foreach ($products as $item): ?>
         <div class="col">
             <article class="card h-100 shadow-sm position-relative product-card">
@@ -12,32 +12,31 @@
                     <img src="<?= e(asset($item['image_url'] ?: '/img/product-placeholder.svg')) ?>" class="card-img-top" alt="<?= e($item['name']) ?>" loading="lazy">
                 </a>
                 <div class="card-body d-flex flex-column">
-                    <h3 class="h6"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['slug'])) ?>"><?= e($item['name']) ?></a></h3>
-                    <?php if ((int) ($item['review_count'] ?? 0) > 0): ?>
-                        <div class="small text-secondary mb-2">
-                            Đánh giá <?= number_format((float) $item['average_rating'], 1) ?>/5 (<?= (int) $item['review_count'] ?>)
-                        </div>
-                    <?php else: ?>
-                        <div class="small text-secondary mb-2">Chưa có đánh giá</div>
-                    <?php endif; ?>
-                    <?php if (!empty($item['short_description'])): ?><p class="small text-secondary flex-grow-1"><?= e($item['short_description']) ?></p><?php endif; ?>
+                    <h3 class="h6 product-card__title"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['slug'])) ?>"><?= e($item['name']) ?></a></h3>
                     <?php $available = (int) ($item['actual_stock'] ?? 0); $threshold = (int) ($item['min_stock'] ?? 5); ?>
-                    <?php if (!empty($item['region_name'])): ?><span class="product-card__region"><?= e($item['region_name']) ?></span><?php endif; ?>
-                    <p class="small mb-2 product-card__stock">Tồn khả dụng:
-                        <strong class="product-card__stock-status <?= $available === 0 ? 'text-danger' : ($available <= $threshold ? 'text-warning' : 'text-success') ?>">
-                            <?= $available === 0 ? 'Hết hàng' : ($available <= $threshold ? 'Sắp hết hàng' : 'Còn hàng') ?>
-                        </strong>
-                    </p>
-                    <div class="mt-auto">
+                    <div class="product-card__meta">
+                        <?php if (!empty($item['region_name'])): ?><span class="product-card__region"><?= e($item['region_name']) ?></span><?php endif; ?>
+                        <?php if ((int) ($item['review_count'] ?? 0) > 0): ?>
+                            <span class="product-card__rating">Đánh giá <?= number_format((float) $item['average_rating'], 1) ?>/5 (<?= (int) $item['review_count'] ?>)</span>
+                        <?php else: ?>
+                            <span class="product-card__rating product-card__rating--empty">Chưa có đánh giá</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="product-card__purchase">
+                        <div class="product-card__price-row">
                         <?php if (!empty($item['flash_sale_item_id'])): ?>
                             <span class="badge text-bg-danger">Flash Sale</span>
                             <del class="small text-secondary product-card__old-price"><?= number_format((int) $item['original_price'], 0, ',', '.') ?> ₫</del>
-                            <div class="fw-bold text-danger product-card__price"><?= number_format((int) $item['current_price'], 0, ',', '.') ?> ₫</div>
-                        <?php elseif ($item['sale_price'] !== null): ?><del class="small text-secondary product-card__old-price"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</del><div class="fw-bold text-danger product-card__price"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫</div>
-                        <?php else: ?><div class="fw-bold text-success product-card__price"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</div><?php endif; ?>
-                        <?php if (isset($item['unit'])): ?><span class="small text-secondary">/ <?= e($item['unit']) ?></span><?php endif; ?>
+                            <span class="fw-bold text-danger product-card__price"><?= number_format((int) $item['current_price'], 0, ',', '.') ?> ₫</span>
+                        <?php elseif ($item['sale_price'] !== null): ?><del class="small text-secondary product-card__old-price"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</del><span class="fw-bold text-danger product-card__price"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫</span>
+                        <?php else: ?><span class="fw-bold text-success product-card__price"><?= number_format((float) $item['price'], 0, ',', '.') ?> ₫</span><?php endif; ?>
+                        <?php if (isset($item['unit'])): ?><span class="small text-secondary product-card__unit">/ <?= e($item['unit']) ?></span><?php endif; ?>
+                        <span class="product-card__stock-status <?= $available === 0 ? 'product-card__stock-status--empty' : ($available <= $threshold ? 'product-card__stock-status--low' : 'product-card__stock-status--ready') ?>">
+                            <?= $available === 0 ? 'Hết hàng' : ($available <= $threshold ? 'Sắp hết' : 'Còn hàng') ?>
+                        </span>
+                        </div>
                         <?php if ((int) ($item['actual_stock'] ?? 0) > 0): ?>
-                            <form class="mt-2" data-cart-add="<?= e(url('/gio-hang/them')) ?>" data-login-url="<?= e(url('/login?return_to=' . rawurlencode('/san-pham/' . $item['slug']))) ?>">
+                            <form class="product-card__action" data-cart-add="<?= e(url('/gio-hang/them')) ?>" data-login-url="<?= e(url('/login?return_to=' . rawurlencode('/san-pham/' . $item['slug']))) ?>">
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="product_id" value="<?= (int) $item['id'] ?>">
                                 <div class="input-group input-group-sm">
@@ -47,7 +46,7 @@
                                 <div data-cart-message aria-live="polite"></div>
                             </form>
                         <?php else: ?>
-                            <button class="btn btn-sm btn-outline-secondary mt-2" type="button" disabled>Hết hàng</button>
+                            <button class="btn btn-sm btn-outline-secondary product-card__action product-card__action--disabled" type="button" disabled>Hết hàng</button>
                         <?php endif; ?>
                     </div>
                 </div>

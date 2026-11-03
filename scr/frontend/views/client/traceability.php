@@ -26,9 +26,13 @@
 </section>
 
 <section class="card mb-4"><div class="card-body">
-    <div class="row g-3 align-items-center">
-        <div class="col-sm-3 col-lg-2"><?php if ($batch['farm_image']): ?><img class="img-fluid rounded farm-profile-image" src="<?= e(asset($batch['farm_image'])) ?>" alt="<?= e($batch['farm_name']) ?>"><?php endif; ?></div>
-        <div class="col-sm-9 col-lg-10">
+    <div class="row g-4 align-items-center">
+        <div class="col-md-3 col-lg-2 trace-farm-card__media">
+            <img class="traceability-qr" src="<?= e($qrUrl) ?>" alt="Mã QR truy xuất <?= e($batch['batch_code']) ?>" width="156" height="156">
+            <p class="small text-secondary mb-0">Quét mã QR để mở lại trang truy xuất của lô này.</p>
+            <?php if ($batch['farm_image']): ?><img class="img-fluid rounded farm-profile-image mt-3" src="<?= e(asset($batch['farm_image'])) ?>" alt="<?= e($batch['farm_name']) ?>"><?php endif; ?>
+        </div>
+        <div class="col-md-9 col-lg-10">
             <h2 class="h4">Nông trại / nhà cung cấp</h2>
             <h3 class="h5"><?= e($batch['farm_name'] ?: 'Chưa cập nhật') ?></h3>
             <p class="mb-1"><?= e($batch['farm_address'] ?: 'Chưa cập nhật địa chỉ') ?><?php if ($batch['parent_region_name'] || $batch['region_name']): ?> · <?= e(implode(' · ', array_filter([$batch['parent_region_name'], $batch['region_name']]))) ?><?php endif; ?></p>
