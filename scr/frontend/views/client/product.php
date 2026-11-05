@@ -13,24 +13,30 @@ $mainImage = $images[0] ?? ['image_url' => $defaultImage, 'alt_text' => $product
 $certificateParts = [];
 foreach ([$product['certifications'] ?? '', $product['farm_certifications'] ?? ''] as $certificate) {
     foreach (preg_split('/[,;·]+/u', (string) $certificate) as $part) {
-        $part = trim(preg_replace('/\s*theo hồ sơ nông trại\s*/iu', '', $part) ?? '');
+        $part = trim(preg_replace(['/\s*theo hồ sơ nông trại\s*/iu', '/\(\s*\)/u'], '', $part) ?? '');
         if ($part !== '' && !in_array(mb_strtolower($part, 'UTF-8'), array_map(static fn (string $value): string => mb_strtolower($value, 'UTF-8'), $certificateParts), true)) {
             $certificateParts[] = $part;
         }
     }
 }
+$reviewAverage = (float) ($reviewSummary['average_rating'] ?? 0);
+$reviewStarCount = max(0, min(5, (int) round($reviewAverage)));
+$priceVnd = (int) PricingService::moneyToVnd((string) $product['price']);
+$saleVnd = $product['sale_price'] !== null ? (int) PricingService::moneyToVnd((string) $product['sale_price']) : 0;
+$discountPercent = ($saleVnd > 0 && $priceVnd > $saleVnd) ? (int) round(($priceVnd - $saleVnd) * 100 / $priceVnd) : 0;
+$stockClass = $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'Sắp hết hàng' ? 'is-low' : '');
 ?>
 <div class="product-detail-layout mb-5">
-    <div class="col-lg-6">
+    <div class="product-detail-gallery">
         <div class="product-detail-media">
             <div class="product-detail-image-frame"><img id="productMainImage" class="product-detail-image" src="<?= e(asset($mainImage['image_url'] ?: $defaultImage)) ?>" alt="<?= e($mainImage['alt_text'] ?: $product['name']) ?>"></div>
             <?php if (count($images) > 1): ?><div class="product-gallery"><?php foreach ($images as $image): ?><button class="btn p-0 border product-gallery-thumb" type="button" aria-label="Xem ảnh <?= e($image['alt_text'] ?: $product['name']) ?>" data-image="<?= e(asset($image['image_url'])) ?>" data-alt="<?= e($image['alt_text'] ?: $product['name']) ?>"><img src="<?= e(asset($image['image_url'])) ?>" alt="" loading="lazy"></button><?php endforeach; ?></div><?php endif; ?>
         </div>
     </div>
     <div class="product-detail-info">
-        <div class="product-detail-kicker"><a href="<?= e(url('/danh-muc/' . $product['category_slug'])) ?>"><?= e($product['category_name']) ?></a><span><?= e($product['region_name']) ?></span></div>
+        <div class="product-detail-kicker"><a class="product-detail-chip" href="<?= e(url('/danh-muc/' . $product['category_slug'])) ?>"><?= e($product['category_name']) ?></a><span class="product-detail-chip product-detail-chip--region"><?= e($product['region_name']) ?></span></div>
         <h1 class="product-detail-title"><?= e($product['name']) ?></h1>
-        <?php if ((int) $reviewSummary['review_count'] > 0): ?><div class="product-detail-rating"><?= number_format((float) $reviewSummary['average_rating'], 1) ?> / 5 · <?= (int) $reviewSummary['review_count'] ?> lượt đánh giá</div><?php endif; ?>
+        <?php if ((int) $reviewSummary['review_count'] > 0): ?><a class="product-detail-rating" href="#reviews" aria-label="Điểm trung bình <?= number_format($reviewAverage, 1) ?> trên 5 sao, <?= (int) $reviewSummary['review_count'] ?> đánh giá"><span class="product-detail-stars" aria-hidden="true"><?= str_repeat('★', $reviewStarCount) . str_repeat('☆', 5 - $reviewStarCount) ?></span><span><?= number_format($reviewAverage, 1) ?> · <?= (int) $reviewSummary['review_count'] ?> đánh giá</span></a><?php endif; ?>
         <p class="product-detail-summary text-secondary"><?= e($product['short_description']) ?></p>
         <?php $regularPrice = $product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0 ? $product['sale_price'] : $product['price']; ?>
         <?php if ($flashSale): ?>
@@ -74,25 +80,34 @@ foreach ([$product['certifications'] ?? '', $product['farm_certifications'] ?? '
                     </div>
                 </div>
             </div>
+            <p class="product-detail-stock <?= $stockClass ?>"><?= e($stockStatus) ?><?php if ($stockStatus !== 'Còn hàng'): ?> · <?= (int) $product['actual_stock'] ?> <?= e($product['unit']) ?><?php endif; ?></p>
         <?php else: ?>
-            <div class="product-detail-price"><?php if ($product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0): ?><del><?= number_format((float) $product['price'], 0, ',', '.') ?> ₫</del><?php endif; ?><strong><?= number_format((float) $regularPrice, 0, ',', '.') ?> ₫</strong><span>/ <?= e($product['unit']) ?></span></div>
-        <?php endif; ?>
-        <p class="product-detail-stock <?= $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'Sắp hết hàng' ? 'is-low' : '') ?>"><?= e($stockStatus) ?><?php if ($stockStatus !== 'Còn hàng'): ?> · <?= (int) $product['actual_stock'] ?> <?= e($product['unit']) ?><?php endif; ?></p>
-        <dl class="product-detail-specs">
-            <dt class="col-sm-4">Vùng miền</dt><dd class="col-sm-8"><a href="<?= e(url('/vung-mien/' . $product['region_slug'])) ?>"><?= e($product['parent_region_name'] ? $product['parent_region_name'] . ' · ' : '') ?><?= e($product['region_name']) ?></a></dd>
-            <dt class="col-sm-4">Nông trại</dt><dd class="col-sm-8"><?= e($product['farm_name']) ?></dd>
-            <?php if ($certificateParts): ?><dt>Chứng nhận</dt><dd><?= e(implode(' · ', $certificateParts)) ?></dd><?php endif; ?>
-            <?php if ($product['suggested_shelf_life_days']): ?><dt class="col-sm-4">Hạn dùng gợi ý</dt><dd class="col-sm-8"><?= (int) $product['suggested_shelf_life_days'] ?> ngày</dd><?php endif; ?>
-            <dt>Đơn vị</dt><dd><?= e($product['unit']) ?></dd>
-            <?php if (!empty($traceBatches[0]['batch_code'])): ?><dt>Mã lô mới nhất</dt><dd><?= e($traceBatches[0]['batch_code']) ?></dd><?php endif; ?>
-        </dl>
-        <?php if (($product['season'] ?? null) || ($product['nutrition'] ?? null) || ($product['preparation'] ?? null) || ($product['tags'] ?? null)): ?>
-            <div class="product-metadata">
-                <?php if ($product['season'] ?? null): ?><p><strong>Mùa vụ:</strong> <?= e($product['season']) ?></p><?php endif; ?>
-                <?php if ($product['nutrition'] ?? null): ?><p><strong>Dinh dưỡng:</strong> <?= e($product['nutrition']) ?></p><?php endif; ?>
-                <?php if ($product['preparation'] ?? null): ?><p><strong>Sơ chế và sử dụng:</strong> <?= e($product['preparation']) ?></p><?php endif; ?>
+            <div class="product-detail-pricebox">
+                <div class="product-detail-price"><?php if ($product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0): ?><del><?= number_format((float) $product['price'], 0, ',', '.') ?> ₫</del><?php endif; ?><strong><?= number_format((float) $regularPrice, 0, ',', '.') ?> ₫</strong><span>/ <?= e($product['unit']) ?></span><?php if ($discountPercent > 0): ?><span class="product-detail-discount">-<?= $discountPercent ?>%</span><?php endif; ?></div>
+                <p class="product-detail-stock <?= $stockClass ?>"><?= e($stockStatus) ?><?php if ($stockStatus !== 'Còn hàng'): ?> · <?= (int) $product['actual_stock'] ?> <?= e($product['unit']) ?><?php endif; ?></p>
             </div>
         <?php endif; ?>
+        <dl class="product-detail-specs">
+            <dt>Vùng miền</dt><dd><a href="<?= e(url('/vung-mien/' . $product['region_slug'])) ?>"><?= e($product['parent_region_name'] ? $product['parent_region_name'] . ' · ' : '') ?><?= e($product['region_name']) ?></a></dd>
+            <dt>Nông trại</dt><dd><?= e($product['farm_name']) ?></dd>
+            <?php if ($certificateParts): ?><dt>Chứng nhận</dt><dd><?= e(implode(' · ', $certificateParts)) ?></dd><?php endif; ?>
+            <?php if ($product['suggested_shelf_life_days']): ?><dt>Hạn dùng gợi ý</dt><dd><?= (int) $product['suggested_shelf_life_days'] ?> ngày</dd><?php endif; ?>
+        </dl>
+        <div class="product-detail-actions">
+            <?php if (!$flashSale && (int) $product['actual_stock'] > 0): ?>
+                <form class="product-detail-buy" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+                    <div class="input-group product-buy-controls">
+                        <input class="form-control" type="number" name="quantity" value="1" min="1" max="<?= (int) $product['actual_stock'] ?>" aria-label="Số lượng sản phẩm">
+                        <span class="input-group-text"><?= e($product['unit']) ?></span>
+                        <button class="btn btn-success" type="submit">Thêm vào giỏ</button>
+                    </div>
+                    <div data-cart-message aria-live="polite"></div>
+                </form>
+            <?php elseif (!$flashSale): ?>
+                <button class="btn btn-secondary btn-lg product-detail-buy" type="button" disabled>Hết hàng</button>
+            <?php endif; ?>
         <?php
         $wishlistProductId = (int) $product['id'];
         $wishlistProductName = $product['name'];
@@ -101,19 +116,13 @@ foreach ([$product['certifications'] ?? '', $product['farm_certifications'] ?? '
         require FRONTEND_PATH . '/views/client/wishlist-button.php';
         unset($wishlistButtonClass);
         ?>
-        <?php if (!$flashSale && (int) $product['actual_stock'] > 0): ?>
-            <form class="product-detail-buy" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
-                <?= csrf_field() ?>
-                <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
-                <div class="input-group product-buy-controls">
-                    <input class="form-control" type="number" name="quantity" value="1" min="1" max="<?= (int) $product['actual_stock'] ?>" aria-label="Số lượng sản phẩm">
-                    <span class="input-group-text"><?= e($product['unit']) ?></span>
-                    <button class="btn btn-success" type="submit">Thêm vào giỏ</button>
-                </div>
-                <div data-cart-message aria-live="polite"></div>
-            </form>
-        <?php elseif (!$flashSale): ?>
-            <button class="btn btn-secondary btn-lg product-detail-buy" type="button" disabled>Hết hàng</button>
+        </div>
+        <?php if (($product['season'] ?? null) || ($product['nutrition'] ?? null) || ($product['preparation'] ?? null) || ($product['tags'] ?? null)): ?>
+            <div class="product-metadata">
+                <?php if ($product['season'] ?? null): ?><p><strong>Mùa vụ:</strong> <?= e($product['season']) ?></p><?php endif; ?>
+                <?php if ($product['nutrition'] ?? null): ?><p><strong>Dinh dưỡng:</strong> <?= e($product['nutrition']) ?></p><?php endif; ?>
+                <?php if ($product['preparation'] ?? null): ?><p><strong>Sơ chế và sử dụng:</strong> <?= e($product['preparation']) ?></p><?php endif; ?>
+            </div>
         <?php endif; ?>
     </div>
 </div>
