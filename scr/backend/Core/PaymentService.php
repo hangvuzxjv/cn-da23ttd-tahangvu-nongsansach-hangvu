@@ -726,7 +726,8 @@ final class PaymentService
             );
             $query->execute(['id' => $paymentId]);
             $payment = $query->fetch();
-            if (!$payment || $payment['status'] !== 'paid' || $payment['order_status'] === 'refunded') {
+            if (!$payment || $payment['status'] !== 'paid'
+                || in_array($payment['order_status'], ['refunded', 'delivery_failed'], true)) {
                 throw new InvalidArgumentException('Chỉ có thể hoàn giao dịch đã thanh toán và chưa hoàn.');
             }
             $orderId = (int) $payment['order_id'];
@@ -748,6 +749,58 @@ final class PaymentService
             AuditLog::record($actorId, 'payment_refunded', 'payment', $paymentId, trim($reason), $this->database);
             $this->database->commit();
             $this->sendOrderStatusEmail($payment, $orderId, 'refunded');
+        } catch (Throwable $exception) {
+            if ($this->database->inTransaction()) {
+                $this->database->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    public function markDeliveryFailureRefunded(int $paymentId, int $actorId, string $reference): void
+    {
+        $reference = trim($reference);
+        if ($actorId < 1 || $reference === '' || mb_strlen($reference, 'UTF-8') > 150) {
+            throw new InvalidArgumentException('Nhập mã hoặc ghi chú tham chiếu hoàn tiền (tối đa 150 ký tự).');
+        }
+
+        $this->database->beginTransaction();
+        try {
+            $query = $this->database->prepare(
+                'SELECT p.id, p.order_id, p.method, p.status, p.refund_required,
+                        o.status AS order_status, o.payment_status
+                 FROM payments p JOIN orders o ON o.id = p.order_id
+                 WHERE p.id = :id FOR UPDATE'
+            );
+            $query->execute(['id' => $paymentId]);
+            $payment = $query->fetch();
+            if (!$payment
+                || $payment['order_status'] !== 'delivery_failed'
+                || (int) $payment['refund_required'] !== 1
+                || $payment['status'] !== 'paid'
+                || !in_array($payment['method'], ['bank_transfer', 'vnpay', 'online'], true)) {
+                throw new InvalidArgumentException('Giao dịch này không ở trạng thái cần hoàn tiền do giao thất bại.');
+            }
+
+            $this->database->prepare(
+                "UPDATE payments
+                 SET status = 'refunded', refund_required = 0,
+                     refund_reference = :reference, refunded_at = NOW()
+                 WHERE id = :id AND refund_required = 1 AND status = 'paid'"
+            )->execute(['reference' => $reference, 'id' => $paymentId]);
+            $this->database->prepare(
+                "UPDATE orders SET payment_status = 'refunded'
+                 WHERE id = :id AND status = 'delivery_failed' AND payment_status = 'paid'"
+            )->execute(['id' => (int) $payment['order_id']]);
+            AuditLog::record(
+                $actorId,
+                'delivery_failure_refund_marked',
+                'payment',
+                $paymentId,
+                'order_id=' . (int) $payment['order_id'] . '; reference=' . $reference,
+                $this->database
+            );
+            $this->database->commit();
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();

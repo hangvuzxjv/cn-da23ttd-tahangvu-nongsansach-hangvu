@@ -88,9 +88,13 @@ final class NotificationService
             'completed' => 'đã giao thành công',
             'cancelled' => 'đã bị hủy',
             'refunded' => 'đã được hoàn tiền',
+            'delivery_failed' => 'giao không thành công',
             'pending' => 'đang chờ xử lý',
         ];
         $label = $labels[$status] ?? 'đã được cập nhật';
+        $message = $status === 'shipping'
+            ? 'Đơn hàng đang trên đường giao. Khi nhận được hàng, vui lòng xác nhận đã nhận hàng.'
+            : 'Đơn hàng ' . $orderNo . ' ' . $label . '.';
         $this->database->prepare(
             'INSERT IGNORE INTO notifications
                 (user_id, title, message, link_url, source_type, source_id)
@@ -98,10 +102,61 @@ final class NotificationService
         )->execute([
             'user_id' => $userId,
             'title' => 'Cập nhật đơn hàng',
-            'message' => 'Đơn hàng ' . $orderNo . ' ' . $label . '.',
+            'message' => $message,
             'link' => '/tai-khoan/don-hang/' . $orderId,
             'source_id' => $historyId,
         ]);
+    }
+
+    public function notifySupportTicketReply(int $userId, int $ticketId): void
+    {
+        $this->database->prepare(
+            'INSERT INTO notifications (user_id, title, message, link_url)
+             VALUES (:user_id, :title, :message, :link)'
+        )->execute([
+            'user_id' => $userId,
+            'title' => 'Phiếu hỗ trợ đã có phản hồi',
+            'message' => 'Phiếu hỗ trợ #' . $ticketId . ' đã có phản hồi từ Nông Sản Sạch.',
+            'link' => '/ho-tro/' . $ticketId,
+        ]);
+    }
+
+    public function sendSupportTicketReplyEmail(int $userId, int $ticketId): void
+    {
+        try {
+            $query = $this->database->prepare('SELECT name, email FROM users WHERE id = :id LIMIT 1');
+            $query->execute(['id' => $userId]);
+            $user = $query->fetch();
+            if (!$user) {
+                return;
+            }
+            if (!(new MailRateLimiter($this->database))->allow(
+                'support_ticket_reply',
+                (string) $user['email'],
+                (string) ($_SERVER['REMOTE_ADDR'] ?? '')
+            )) {
+                error_log('Support ticket reply email rate limit reached (ticket=' . $ticketId . ').');
+                return;
+            }
+
+            $result = (new MailService($this->database))->sendTemplate(
+                (string) $user['email'],
+                'Phiếu hỗ trợ #' . $ticketId . ' đã có phản hồi',
+                'Phiếu hỗ trợ đã có phản hồi',
+                [
+                    'Xin chào ' . $user['name'] . '.',
+                    'Phiếu hỗ trợ #' . $ticketId . ' đã có phản hồi từ Nông Sản Sạch.',
+                ],
+                'Xem phiếu hỗ trợ',
+                absolute_url('/ho-tro/' . $ticketId),
+                ['type' => 'support_ticket_reply', 'ticket_id' => $ticketId]
+            );
+            if (!$result['accepted']) {
+                error_log('Support ticket reply email could not be queued (ticket=' . $ticketId . ').');
+            }
+        } catch (Throwable) {
+            error_log('Support ticket reply email could not be queued (ticket=' . $ticketId . ').');
+        }
     }
 
     public function sendOrderStatusEmail(int $userId, int $orderId, string $orderNo, string $status): void
@@ -113,6 +168,7 @@ final class NotificationService
             'completed' => 'đã giao thành công',
             'cancelled' => 'đã bị hủy',
             'refunded' => 'đã được hoàn tiền',
+            'delivery_failed' => 'giao không thành công',
         ];
         try {
             $query = $this->database->prepare('SELECT name, email FROM users WHERE id = :id LIMIT 1');

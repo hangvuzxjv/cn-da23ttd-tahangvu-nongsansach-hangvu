@@ -17,6 +17,7 @@ final class AdminNavigation
         $rolePermissions = $user === null ? [] : ($permissions[$user['role']] ?? []);
         $can = static fn (string $permission): bool => in_array('*', $rolePermissions, true)
             || in_array($permission, $rolePermissions, true);
+        $supportBadge = $can('support.manage') ? (new SupportTicketService())->openTicketCount() : null;
         $groups = [
             [
                 'label' => 'Tổng quan',
@@ -28,6 +29,7 @@ final class AdminNavigation
                 'label' => 'Bán hàng',
                 'items' => [
                     ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
+                    ['permission' => 'delivery_failures.view', 'label' => 'Giao thất bại', 'url' => '/admin/delivery-failures'],
                     ['permission' => 'orders.view', 'label' => 'Thanh toán', 'url' => '/admin/payments'],
                     ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
                     ['permission' => 'shipping.view', 'label' => 'Phí vận chuyển', 'url' => '/admin/shipping'],
@@ -65,6 +67,7 @@ final class AdminNavigation
                 'items' => [
                     ['permission' => 'customers.view', 'label' => 'Khách hàng', 'url' => '/admin/customers'],
                     ['permission' => 'users.view', 'label' => 'Người dùng', 'url' => '/admin/users'],
+                    ['permission' => 'support.manage', 'label' => 'Hỗ trợ', 'url' => '/admin/support', 'badge' => $supportBadge],
                 ],
             ],
             [
@@ -78,6 +81,7 @@ final class AdminNavigation
                 'items' => [
                     ['permission' => 'content.view', 'label' => 'Nội dung', 'url' => '/admin/content/pages'],
                     ['permission' => 'content.view', 'label' => 'Banner', 'url' => '/admin/content/banners'],
+                    ['permission' => 'faq.manage', 'label' => 'Câu hỏi thường gặp', 'url' => '/admin/content/faqs'],
                     ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
                     ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
                 ],

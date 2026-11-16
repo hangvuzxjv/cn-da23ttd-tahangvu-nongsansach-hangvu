@@ -6,6 +6,7 @@ final class CommerceAdminController extends Controller
 {
     public function orders(): void
     {
+        (new OrderService())->runLazyAutoCompletionSafely();
         (new PaymentService())->expirePending();
         $database = Database::connection();
         $filters = [
@@ -22,7 +23,7 @@ final class CommerceAdminController extends Controller
             $search = '%' . $filters['q'] . '%';
             $parameters += ['order_no' => $search, 'recipient' => $search, 'phone' => $search];
         }
-        if (in_array($filters['status'], ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded'], true)) {
+        if (in_array($filters['status'], ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded', 'delivery_failed'], true)) {
             $conditions[] = 'o.status = :status';
             $parameters['status'] = $filters['status'];
         } else {
@@ -74,8 +75,59 @@ final class CommerceAdminController extends Controller
             'total' => $total,
             'canManage' => Auth::can('orders.manage'),
             'canFulfill' => Auth::can('orders.fulfill'),
+            'canQuickAdvance' => Auth::can('orders.manage') || Auth::can('orders.fulfill'),
             'success' => flash('success'),
             'error' => flash('error'),
+        ]);
+    }
+
+    public function deliveryFailures(): void
+    {
+        $database = Database::connection();
+        $reason = (string) ($_GET['reason'] ?? '');
+        $reasons = OrderService::DELIVERY_FAILURE_REASONS;
+        if (!array_key_exists($reason, $reasons)) {
+            $reason = '';
+        }
+
+        $where = '';
+        $parameters = [];
+        if ($reason !== '') {
+            $where = 'WHERE df.reason = :reason';
+            $parameters['reason'] = $reason;
+        }
+        $count = $database->prepare('SELECT COUNT(*) FROM delivery_failures df ' . $where);
+        $count->execute($parameters);
+        $total = (int) $count->fetchColumn();
+        $perPage = 20;
+        $pages = max(1, (int) ceil($total / $perPage));
+        $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
+        $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
+        $query = $database->prepare(
+            'SELECT df.*, o.order_no, u.name AS customer_name, u.email AS customer_email
+             FROM delivery_failures df
+             JOIN orders o ON o.id = df.order_id
+             JOIN users u ON u.id = df.user_id ' . $where . '
+             ORDER BY df.created_at DESC, df.id DESC
+             LIMIT :limit OFFSET :offset'
+        );
+        foreach ($parameters as $name => $value) {
+            $query->bindValue(':' . $name, $value, PDO::PARAM_STR);
+        }
+        $query->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $query->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
+        $query->execute();
+        $this->adminView('admin/delivery-failures', [
+            'title' => 'Giao thất bại',
+            'failures' => $query->fetchAll(),
+            'reasons' => $reasons,
+            'reason' => $reason,
+            'page' => $page,
+            'pages' => $pages,
+            'total' => $total,
+            'paginationUrl' => '/admin/delivery-failures',
+            'paginationQuery' => $reason === '' ? [] : ['reason' => $reason],
+            'paginationLabel' => 'lượt giao thất bại',
         ]);
     }
 
@@ -101,6 +153,26 @@ final class CommerceAdminController extends Controller
              LEFT JOIN users u ON u.id = h.changed_by WHERE h.order_id = :id ORDER BY h.created_at, h.id'
         );
         $history->execute(['id' => (int) $id]);
+        $autoCompleteAt = null;
+        if ($order['status'] === 'shipping') {
+            $autoCompleteQuery = $database->prepare(
+                "SELECT DATE_FORMAT(
+                    COALESCE(
+                        (
+                            SELECT DATE_ADD(h.created_at, INTERVAL " . OrderService::AUTO_COMPLETION_DAYS . " DAY)
+                            FROM order_status_history h
+                            WHERE h.order_id = o.id AND h.status = 'shipping'
+                            ORDER BY h.id DESC LIMIT 1
+                        ),
+                        DATE_ADD(o.updated_at, INTERVAL " . OrderService::AUTO_COMPLETION_DAYS . " DAY)
+                    ),
+                    '%d/%m/%Y %H:%i'
+                 )
+                 FROM orders o WHERE o.id = :id"
+            );
+            $autoCompleteQuery->execute(['id' => (int) $id]);
+            $autoCompleteAt = $autoCompleteQuery->fetchColumn() ?: null;
+        }
         $payments = $database->prepare('SELECT * FROM payments WHERE order_id = :id ORDER BY id DESC');
         $payments->execute(['id' => (int) $id]);
         $this->adminView('admin/order-detail', [
@@ -111,6 +183,13 @@ final class CommerceAdminController extends Controller
             'payments' => $payments->fetchAll(),
             'canManage' => Auth::can('orders.manage'),
             'canFulfill' => Auth::can('orders.fulfill'),
+            'deliveryFailureReasons' => OrderService::DELIVERY_FAILURE_REASONS,
+            'autoCompleteAt' => $autoCompleteAt,
+            'autoCompletionDays' => OrderService::AUTO_COMPLETION_DAYS,
+            'quickNextStep' => (new OrderService($database))->nextMainlineStep(
+                (int) $order['id'],
+                Auth::can('orders.manage')
+            ),
             'print' => isset($_GET['print']),
             'success' => flash('success'),
             'error' => flash('error'),
@@ -121,18 +200,88 @@ final class CommerceAdminController extends Controller
     {
         $status = (string) ($_POST['status'] ?? '');
         try {
-            (new OrderService())->transition(
-                (int) $id,
-                (int) Auth::user()['id'],
-                $status,
-                trim((string) ($_POST['note'] ?? '')),
-                Auth::can('orders.manage')
-            );
+            $service = new OrderService();
+            if ($status === 'completed') {
+                $service->adminConfirmDelivered(
+                    (int) $id,
+                    (int) Auth::user()['id'],
+                    (string) ($_POST['note'] ?? ''),
+                    Auth::can('orders.manage')
+                );
+            } else {
+                $service->transition(
+                    (int) $id,
+                    (int) Auth::user()['id'],
+                    $status,
+                    trim((string) ($_POST['note'] ?? '')),
+                    Auth::can('orders.manage')
+                );
+            }
             flash('success', 'Đã cập nhật trạng thái đơn hàng.');
         } catch (InventoryException | InvalidArgumentException $exception) {
             flash('error', $exception->getMessage());
         }
         redirect('/admin/orders/' . (int) $id);
+    }
+
+    public function recordDeliveryFailure(string $id): void
+    {
+        try {
+            (new OrderService())->recordDeliveryFailure(
+                (int) $id,
+                (int) Auth::user()['id'],
+                (string) ($_POST['reason'] ?? ''),
+                (string) ($_POST['note'] ?? ''),
+                Auth::can('orders.manage')
+            );
+            flash('success', 'Đã ghi nhận giao hàng thất bại và hoàn lại tồn kho.');
+        } catch (InventoryException | InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/orders/' . (int) $id);
+    }
+
+    public function advanceOrder(string $id): void
+    {
+        try {
+            $nextStatus = (new OrderService())->transitionToNext(
+                (int) $id,
+                (int) Auth::user()['id'],
+                Auth::can('orders.manage'),
+                'quick'
+            );
+            flash('success', 'Đã chuyển đơn sang ' . $this->orderStatusLabel($nextStatus) . '.');
+        } catch (InventoryException | InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/orders/' . (int) $id);
+    }
+
+    public function advanceOrders(): void
+    {
+        $selectedOrderIds = $_POST['order_ids'] ?? [];
+        if (!is_array($selectedOrderIds) || !$selectedOrderIds) {
+            flash('error', 'Hãy chọn ít nhất một đơn hàng.');
+            redirect('/admin/orders');
+        }
+
+        $result = (new OrderService())->advanceMany(
+            $selectedOrderIds,
+            (int) Auth::user()['id'],
+            Auth::can('orders.manage')
+        );
+        $advancedCount = count($result['advanced']);
+        $skippedCount = count($result['skipped']);
+        $summary = 'Đã chuyển ' . $advancedCount . ' đơn, bỏ qua ' . $skippedCount . ' đơn.';
+        if ($result['skipped']) {
+            $details = array_map(
+                static fn (array $item): string => $item['order_no'] . ': ' . $item['reason'],
+                $result['skipped']
+            );
+            $summary .= ' ' . implode(' ', $details);
+        }
+        flash('success', $summary);
+        redirect('/admin/orders');
     }
 
     public function exportOrders(): void
@@ -208,7 +357,7 @@ final class CommerceAdminController extends Controller
         $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
         $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
         $query = $database->prepare(
-            'SELECT p.*, o.order_no, o.user_id, u.name AS customer_name
+            'SELECT p.*, o.order_no, o.user_id, o.status AS order_status, u.name AS customer_name
              FROM payments p JOIN orders o ON o.id = p.order_id
              JOIN users u ON u.id = o.user_id ' . $where . '
              ORDER BY p.created_at DESC, p.id DESC LIMIT :limit OFFSET :offset'
@@ -364,6 +513,21 @@ final class CommerceAdminController extends Controller
         redirect('/admin/payments/' . (int) $id);
     }
 
+    public function markDeliveryFailureRefunded(string $id): void
+    {
+        try {
+            (new PaymentService())->markDeliveryFailureRefunded(
+                (int) $id,
+                (int) Auth::user()['id'],
+                (string) ($_POST['reference'] ?? '')
+            );
+            flash('success', 'Đã ghi nhận khoản thanh toán được hoàn tiền.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/payments/' . (int) $id);
+    }
+
     public function vouchers(): void
     {
         $database = Database::connection();
@@ -460,6 +624,7 @@ final class CommerceAdminController extends Controller
                         throw new InvalidArgumentException('Không tìm thấy voucher cần cập nhật.');
                     }
                 }
+
             }
             $database->prepare('DELETE FROM voucher_categories WHERE voucher_id = :id')->execute(['id' => $voucherId]);
             $database->prepare('DELETE FROM voucher_products WHERE voucher_id = :id')->execute(['id' => $voucherId]);
@@ -591,6 +756,17 @@ final class CommerceAdminController extends Controller
         AuditLog::record((int) Auth::user()['id'], 'shipping_fee_deleted', 'shipping_fee', (int) $id);
         flash('success', 'Đã xóa cấu hình phí vận chuyển.');
         redirect('/admin/shipping');
+    }
+
+    private function orderStatusLabel(string $status): string
+    {
+        return [
+            'confirmed' => 'Đã xác nhận',
+            'processing' => 'Đang đóng gói',
+            'shipping' => 'Đang giao',
+            'completed' => 'Đã giao',
+            'delivery_failed' => 'Giao thất bại',
+        ][$status] ?? $status;
     }
 
     private function adminView(string $template, array $data): void

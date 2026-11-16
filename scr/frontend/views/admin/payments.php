@@ -34,7 +34,7 @@
                 <td><?= e($payment['customer_name']) ?></td>
                 <td><?= e($payment['method']) ?></td>
                 <td><?= number_format((float) $payment['amount'], 0, ',', '.') ?> ₫</td>
-                <td><?= e($payment['status']) ?></td>
+                <td><?= e($payment['order_status'] === 'delivery_failed' && $payment['method'] === 'cod' && $payment['status'] === 'failed' ? 'Không thu được tiền' : $payment['status']) ?><?php if (!empty($payment['refund_required'])): ?><div><span class="badge text-bg-warning">Cần hoàn tiền</span></div><?php elseif (!empty($payment['refund_reference'])): ?><div class="small text-secondary">Đã hoàn: <?= e($payment['refund_reference']) ?></div><?php endif; ?></td>
                 <td><a class="btn btn-sm btn-outline-success" href="<?= e(url('/admin/payments/' . $payment['id'])) ?>">Chi tiết</a></td>
             </tr>
         <?php endforeach; ?>

@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'admin' => ['*'],
+    'admin' => ['*', 'support.manage', 'faq.manage', 'delivery_failures.view'],
     'staff_sales' => [
         'dashboard.view',
         'orders.view',
@@ -33,5 +33,7 @@ return [
         'categories.view',
         'categories.manage',
     ],
-    'customer' => [],
+    'customer' => [
+        'support.access',
+    ],
 ];

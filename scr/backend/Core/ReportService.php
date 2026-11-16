@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 final class ReportService
 {
-    private const VALID_ORDER = "o.status NOT IN ('cancelled','refunded')";
+    private const VALID_ORDER = "o.status NOT IN ('cancelled','refunded','delivery_failed')";
     private PDO $database;
 
     public function __construct(?PDO $database = null)
@@ -24,7 +24,7 @@ final class ReportService
         )->fetch();
 
         $statusCounts = array_fill_keys(
-            ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded'],
+            ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded', 'delivery_failed'],
             0
         );
         foreach ($this->database->query('SELECT status, COUNT(*) AS quantity FROM orders GROUP BY status')->fetchAll() as $row) {

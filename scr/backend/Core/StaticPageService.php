@@ -41,7 +41,7 @@ final class StaticPageService
     {
         return [
             'gioi-thieu', 'chinh-sach-doi-tra', 'chinh-sach-van-chuyen',
-            'chinh-sach-bao-mat', 'dieu-khoan-su-dung', 'cau-hoi-thuong-gap',
+            'chinh-sach-bao-mat', 'dieu-khoan-su-dung',
         ];
     }
 

@@ -35,7 +35,10 @@
                     <h2><?= e($group['label']) ?></h2>
                     <div class="nav nav-pills flex-column">
                         <?php foreach ($group['items'] as $item): ?>
-                            <a class="nav-link<?= $item['active'] ? ' active' : '' ?>" href="<?= e(url($item['url'])) ?>"<?= $item['active'] ? ' aria-current="page"' : '' ?>><?= e($item['label']) ?></a>
+                            <a class="nav-link<?= $item['active'] ? ' active' : '' ?>" href="<?= e(url($item['url'])) ?>"<?= $item['active'] ? ' aria-current="page"' : '' ?>>
+                                <span><?= e($item['label']) ?></span>
+                                <?php if (isset($item['badge'])): ?><span class="badge rounded-pill bg-danger ms-auto"><?= (int) $item['badge'] ?></span><?php endif; ?>
+                            </a>
                         <?php endforeach; ?>
                     </div>
                 </section>

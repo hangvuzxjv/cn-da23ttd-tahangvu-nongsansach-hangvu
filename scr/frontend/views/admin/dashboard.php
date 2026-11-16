@@ -29,6 +29,7 @@
     $statusNames = [
         'pending' => 'Chờ xử lý', 'confirmed' => 'Đã xác nhận', 'processing' => 'Đang chuẩn bị',
         'shipping' => 'Đang giao', 'completed' => 'Hoàn tất', 'cancelled' => 'Đã hủy', 'refunded' => 'Đã hoàn tiền',
+        'delivery_failed' => 'Giao thất bại',
     ];
     $maxDaily = max(1, ...array_map(static fn (array $row): float => (float) $row['revenue'], $dashboard['dailyRevenue']));
     $points = [];

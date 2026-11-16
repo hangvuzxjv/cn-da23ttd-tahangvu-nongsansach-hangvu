@@ -8,7 +8,8 @@
     <div class="row g-3">
         <div class="col-md-4"><strong>Khách hàng:</strong> <?= e($payment['customer_name']) ?> (<?= e($payment['customer_email']) ?>)</div>
         <div class="col-md-4"><strong>Phương thức:</strong> <?= e($payment['method']) ?></div>
-        <div class="col-md-4"><strong>Trạng thái giao dịch:</strong> <?= e($payment['status']) ?></div>
+        <div class="col-md-4"><strong>Trạng thái giao dịch:</strong> <?= e($payment['order_status'] === 'delivery_failed' && $payment['method'] === 'cod' && $payment['status'] === 'failed' ? 'Không thu được tiền' : $payment['status']) ?></div>
+        <?php if (!empty($payment['refund_required'])): ?><div class="col-md-4"><strong>Hoàn tiền:</strong> <span class="badge text-bg-warning">Cần hoàn tiền</span></div><?php elseif (!empty($payment['refund_reference'])): ?><div class="col-md-4"><strong>Tham chiếu hoàn tiền:</strong> <?= e($payment['refund_reference']) ?></div><?php endif; ?>
         <div class="col-md-4"><strong>Số tiền giao dịch:</strong> <?= number_format((float) $payment['amount'], 0, ',', '.') ?> ₫</div>
         <div class="col-md-4"><strong>Tổng đơn:</strong> <?= number_format((float) $payment['total_amount'], 0, ',', '.') ?> ₫</div>
         <div class="col-md-4"><strong>Mã tham chiếu:</strong> <?= e($payment['transaction_ref'] ?? '—') ?></div>
@@ -51,7 +52,17 @@
         </div>
     </form>
 <?php endif; ?>
-<?php if ($canManage && $payment['status'] === 'paid' && $payment['order_status'] !== 'refunded'): ?>
+<?php if ($canManage && !empty($payment['refund_required']) && $payment['status'] === 'paid' && $payment['order_status'] === 'delivery_failed'): ?>
+    <form class="card mt-3" method="post" action="<?= e(url('/admin/payments/' . $payment['id'] . '/delivery-failure-refund')) ?>">
+        <?= csrf_field() ?><div class="card-body">
+            <h2 class="h5">Đánh dấu đã hoàn tiền</h2>
+            <label class="form-label" for="deliveryFailureRefundReference">Mã hoặc ghi chú tham chiếu hoàn tiền</label>
+            <input class="form-control mb-3" id="deliveryFailureRefundReference" name="reference" maxlength="150" required>
+            <button class="btn btn-outline-danger">Đánh dấu đã hoàn tiền</button>
+        </div>
+    </form>
+<?php endif; ?>
+<?php if ($canManage && $payment['status'] === 'paid' && !in_array($payment['order_status'], ['refunded', 'delivery_failed'], true)): ?>
     <form class="card mt-3" method="post" action="<?= e(url('/admin/payments/' . $payment['id'] . '/refund')) ?>" onsubmit="return confirm('Ghi nhận hoàn tiền thủ công và hoàn lại kho?')">
         <?= csrf_field() ?><div class="card-body">
             <h2 class="h5">Hoàn tiền thủ công</h2>

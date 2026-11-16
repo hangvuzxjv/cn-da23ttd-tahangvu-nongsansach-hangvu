@@ -1,8 +1,8 @@
-<?php $statusLabels = ['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả']; ?>
+<?php $statusLabels = ['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả','delivery_failed'=>'Giao hàng không thành công']; ?>
 <?php $statusLabel = $order['status'] === 'pending' && $order['payment_status'] === 'pending'
     ? (($order['payment']['method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán')
     : ($statusLabels[$order['status']] ?? $order['status']); ?>
-<?php $statusTone = in_array($order['status'], ['completed'], true) ? 'success' : (in_array($order['status'], ['cancelled', 'refunded'], true) ? 'danger' : (in_array($order['status'], ['pending', 'confirmed', 'processing'], true) ? 'warning' : 'neutral')); ?>
+<?php $statusTone = in_array($order['status'], ['completed'], true) ? 'success' : (in_array($order['status'], ['cancelled', 'refunded', 'delivery_failed'], true) ? 'danger' : (in_array($order['status'], ['pending', 'confirmed', 'processing'], true) ? 'warning' : 'neutral')); ?>
 <header class="page-heading">
     <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/tai-khoan/don-hang')) ?>">Đơn hàng của tôi</a></li><li class="breadcrumb-item active" aria-current="page"><?= e($order['order_no']) ?></li></ol></nav>
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -11,6 +11,7 @@
 </div></header>
 <?php if ($success): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
+<?php if ($order['status'] === 'delivery_failed'): ?><div class="alert alert-danger"><strong>Giao hàng không thành công.</strong><?php if (!empty($deliveryFailure)): ?> Lý do: <?= e(OrderService::DELIVERY_FAILURE_REASONS[$deliveryFailure['reason']] ?? $deliveryFailure['reason']) ?>.<?php if (!empty($deliveryFailure['note'])): ?> <?= e($deliveryFailure['note']) ?><?php endif; ?><?php endif; ?></div><?php endif; ?>
 <div class="row g-4">
     <div class="col-lg-8">
         <div class="card mb-4"><div class="card-header"><h2 class="h5 mb-0">Sản phẩm</h2></div><div class="card-body">
@@ -35,15 +36,22 @@
             <?php if ($order['payment']): ?>
                 <?php
                 $paymentMethodLabels = ['vnpay' => 'VNPay', 'bank_transfer' => 'VietQR', 'cod' => 'COD', 'online' => 'Thanh toán trực tuyến'];
-                $paymentStatusLabels = ['pending' => 'chờ thanh toán', 'paid' => 'đã thanh toán', 'failed' => 'thanh toán thất bại', 'refunded' => 'đã hoàn tiền'];
+                $paymentStatusLabels = ['pending' => 'chờ thanh toán', 'paid' => 'đã thanh toán', 'failed' => $order['status'] === 'delivery_failed' && $order['payment']['method'] === 'cod' ? 'không thu được tiền' : 'thanh toán thất bại', 'refunded' => 'đã hoàn tiền'];
                 $paymentStatus = $order['payment_status'] === 'paid' ? 'paid' : $order['payment']['status'];
                 ?>
                 <?php $paymentTone = $paymentStatus === 'paid' ? 'success' : (in_array($paymentStatus, ['failed', 'refunded'], true) ? 'danger' : 'warning'); ?>
                 <p class="small mt-2 mb-0">Phương thức: <?= e($paymentMethodLabels[$order['payment']['method']] ?? $order['payment']['method']) ?> · <span class="status-badge status-badge--<?= $paymentTone ?>"><?= e($paymentStatusLabels[$paymentStatus] ?? $paymentStatus) ?></span></p>
+                <?php if (!empty($order['payment']['refund_required'])): ?><p class="alert alert-warning small mt-2 mb-0">Thanh toán đã được ghi nhận; cửa hàng cần hoàn tiền.</p><?php endif; ?>
             <?php endif; ?>
             <?php if ($order['customer_note']): ?><p class="small text-secondary mt-3">Ghi chú: <?= e($order['customer_note']) ?></p><?php endif; ?>
         </div></div>
         <div class="d-flex gap-2">
+            <?php if ($order['status'] === 'shipping'): ?>
+                <form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/da-nhan-hang')) ?>" data-confirm="Xác nhận bạn đã nhận được đơn hàng này?"><?= csrf_field() ?><button class="btn btn-success" type="submit">Đã nhận hàng</button></form>
+                <a class="btn btn-outline-warning" href="<?= e(url('/ho-tro/tao?order_id=' . (int) $order['id'] . '&category=giao_hang')) ?>">Chưa nhận được hàng / có vấn đề</a>
+            <?php else: ?>
+                <a class="btn btn-outline-success" href="<?= e(url('/ho-tro/tao?order_id=' . (int) $order['id'] . ($order['status'] === 'delivery_failed' ? '&category=giao_hang' : ''))) ?>"><?= $order['status'] === 'delivery_failed' ? 'Tạo phiếu hỗ trợ về giao thất bại' : 'Cần hỗ trợ về đơn này' ?></a>
+            <?php endif; ?>
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'bank_transfer'): ?><a class="btn btn-success" href="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan')) ?>">Mở thanh toán VietQR</a><?php endif; ?>
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'vnpay'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan/vnpay')) ?>"><?= csrf_field() ?><button class="btn btn-success">Thanh toán lại qua VNPay</button></form><?php endif; ?>
             <?php if ($order['status'] === 'pending'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/huy')) ?>" data-confirm="Bạn có chắc muốn hủy đơn hàng này?"><?= csrf_field() ?><label class="visually-hidden" for="cancelReason">Lý do hủy đơn</label><input class="form-control form-control-sm mb-2" id="cancelReason" name="reason" value="Khách hàng hủy đơn" maxlength="500" required><button class="btn btn-outline-danger">Hủy đơn</button></form><?php endif; ?>

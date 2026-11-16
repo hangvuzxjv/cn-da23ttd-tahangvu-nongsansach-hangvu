@@ -262,7 +262,12 @@ final class StorefrontController extends Controller
     public function sitemap(): Response
     {
         $database = Database::connection();
-        $urls = [absolute_url('/'), absolute_url('/san-pham'), absolute_url('/lien-he')];
+        $urls = [
+            absolute_url('/'),
+            absolute_url('/san-pham'),
+            absolute_url('/lien-he'),
+            absolute_url('/cau-hoi-thuong-gap'),
+        ];
         $pageSlugs = StaticPageService::publishedSlugs();
         $pagePlaceholders = implode(',', array_fill(0, count($pageSlugs), '?'));
         $pageQuery = $database->prepare(

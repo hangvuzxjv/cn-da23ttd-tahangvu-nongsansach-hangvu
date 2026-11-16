@@ -2,7 +2,7 @@
 <?php if ($success): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert alert-warning"><?= e($error) ?></div><?php endif; ?>
 <form class="row g-2 mb-3 order-filter" method="get">
-    <div class="col-auto"><label class="visually-hidden" for="orderStatus">Lọc đơn theo trạng thái</label><select class="form-select" id="orderStatus" name="status"><option value="">Tất cả trạng thái</option><?php foreach (['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả'] as $key=>$label): ?><option value="<?= e($key) ?>" <?= $status === $key ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></div>
+    <div class="col-auto"><label class="visually-hidden" for="orderStatus">Lọc đơn theo trạng thái</label><select class="form-select" id="orderStatus" name="status"><option value="">Tất cả trạng thái</option><?php foreach (['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả','delivery_failed'=>'Giao thất bại'] as $key=>$label): ?><option value="<?= e($key) ?>" <?= $status === $key ? 'selected' : '' ?>><?= e($label) ?></option><?php endforeach; ?></select></div>
     <div class="col-auto"><button class="btn btn-outline-success">Lọc</button></div>
 </form>
 <div class="table-responsive order-table"><table class="table align-middle order-history-table">
@@ -11,8 +11,8 @@
         <td><strong><?= e($order['order_no']) ?></strong></td><td><?= e($order['placed_at']) ?></td><td><?= (int) $order['item_count'] ?></td>
         <?php $orderStatusLabel = $order['status'] === 'pending' && $order['payment_status'] === 'pending'
             ? (($order['payment_method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán')
-            : (['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả'][$order['status']] ?? $order['status']); ?>
-        <?php $orderStatusTone = in_array($order['status'], ['completed'], true) ? 'success' : (in_array($order['status'], ['cancelled', 'refunded'], true) ? 'danger' : (in_array($order['status'], ['pending', 'confirmed', 'processing'], true) ? 'warning' : 'neutral')); ?>
+            : (['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả','delivery_failed'=>'Giao thất bại'][$order['status']] ?? $order['status']); ?>
+        <?php $orderStatusTone = in_array($order['status'], ['completed'], true) ? 'success' : (in_array($order['status'], ['cancelled', 'refunded', 'delivery_failed'], true) ? 'danger' : (in_array($order['status'], ['pending', 'confirmed', 'processing'], true) ? 'warning' : 'neutral')); ?>
         <td><span class="status-badge status-badge--<?= $orderStatusTone ?>"><?= e($orderStatusLabel) ?></span></td>
         <td>
             <strong><?= number_format((float) $order['total_amount'], 0, ',', '.') ?> ₫</strong>

@@ -63,10 +63,13 @@
                     <button class="nav-link btn btn-link dropdown-toggle" id="accountMenu" type="button"
                             data-bs-toggle="dropdown" aria-expanded="false">Tài khoản</button>
                     <div class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
+                        <a class="dropdown-item" href="<?= e(url('/cau-hoi-thuong-gap')) ?>">Câu hỏi thường gặp</a>
+                        <a class="dropdown-item" href="<?= e(url('/lien-he')) ?>">Liên hệ</a>
                         <?php if ($navUser): ?>
                             <a class="dropdown-item" href="<?= e(url('/profile')) ?>">Hồ sơ</a>
                             <a class="dropdown-item" href="<?= e(url('/addresses')) ?>">Sổ địa chỉ</a>
                             <a class="dropdown-item" href="<?= e(url('/tai-khoan/don-hang')) ?>">Đơn hàng</a>
+                            <?php if (Auth::can('support.access')): ?><a class="dropdown-item" href="<?= e(url('/ho-tro')) ?>">Hỗ trợ</a><?php endif; ?>
                             <a class="dropdown-item" href="<?= e(url('/tai-khoan/yeu-thich')) ?>">Yêu thích</a>
                             <?php if (Auth::can('dashboard.view')): ?><a class="dropdown-item" href="<?= e(url('/admin')) ?>">Quản trị</a><?php endif; ?>
                             <div class="dropdown-divider"></div>
@@ -75,6 +78,7 @@
                                 <button class="dropdown-item" type="submit">Đăng xuất</button>
                             </form>
                         <?php else: ?>
+                            <a class="dropdown-item" href="<?= e(url('/ho-tro')) ?>">Hỗ trợ</a>
                             <a class="dropdown-item" href="<?= e(url('/login')) ?>">Đăng nhập</a>
                             <a class="dropdown-item" href="<?= e(url('/register')) ?>">Đăng ký</a>
                         <?php endif; ?>
@@ -106,6 +110,8 @@ $footerPages = $footerPageQuery->fetchAll();
                 <li><a href="<?= e(url('/san-pham')) ?>">Sản phẩm</a></li>
                 <li><a href="<?= e(url('/flash-sale')) ?>">Flash Sale</a></li>
                 <li><a href="<?= e(url('/gio-hang')) ?>">Giỏ hàng</a></li>
+                <li><a href="<?= e(url('/cau-hoi-thuong-gap')) ?>">Câu hỏi thường gặp</a></li>
+                <li><a href="<?= e(url('/ho-tro')) ?>">Hỗ trợ</a></li>
                 <li><a href="<?= e(url('/sitemap.xml')) ?>">Sơ đồ trang</a></li>
             </ul></div>
             <div class="col-12 col-sm-6 col-lg-3"><h2>Chính sách</h2><ul>
@@ -126,5 +132,7 @@ $footerPages = $footerPageQuery->fetchAll();
 <script src="<?= e(asset('/js/home-banners.js')) ?>"></script>
 <script src="<?= e(asset('/js/customer-engagement.js')) ?>"></script>
 <?php if ($navUser): ?><script src="<?= e(asset('/js/notifications.js')) ?>"></script><?php endif; ?>
+<?php if (!empty($loadFaqSearch)): ?><script src="<?= e(asset('/js/faq-search.js')) ?>" defer></script><?php endif; ?>
+<?= (new TawkChatService())->embedScript() ?>
 </body>
 </html>

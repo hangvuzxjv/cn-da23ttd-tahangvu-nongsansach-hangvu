@@ -338,9 +338,10 @@ final class CheckoutController extends Controller
 
     public function myOrders(): void
     {
+        (new OrderService())->runLazyAutoCompletionSafely();
         (new PaymentService())->expirePending();
         $status = (string) ($_GET['status'] ?? '');
-        $allowedStatuses = ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded'];
+        $allowedStatuses = ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded', 'delivery_failed'];
         $where = 'user_id = :user_id';
         $parameters = ['user_id' => $this->userId()];
         if (in_array($status, $allowedStatuses, true)) {
@@ -394,9 +395,15 @@ final class CheckoutController extends Controller
         $paymentQuery = Database::connection()->prepare('SELECT * FROM payments WHERE order_id = :id ORDER BY id DESC LIMIT 1');
         $paymentQuery->execute(['id' => (int) $id]);
         $order['payment'] = $paymentQuery->fetch() ?: null;
+        $failureQuery = Database::connection()->prepare(
+            'SELECT reason, note, counts_against_customer, created_at
+             FROM delivery_failures WHERE order_id = :id LIMIT 1'
+        );
+        $failureQuery->execute(['id' => (int) $id]);
         $this->view('client/order-detail', [
             'title' => 'Chi tiết ' . $order['order_no'],
             'order' => $order,
+            'deliveryFailure' => $failureQuery->fetch() ?: null,
             'items' => $this->orderItems((int) $id),
             'history' => $this->orderHistory((int) $id),
             'success' => flash('success'),
@@ -413,6 +420,28 @@ final class CheckoutController extends Controller
             flash('error', $exception->getMessage());
         }
         redirect('/tai-khoan/don-hang/' . (int) $id);
+    }
+
+    public function confirmReceived(string $id): void
+    {
+        $orderId = (int) $id;
+        $ownership = Database::connection()->prepare(
+            'SELECT id FROM orders WHERE id = :id AND user_id = :user_id'
+        );
+        $ownership->execute(['id' => $orderId, 'user_id' => $this->userId()]);
+        if ($ownership->fetchColumn() === false) {
+            http_response_code(404);
+            View::renderError(404);
+            return;
+        }
+
+        try {
+            (new OrderService())->confirmReceived($orderId, $this->userId());
+            flash('success', 'Cảm ơn bạn đã xác nhận nhận hàng.');
+        } catch (InventoryException | InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/tai-khoan/don-hang/' . $orderId);
     }
 
     public function reorder(string $id): void

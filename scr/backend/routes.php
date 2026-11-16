@@ -10,7 +10,7 @@ $router->get('/chinh-sach-doi-tra', static fn () => (new PagesController())->sho
 $router->get('/chinh-sach-van-chuyen', static fn () => (new PagesController())->show('chinh-sach-van-chuyen'));
 $router->get('/chinh-sach-bao-mat', static fn () => (new PagesController())->show('chinh-sach-bao-mat'));
 $router->get('/dieu-khoan-su-dung', static fn () => (new PagesController())->show('dieu-khoan-su-dung'));
-$router->get('/cau-hoi-thuong-gap', static fn () => (new PagesController())->show('cau-hoi-thuong-gap'));
+$router->get('/cau-hoi-thuong-gap', [FaqController::class, 'index']);
 $router->get('/lien-he', [PagesController::class, 'contact']);
 $router->post('/lien-he', [PagesController::class, 'submitContact'], ['csrf']);
 $router->get('/vung-mien/{slug}', [StorefrontController::class, 'region']);
@@ -28,6 +28,7 @@ $router->post('/thanh-toan/dat-hang', [CheckoutController::class, 'placeOrder'],
 $router->get('/dat-hang-thanh-cong/{id}', [CheckoutController::class, 'success'], ['auth']);
 $router->get('/tai-khoan/don-hang', [CheckoutController::class, 'myOrders'], ['auth']);
 $router->get('/tai-khoan/don-hang/{id}', [CheckoutController::class, 'myOrder'], ['auth']);
+$router->post('/tai-khoan/don-hang/{id}/da-nhan-hang', [CheckoutController::class, 'confirmReceived'], ['auth', 'csrf']);
 $router->get('/tai-khoan/don-hang/{id}/thanh-toan', [CheckoutController::class, 'paymentWaiting'], ['auth']);
 $router->post('/tai-khoan/don-hang/{id}/thanh-toan/bien-lai', [CheckoutController::class, 'uploadPaymentProof'], ['auth', 'csrf']);
 $router->post('/tai-khoan/don-hang/{id}/thanh-toan/vnpay', [CheckoutController::class, 'retryVnpay'], ['auth', 'csrf']);
@@ -35,6 +36,12 @@ $router->get('/thanh-toan/vnpay/return', [CheckoutController::class, 'vnpayRetur
 $router->get('/thanh-toan/vnpay/ipn', [CheckoutController::class, 'vnpayIpn']);
 $router->post('/tai-khoan/don-hang/{id}/huy', [CheckoutController::class, 'cancelMyOrder'], ['auth', 'csrf']);
 $router->post('/tai-khoan/don-hang/{id}/mua-lai', [CheckoutController::class, 'reorder'], ['auth', 'csrf']);
+$router->get('/ho-tro', [SupportTicketsController::class, 'index'], ['permission:support.access']);
+$router->get('/ho-tro/tao', [SupportTicketsController::class, 'createForm'], ['permission:support.access']);
+$router->post('/ho-tro/tao', [SupportTicketsController::class, 'create'], ['permission:support.access', 'csrf']);
+$router->get('/ho-tro/{id}', [SupportTicketsController::class, 'show'], ['permission:support.access']);
+$router->post('/ho-tro/{id}/tra-loi', [SupportTicketsController::class, 'reply'], ['permission:support.access', 'csrf']);
+$router->post('/ho-tro/{id}/dong', [SupportTicketsController::class, 'close'], ['permission:support.access', 'csrf']);
 $router->get('/_health', static function (): Response {
     $connected = false;
     try {
@@ -78,10 +85,20 @@ $router->post('/addresses', [ProfileController::class, 'storeAddress'], ['auth',
 $router->post('/addresses/{id}', [ProfileController::class, 'updateAddress'], ['auth', 'csrf']);
 $router->post('/addresses/{id}/delete', [ProfileController::class, 'deleteAddress'], ['auth', 'csrf']);
 $router->get('/admin', [AdminController::class, 'index'], ['permission:dashboard.view']);
+$router->get('/admin/support', [SupportAdminController::class, 'index'], ['permission:support.manage']);
+$router->get('/admin/support/{id}', [SupportAdminController::class, 'show'], ['permission:support.manage']);
+$router->post('/admin/support/{id}/reply', [SupportAdminController::class, 'reply'], ['permission:support.manage', 'csrf']);
+$router->post('/admin/support/{id}/status', [SupportAdminController::class, 'updateStatus'], ['permission:support.manage', 'csrf']);
 $router->get('/admin/reports.csv', [AdminReportsController::class, 'exportCsv'], ['permission:reports.view']);
 $router->get('/admin/reports', [AdminReportsController::class, 'index'], ['permission:reports.view']);
 $router->get('/admin/content/pages', [AdminContentController::class, 'pages'], ['permission:content.view']);
 $router->post('/admin/content/pages/{id}', [AdminContentController::class, 'savePage'], ['permission:content.manage', 'csrf']);
+$router->get('/admin/content/faqs', [AdminFaqController::class, 'index'], ['permission:faq.manage']);
+$router->post('/admin/content/faqs', [AdminFaqController::class, 'create'], ['permission:faq.manage', 'csrf']);
+$router->get('/admin/content/faqs/{id}/edit', [AdminFaqController::class, 'edit'], ['permission:faq.manage']);
+$router->post('/admin/content/faqs/{id}', [AdminFaqController::class, 'update'], ['permission:faq.manage', 'csrf']);
+$router->post('/admin/content/faqs/{id}/toggle', [AdminFaqController::class, 'toggle'], ['permission:faq.manage', 'csrf']);
+$router->post('/admin/content/faqs/{id}/delete', [AdminFaqController::class, 'delete'], ['permission:faq.manage', 'csrf']);
 $router->get('/admin/content/banners', [AdminContentController::class, 'banners'], ['permission:content.view']);
 $router->get('/admin/content/banners/{id}/edit', [AdminContentController::class, 'editBanner'], ['permission:content.view']);
 $router->post('/admin/content/banners', [AdminContentController::class, 'saveBanner'], ['permission:content.manage', 'csrf']);
@@ -91,6 +108,8 @@ $router->post('/admin/content/banners/{id}/delete', [AdminContentController::cla
 $router->get('/admin/contacts', [AdminContentController::class, 'contacts'], ['permission:contacts.view']);
 $router->post('/admin/contacts/{id}/status', [AdminContentController::class, 'updateContact'], ['permission:contacts.manage', 'csrf']);
 $router->post('/admin/contacts/notification-email', [AdminContentController::class, 'saveContactEmail'], ['permission:contacts.manage', 'csrf']);
+$router->post('/admin/contacts/store-info', [AdminContentController::class, 'saveStoreContactSettings'], ['permission:contacts.manage', 'csrf']);
+$router->post('/admin/contacts/tawk', [AdminContentController::class, 'saveTawkSettings'], ['permission:contacts.manage', 'csrf']);
 $router->get('/admin/mail', [AdminMailController::class, 'index'], ['permission:mail.view']);
 $router->post('/admin/mail/driver', [AdminMailController::class, 'saveDriver'], ['permission:mail.manage', 'csrf']);
 $router->post('/admin/mail/test', [AdminMailController::class, 'sendTest'], ['permission:mail.manage', 'csrf']);
@@ -105,9 +124,13 @@ $router->get('/admin/flash-sales/{id}', [FlashSaleAdminController::class, 'show'
 $router->get('/admin/users', [AdminController::class, 'users'], ['permission:users.view']);
 $router->post('/admin/users/{id}/update', [AdminController::class, 'updateUser'], ['permission:users.manage', 'csrf']);
 $router->get('/admin/orders', [CommerceAdminController::class, 'orders'], ['permission:orders.view']);
+$router->get('/admin/delivery-failures', [CommerceAdminController::class, 'deliveryFailures'], ['permission:delivery_failures.view']);
 $router->get('/admin/orders.csv', [CommerceAdminController::class, 'exportOrders'], ['permission:orders.view']);
 $router->get('/admin/orders/{id}', [CommerceAdminController::class, 'order'], ['permission:orders.view']);
+$router->post('/admin/orders/bulk-next', [CommerceAdminController::class, 'advanceOrders'], ['permission_any:orders.manage,orders.fulfill', 'csrf']);
+$router->post('/admin/orders/{id}/next', [CommerceAdminController::class, 'advanceOrder'], ['permission_any:orders.manage,orders.fulfill', 'csrf']);
 $router->post('/admin/orders/{id}/status', [CommerceAdminController::class, 'updateOrder'], ['permission_any:orders.manage,orders.fulfill', 'csrf']);
+$router->post('/admin/orders/{id}/delivery-failure', [CommerceAdminController::class, 'recordDeliveryFailure'], ['permission:orders.manage', 'csrf']);
 $router->get('/admin/payments', [CommerceAdminController::class, 'payments'], ['permission:orders.view']);
 $router->get('/admin/payments/settings', [CommerceAdminController::class, 'paymentSettings'], ['permission:orders.manage']);
 $router->post('/admin/payments/settings', [CommerceAdminController::class, 'savePaymentSettings'], ['permission:orders.manage', 'csrf']);
@@ -116,6 +139,7 @@ $router->post('/admin/payments/{id}/confirm', [CommerceAdminController::class, '
 $router->post('/admin/payments/{id}/reconcile-vnpay', [CommerceAdminController::class, 'reconcileVnpayPayment'], ['permission:orders.manage', 'csrf']);
 $router->post('/admin/payments/{id}/reject', [CommerceAdminController::class, 'rejectPayment'], ['permission:orders.manage', 'csrf']);
 $router->post('/admin/payments/{id}/refund', [CommerceAdminController::class, 'refundPayment'], ['permission:orders.manage', 'csrf']);
+$router->post('/admin/payments/{id}/delivery-failure-refund', [CommerceAdminController::class, 'markDeliveryFailureRefunded'], ['permission:orders.manage', 'csrf']);
 $router->get('/admin/payments/{id}', [CommerceAdminController::class, 'payment'], ['permission:orders.view']);
 $router->get('/admin/vouchers', [CommerceAdminController::class, 'vouchers'], ['permission:vouchers.view']);
 $router->post('/admin/vouchers', [CommerceAdminController::class, 'saveVoucher'], ['permission:vouchers.manage', 'csrf']);

@@ -1,4 +1,4 @@
-<?php $statusLabels = ['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả']; ?>
+<?php $statusLabels = ['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả','delivery_failed'=>'Giao thất bại']; ?>
 <?php $latestPayment = $payments[0] ?? null; ?>
 <?php $statusLabel = $order['status'] === 'pending' && $order['payment_status'] === 'pending'
     ? (($latestPayment['method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán')
@@ -21,15 +21,51 @@
             <div class="d-flex justify-content-between"><span>Voucher <?= e($order['voucher_code'] ?? '') ?></span><span>-<?= number_format((float) $order['discount_amount'],0,',','.') ?> ₫</span></div>
             <div class="d-flex justify-content-between"><span>Phí ship</span><span><?= number_format((float) $order['shipping_fee'],0,',','.') ?> ₫</span></div><hr>
             <div class="d-flex justify-content-between fs-5"><strong>Tổng</strong><strong><?= number_format((float) $order['total_amount'],0,',','.') ?> ₫</strong></div>
-            <?php foreach ($payments as $payment): ?><div class="small text-secondary mt-2">COD · <?= e($payment['status']) ?> · <?= number_format((float) $payment['amount'],0,',','.') ?> ₫</div><?php endforeach; ?>
+            <?php $paymentMethodLabels = ['cod' => 'COD', 'bank_transfer' => 'VietQR', 'vnpay' => 'VNPay', 'online' => 'Thanh toán trực tuyến']; ?>
+            <?php foreach ($payments as $payment): ?><?php $paymentStatusLabel = $order['status'] === 'delivery_failed' && $payment['method'] === 'cod' && $payment['status'] === 'failed' ? 'Không thu được tiền' : $payment['status']; ?><div class="small text-secondary mt-2"><?= e($paymentMethodLabels[$payment['method']] ?? $payment['method']) ?> · <?= e($paymentStatusLabel) ?> · <?= number_format((float) $payment['amount'],0,',','.') ?> ₫<?php if (!empty($payment['refund_required'])): ?> · <span class="badge text-bg-warning">Cần hoàn tiền</span> <a href="<?= e(url('/admin/payments/' . $payment['id'])) ?>">Xử lý</a><?php elseif (!empty($payment['refund_reference'])): ?> · Hoàn tiền: <?= e($payment['refund_reference']) ?><?php endif; ?></div><?php endforeach; ?>
         </div></div>
         <?php $transitions = ['pending'=>['confirmed','cancelled'],'confirmed'=>['processing','cancelled'],'processing'=>['shipping','cancelled'],'shipping'=>['completed','refunded'],'completed'=>['refunded']][$order['status']] ?? []; ?>
-        <?php $permittedTransitions = array_values(array_filter($transitions, static fn (string $status): bool => $canManage || in_array($status, ['processing','shipping','completed'], true))); ?>
-        <?php if ($permittedTransitions): ?><form class="card no-print" method="post" action="<?= e(url('/admin/orders/' . $order['id'] . '/status')) ?>">
-            <?= csrf_field() ?><div class="card-header"><h2 class="h5 mb-0">Cập nhật trạng thái</h2></div><div class="card-body">
-            <label class="form-label" for="orderStatus">Chuyển sang</label><select class="form-select mb-2" id="orderStatus" name="status"><?php foreach ($permittedTransitions as $status): ?><option value="<?= e($status) ?>"><?= e($statusLabels[$status]) ?></option><?php endforeach; ?></select>
-            <label class="form-label" for="orderNote">Ghi chú / lý do</label><textarea class="form-control mb-3" id="orderNote" name="note" rows="2" required></textarea>
-            <button class="btn btn-success w-100" type="submit">Lưu trạng thái</button></div></form><?php endif; ?>
+        <?php $quickNextStatus = $quickNextStep['status']; ?>
+        <?php if ($order['status'] === 'shipping'): ?><div class="alert alert-info no-print">
+            Đang chờ khách xác nhận đã nhận hàng. Tự hoàn tất sau <?= (int) $autoCompletionDays ?> ngày kể từ lúc chuyển Đang giao.
+            <div class="small mt-1">Thời điểm tự hoàn tất dự kiến: <strong><?= e($autoCompleteAt ?? 'Chưa xác định') ?></strong></div>
+        </div><?php endif; ?>
+        <?php if ($order['status'] === 'delivery_failed' && !empty(array_filter($payments, static fn (array $payment): bool => !empty($payment['refund_required'])))): ?><div class="alert alert-warning no-print">Khoản thanh toán trực tuyến cần được hoàn tiền. <a href="<?= e(url('/admin/payments')) ?>">Mở trang thanh toán</a> để ghi nhận mã tham chiếu hoàn tiền.</div><?php endif; ?>
+        <?php if ($quickNextStatus !== null): ?><form class="card mb-3 no-print" method="post" action="<?= e(url('/admin/orders/' . $order['id'] . '/next')) ?>">
+            <?= csrf_field() ?><div class="card-body">
+                <h2 class="h5">Bước tiếp theo</h2>
+                <button class="btn btn-success w-100" type="submit">Chuyển sang: <?= e($statusLabels[$quickNextStatus] ?? $quickNextStatus) ?></button>
+            </div>
+        </form><?php endif; ?>
+        <?php if ($order['status'] === 'shipping' && $canManage): ?><form class="card mb-3 no-print" method="post" action="<?= e(url('/admin/orders/' . $order['id'] . '/delivery-failure')) ?>">
+            <?= csrf_field() ?><div class="card-header"><h2 class="h5 mb-0">Ghi nhận giao hàng thất bại</h2></div><div class="card-body">
+                <label class="form-label" for="deliveryFailureReason">Lý do</label>
+                <select class="form-select mb-2" id="deliveryFailureReason" name="reason" required><?php foreach ($deliveryFailureReasons as $reason => $label): ?><option value="<?= e($reason) ?>"><?= e($label) ?></option><?php endforeach; ?></select>
+                <label class="form-label" for="deliveryFailureNote">Ghi chú <span class="text-secondary">(bắt buộc nếu chọn lý do khác)</span></label>
+                <textarea class="form-control mb-3" id="deliveryFailureNote" name="note" rows="2" maxlength="450"></textarea>
+                <button class="btn btn-outline-danger w-100" type="submit">Ghi nhận giao thất bại</button>
+            </div>
+        </form><script>
+            (function () {
+                var reason = document.getElementById('deliveryFailureReason');
+                var note = document.getElementById('deliveryFailureNote');
+                var updateRequirement = function () { note.required = reason.value === 'other'; };
+                reason.addEventListener('change', updateRequirement);
+                updateRequirement();
+            }());
+        </script><?php endif; ?>
+        <?php
+        $otherTransitions = array_values(array_filter(
+            $transitions,
+            static fn (string $status): bool => !in_array($status, ['confirmed', 'processing', 'shipping'], true)
+                && $canManage
+        ));
+        ?>
+        <?php if ($otherTransitions): ?><form class="card no-print" method="post" action="<?= e(url('/admin/orders/' . $order['id'] . '/status')) ?>">
+            <?= csrf_field() ?><div class="card-header"><h2 class="h5 mb-0">Thao tác khác</h2></div><div class="card-body">
+            <label class="form-label" for="orderStatus">Chuyển sang</label><select class="form-select mb-2" id="orderStatus" name="status"><?php foreach ($otherTransitions as $status): ?><option value="<?= e($status) ?>"><?= e($statusLabels[$status]) ?></option><?php endforeach; ?></select>
+            <label class="form-label" for="orderNote">Lý do</label><textarea class="form-control mb-3" id="orderNote" name="note" rows="2" required></textarea>
+            <button class="btn btn-outline-danger w-100" type="submit">Thực hiện</button></div></form><?php endif; ?>
     </aside>
 </div>
 <style>@media print { body { background: white !important; } .no-print, nav, aside .card:last-child { display: none !important; } main { width: 100% !important; } }</style>

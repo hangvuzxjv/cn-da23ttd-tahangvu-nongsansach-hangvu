@@ -29,8 +29,28 @@ final class PagesController extends Controller
 
     public function contact(): void
     {
+        $database = Database::connection();
+        $keys = ['store_name', 'store_contact_address', 'store_contact_phone', 'store_contact_email', 'store_business_hours'];
+        $query = $database->prepare(
+            'SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('
+            . implode(',', array_fill(0, count($keys), '?')) . ')'
+        );
+        $query->execute($keys);
+        $settings = [];
+        foreach ($query->fetchAll() as $setting) {
+            $settings[$setting['setting_key']] = (string) ($setting['setting_value'] ?? '');
+        }
         $this->view('client/contact', [
             'title' => 'Liên hệ',
+            'storeContact' => [
+                'name' => $settings['store_name'] ?? 'Nông Sản Sạch',
+                'address' => $settings['store_contact_address'] ?? '',
+                'phone' => $settings['store_contact_phone'] ?? '',
+                'email' => $settings['store_contact_email'] ?? '',
+                'business_hours' => $settings['store_business_hours'] ?? '',
+            ],
+            'chatConfigured' => (new TawkChatService($database))->isConfigured(),
+            'canOpenSupport' => Auth::can('support.access'),
             'success' => flash('success'),
             'error' => flash('error'),
         ]);

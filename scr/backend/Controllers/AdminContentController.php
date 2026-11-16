@@ -295,9 +295,22 @@ final class AdminContentController extends Controller
         $query->bindValue(':limit', $perPage, PDO::PARAM_INT);
         $query->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
         $query->execute();
-        $recipient = $database->query(
-            "SELECT setting_value FROM settings WHERE setting_key = 'contact.notification_email' LIMIT 1"
-        )->fetchColumn();
+        $settingKeys = [
+            'contact.notification_email',
+            'store_contact_address',
+            'store_contact_phone',
+            'store_contact_email',
+            'store_business_hours',
+        ];
+        $settingsQuery = $database->prepare(
+            'SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('
+            . implode(',', array_fill(0, count($settingKeys), '?')) . ')'
+        );
+        $settingsQuery->execute($settingKeys);
+        $settings = [];
+        foreach ($settingsQuery->fetchAll() as $setting) {
+            $settings[$setting['setting_key']] = (string) ($setting['setting_value'] ?? '');
+        }
         $this->adminView('admin/contacts', [
             'title' => 'Tin nhắn liên hệ',
             'contacts' => $query->fetchAll(),
@@ -305,7 +318,14 @@ final class AdminContentController extends Controller
             'page' => $page,
             'pages' => $pages,
             'total' => $total,
-            'notificationEmail' => is_string($recipient) ? $recipient : '',
+            'notificationEmail' => $settings['contact.notification_email'] ?? '',
+            'storeContact' => [
+                'address' => $settings['store_contact_address'] ?? '',
+                'phone' => $settings['store_contact_phone'] ?? '',
+                'email' => $settings['store_contact_email'] ?? '',
+                'business_hours' => $settings['store_business_hours'] ?? '',
+            ],
+            'tawkConfiguration' => (new TawkChatService($database))->configuration(),
             'success' => flash('success'),
             'error' => flash('error'),
         ]);
@@ -320,6 +340,8 @@ final class AdminContentController extends Controller
                 'pages' => 1,
                 'total' => 0,
                 'notificationEmail' => '',
+                'storeContact' => ['address' => '', 'phone' => '', 'email' => '', 'business_hours' => ''],
+                'tawkConfiguration' => ['enabled' => false, 'property_id' => '', 'widget_id' => ''],
                 'success' => flash('success'),
                 'error' => 'Không thể tải danh sách liên hệ lúc này. Vui lòng thử lại sau.',
             ]);
@@ -366,6 +388,113 @@ final class AdminContentController extends Controller
             redirect('/admin/contacts');
         }
         flash('success', 'Đã lưu cấu hình thông báo liên hệ.');
+        redirect('/admin/contacts');
+    }
+
+    public function saveStoreContactSettings(): void
+    {
+        $fields = [
+            'address' => ['store_contact_address', 500, 'Địa chỉ'],
+            'phone' => ['store_contact_phone', 30, 'Số điện thoại'],
+            'email' => ['store_contact_email', 190, 'Email'],
+            'business_hours' => ['store_business_hours', 180, 'Giờ làm việc'],
+        ];
+        $values = [];
+        foreach ($fields as $input => [$key, $maximum, $label]) {
+            $value = $_POST[$input] ?? '';
+            if (!is_string($value)) {
+                flash('error', $label . ' không hợp lệ.');
+                redirect('/admin/contacts');
+            }
+            $value = trim($value);
+            if (mb_strlen($value, 'UTF-8') > $maximum) {
+                flash('error', $label . ' vượt quá độ dài cho phép.');
+                redirect('/admin/contacts');
+            }
+            $values[$key] = $value;
+        }
+        if ($values['store_contact_email'] !== ''
+            && filter_var($values['store_contact_email'], FILTER_VALIDATE_EMAIL) === false) {
+            flash('error', 'Email cửa hàng không hợp lệ.');
+            redirect('/admin/contacts');
+        }
+
+        $database = Database::connection();
+        $database->beginTransaction();
+        try {
+            $save = $database->prepare(
+                'INSERT INTO settings (setting_key, setting_value, description)
+                 VALUES (:setting_key, :setting_value, :description)
+                 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
+            );
+            $descriptions = [
+                'store_contact_address' => 'Địa chỉ hiển thị trên trang liên hệ',
+                'store_contact_phone' => 'Số điện thoại hiển thị trên trang liên hệ',
+                'store_contact_email' => 'Email hiển thị trên trang liên hệ',
+                'store_business_hours' => 'Giờ làm việc hiển thị trên trang liên hệ',
+            ];
+            foreach ($values as $key => $value) {
+                $save->execute([
+                    'setting_key' => $key,
+                    'setting_value' => $value,
+                    'description' => $descriptions[$key],
+                ]);
+            }
+            AuditLog::record(
+                (int) Auth::user()['id'],
+                'store_contact_settings_updated',
+                'settings',
+                null,
+                'fields=' . implode(',', array_keys($values)),
+                $database
+            );
+            $database->commit();
+        } catch (Throwable $exception) {
+            if ($database->inTransaction()) {
+                $database->rollBack();
+            }
+            if ($exception instanceof PDOException) {
+                error_log('Store contact settings could not be saved: ' . $exception->getMessage());
+                flash('error', 'Không thể lưu thông tin cửa hàng lúc này.');
+                redirect('/admin/contacts');
+            }
+            throw $exception;
+        }
+        flash('success', 'Đã lưu thông tin cửa hàng.');
+        redirect('/admin/contacts');
+    }
+
+    public function saveTawkSettings(): void
+    {
+        $rawPropertyId = $_POST['property_id'] ?? '';
+        $rawWidgetId = $_POST['widget_id'] ?? '';
+        if (!is_string($rawPropertyId) || !is_string($rawWidgetId)) {
+            flash('error', 'Property ID hoặc Widget ID Tawk.to không hợp lệ.');
+            redirect('/admin/contacts');
+        }
+        $propertyId = trim($rawPropertyId);
+        $widgetId = trim($rawWidgetId);
+        $enabledValue = $_POST['enabled'] ?? '0';
+        if (!is_string($enabledValue) || !in_array($enabledValue, ['0', '1'], true)) {
+            flash('error', 'Trạng thái khung chat không hợp lệ.');
+            redirect('/admin/contacts');
+        }
+        try {
+            (new TawkChatService())->saveConfiguration(
+                (int) Auth::user()['id'],
+                $propertyId,
+                $widgetId,
+                $enabledValue === '1'
+            );
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+            redirect('/admin/contacts');
+        } catch (PDOException $exception) {
+            error_log('Tawk.to settings could not be saved: ' . $exception->getMessage());
+            flash('error', 'Không thể lưu cấu hình khung chat lúc này.');
+            redirect('/admin/contacts');
+        }
+        flash('success', 'Đã lưu cấu hình khung chat.');
         redirect('/admin/contacts');
     }
 

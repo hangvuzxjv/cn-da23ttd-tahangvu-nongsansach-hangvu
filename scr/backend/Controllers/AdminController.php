@@ -18,6 +18,7 @@ final class AdminController extends Controller
 
     public function index(): void
     {
+        (new OrderService())->runLazyAutoCompletionSafely();
         $canViewBatches = Auth::can('batches.view');
         $topScanned = $canViewBatches
             ? Database::connection()->query(
