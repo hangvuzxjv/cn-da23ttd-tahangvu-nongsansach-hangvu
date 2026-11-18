@@ -1,3 +1,9 @@
+<?php $activeAccountTab = 'support'; ?>
+<div class="client-account-layout">
+    <aside class="client-account-layout__sidebar">
+        <?php include FRONTEND_PATH . '/views/client/_account-navigation.php'; ?>
+    </aside>
+    <div class="client-account-layout__content">
 <header class="page-heading">
     <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/ho-tro')) ?>">Phiếu hỗ trợ</a></li><li class="breadcrumb-item active" aria-current="page">Tạo phiếu</li></ol></nav>
     <h1 class="h2">Tạo phiếu hỗ trợ</h1>
@@ -33,3 +39,5 @@
         <a class="btn btn-outline-secondary" href="<?= e(url('/ho-tro')) ?>">Hủy</a>
     </div>
 </form>
+</div>
+</div>

@@ -1,12 +1,8 @@
+<?php include FRONTEND_PATH . '/views/admin/_inventory-navigation.php'; ?>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
     <h1 class="h2 mb-0">Tổng quan kho</h1>
-    <nav class="d-flex gap-2">
-        <a class="btn btn-outline-primary" href="<?= e(url('/admin/inventory/stock')) ?>">Tồn kho</a>
-        <a class="btn btn-outline-primary" href="<?= e(url('/admin/inventory/receipts')) ?>">Phiếu nhập</a>
-        <a class="btn btn-outline-primary" href="<?= e(url('/admin/inventory/movements')) ?>">Sổ cái</a>
-        <a class="btn btn-outline-primary" href="<?= e(url('/admin/inventory/stocktakes')) ?>">Kiểm kê</a>
-    </nav>
 </div>
+<p class="small text-secondary bg-light border rounded p-2 mb-3">Xem nhanh tình hình kho: hàng sắp hết, lô sắp hết hạn và các thay đổi gần nhất.</p>
 <?php if ($success): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
 <div class="row g-3 mb-4">
@@ -38,10 +34,10 @@
     </div>
     <div class="col-lg-7">
         <section class="card"><div class="card-header"><h2 class="h5 mb-0">10 biến động gần nhất</h2></div>
-            <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Thời điểm</th><th>Sản phẩm / lô</th><th>Loại</th><th>SL</th><th>Người thực hiện</th></tr></thead><tbody>
+            <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Thời điểm</th><th>Sản phẩm / lô</th><th>Loại thay đổi</th><th>Số lượng thay đổi</th><th>Người thực hiện</th></tr></thead><tbody>
             <?php foreach ($recentMovements as $movement): ?><tr>
                 <td><?= e($movement['created_at']) ?></td><td><?= e($movement['product_name']) ?><br><code><?= e($movement['batch_code'] ?? '-') ?></code></td>
-                <td><?= e($movement['movement_type']) ?></td><td class="<?= (int) $movement['quantity'] < 0 ? 'text-danger' : 'text-success' ?>"><?= (int) $movement['quantity'] ?></td>
+                <td><?= e(InventoryLabels::movement($movement['movement_type'], $movement['reference_type'] ?? null)) ?></td><td class="<?= (int) $movement['quantity'] < 0 ? 'text-danger' : 'text-success' ?>"><?= (int) $movement['quantity'] ?></td>
                 <td><?= e($movement['performed_by_name'] ?? 'Hệ thống') ?></td>
             </tr><?php endforeach; ?>
             <?php if (!$recentMovements): ?><tr><td colspan="5" class="text-secondary">Chưa có biến động kho.</td></tr><?php endif; ?>

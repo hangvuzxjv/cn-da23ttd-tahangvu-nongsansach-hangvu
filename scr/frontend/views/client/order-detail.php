@@ -1,8 +1,16 @@
 <?php $statusLabels = ['pending'=>'Chờ xác nhận','confirmed'=>'Đã xác nhận','processing'=>'Đang đóng gói','shipping'=>'Đang giao','completed'=>'Đã giao','cancelled'=>'Đã hủy','refunded'=>'Hoàn trả','delivery_failed'=>'Giao hàng không thành công']; ?>
 <?php $statusLabel = $order['status'] === 'pending' && $order['payment_status'] === 'pending'
-    ? (($order['payment']['method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán')
+    ? (($order['payment']['method'] ?? '') === 'vnpay' && ($order['payment']['status'] ?? '') === 'failed'
+        ? 'Thanh toán không thành công/đã hủy'
+        : (($order['payment']['method'] ?? '') === 'bank_transfer' ? 'Chờ xác nhận thanh toán' : 'Chờ thanh toán'))
     : ($statusLabels[$order['status']] ?? $order['status']); ?>
 <?php $statusTone = in_array($order['status'], ['completed'], true) ? 'success' : (in_array($order['status'], ['cancelled', 'refunded', 'delivery_failed'], true) ? 'danger' : (in_array($order['status'], ['pending', 'confirmed', 'processing'], true) ? 'warning' : 'neutral')); ?>
+<?php $activeAccountTab = 'orders'; ?>
+<div class="client-account-layout">
+    <aside class="client-account-layout__sidebar">
+        <?php include FRONTEND_PATH . '/views/client/_account-navigation.php'; ?>
+    </aside>
+    <div class="client-account-layout__content">
 <header class="page-heading">
     <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/tai-khoan/don-hang')) ?>">Đơn hàng của tôi</a></li><li class="breadcrumb-item active" aria-current="page"><?= e($order['order_no']) ?></li></ol></nav>
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -11,6 +19,7 @@
 </div></header>
 <?php if ($success): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
+<?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'vnpay' && ($order['payment']['status'] ?? '') === 'failed'): ?><div class="alert alert-warning"><strong>Thanh toán không thành công hoặc đã bị hủy.</strong> Đơn hàng chưa được thanh toán; bạn có thể thử lại qua VNPay.</div><?php endif; ?>
 <?php if ($order['status'] === 'delivery_failed'): ?><div class="alert alert-danger"><strong>Giao hàng không thành công.</strong><?php if (!empty($deliveryFailure)): ?> Lý do: <?= e(OrderService::DELIVERY_FAILURE_REASONS[$deliveryFailure['reason']] ?? $deliveryFailure['reason']) ?>.<?php if (!empty($deliveryFailure['note'])): ?> <?= e($deliveryFailure['note']) ?><?php endif; ?><?php endif; ?></div><?php endif; ?>
 <div class="row g-4">
     <div class="col-lg-8">
@@ -25,6 +34,17 @@
         <div class="card"><div class="card-header"><h2 class="h5 mb-0">Lịch sử trạng thái</h2></div><div class="card-body">
             <ol class="mb-0"><?php foreach ($history as $event): ?><li class="mb-2"><strong><?= e($statusLabels[$event['status']] ?? $event['status']) ?></strong> · <?= e($event['created_at']) ?><?php if ($event['note']): ?><div class="small text-secondary"><?= e($event['note']) ?></div><?php endif; ?></li><?php endforeach; ?></ol>
         </div></div>
+        <?php if (!empty($returnContext['returns'])): ?>
+            <section class="card mt-4">
+                <div class="card-header"><h2 class="h5 mb-0">Yêu cầu trả hàng / hoàn tiền</h2></div>
+                <div class="list-group list-group-flush"><?php foreach ($returnContext['returns'] as $returnRequest): ?>
+                    <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-3" href="<?= e(url('/tai-khoan/yeu-cau-tra-hang/' . (int) $returnRequest['id'])) ?>">
+                        <span>Yêu cầu #<?= (int) $returnRequest['id'] ?><small class="d-block text-secondary"><?= e($returnRequest['requested_at']) ?></small></span>
+                        <span class="status-badge status-badge--<?= e(['pending' => 'warning', 'approved' => 'success', 'rejected' => 'danger', 'refunded' => 'success', 'cancelled' => 'neutral'][$returnRequest['status']] ?? 'neutral') ?>"><?= e(OrderReturnService::statuses()[$returnRequest['status']] ?? $returnRequest['status']) ?></span>
+                    </a>
+                <?php endforeach; ?></div>
+            </section>
+        <?php endif; ?>
     </div>
     <div class="col-lg-4">
         <div class="card mb-3"><div class="card-header"><h2 class="h5 mb-0">Giao hàng & thanh toán</h2></div><div class="card-body">
@@ -55,7 +75,10 @@
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'bank_transfer'): ?><a class="btn btn-success" href="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan')) ?>">Mở thanh toán VietQR</a><?php endif; ?>
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'vnpay'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan/vnpay')) ?>"><?= csrf_field() ?><button class="btn btn-success">Thanh toán lại qua VNPay</button></form><?php endif; ?>
             <?php if ($order['status'] === 'pending'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/huy')) ?>" data-confirm="Bạn có chắc muốn hủy đơn hàng này?"><?= csrf_field() ?><label class="visually-hidden" for="cancelReason">Lý do hủy đơn</label><input class="form-control form-control-sm mb-2" id="cancelReason" name="reason" value="Khách hàng hủy đơn" maxlength="500" required><button class="btn btn-outline-danger">Hủy đơn</button></form><?php endif; ?>
+            <?php if (!empty($returnContext['eligible'])): ?><a class="btn btn-outline-warning" href="<?= e(url('/tai-khoan/don-hang/' . (int) $order['id'] . '/tra-hang')) ?>">Yêu cầu trả hàng / hoàn tiền</a><?php endif; ?>
             <form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/mua-lai')) ?>"><?= csrf_field() ?><button class="btn btn-outline-success">Mua lại</button></form>
         </div>
+    </div>
+    </div>
     </div>
 </div>

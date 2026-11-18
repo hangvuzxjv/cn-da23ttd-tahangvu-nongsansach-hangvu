@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 final class ReportService
 {
-    private const VALID_ORDER = "o.status NOT IN ('cancelled','refunded','delivery_failed')";
     private PDO $database;
 
     public function __construct(?PDO $database = null)
@@ -14,14 +13,7 @@ final class ReportService
 
     public function dashboard(): array
     {
-        $revenue = $this->database->query(
-            'SELECT
-                COALESCE(SUM(CASE WHEN placed_at >= CURDATE() THEN total_amount ELSE 0 END), 0) AS today,
-                COALESCE(SUM(CASE WHEN placed_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) THEN total_amount ELSE 0 END), 0) AS last_7_days,
-                COALESCE(SUM(CASE WHEN placed_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN total_amount ELSE 0 END), 0) AS last_30_days
-             FROM orders o
-             WHERE ' . self::VALID_ORDER
-        )->fetch();
+        $revenue = (new PaymentRevenueService($this->database))->dashboardTotals();
 
         $statusCounts = array_fill_keys(
             ['pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'refunded', 'delivery_failed'],
@@ -30,6 +22,16 @@ final class ReportService
         foreach ($this->database->query('SELECT status, COUNT(*) AS quantity FROM orders GROUP BY status')->fetchAll() as $row) {
             $statusCounts[(string) $row['status']] = (int) $row['quantity'];
         }
+        $pendingPaymentOrders = (int) $this->database->query(
+            "SELECT COUNT(*)
+             FROM orders o
+             WHERE o.status = 'pending' AND o.payment_status = 'pending'
+               AND EXISTS (
+                   SELECT 1 FROM payments p
+                   WHERE p.order_id = o.id AND p.method IN ('bank_transfer', 'vnpay')
+               )"
+        )->fetchColumn();
+        $actionablePendingOrders = max(0, $statusCounts['pending'] - $pendingPaymentOrders);
 
         $newCustomers = (int) $this->database->query(
             "SELECT COUNT(*) FROM users WHERE role = 'customer' AND created_at >= CURDATE()"
@@ -43,52 +45,65 @@ final class ReportService
                AND expires_at BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)'
         )->fetchColumn();
 
-        $daily = $this->database->query(
-            'SELECT DATE(o.placed_at) AS report_date, SUM(o.total_amount) AS revenue
-             FROM orders o
-             WHERE ' . self::VALID_ORDER . '
-               AND o.placed_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
-               AND o.placed_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-             GROUP BY DATE(o.placed_at)
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('today', $timezone);
+        $tomorrow = $today->modify('+1 day');
+        $chartStart = $today->modify('-13 days');
+        $revenueEvents = PaymentRevenueService::revenueEventsSubquery();
+        $dailyQuery = $this->database->prepare(
+            'SELECT DATE(event.event_at) AS report_date, SUM(event.amount) AS revenue
+             FROM ' . $revenueEvents . ' event
+             WHERE event.event_at >= :from_date AND event.event_at < :to_date
+             GROUP BY DATE(event.event_at)
              ORDER BY report_date'
-        )->fetchAll();
+        );
+        $dailyQuery->execute([
+            'from_date' => $chartStart->format('Y-m-d H:i:s'),
+            'to_date' => $tomorrow->format('Y-m-d H:i:s'),
+        ]);
+        $daily = $dailyQuery->fetchAll();
         $dailyByDate = [];
         foreach ($daily as $row) {
             $dailyByDate[(string) $row['report_date']] = (float) $row['revenue'];
         }
         $dailyRevenue = [];
         for ($offset = 13; $offset >= 0; $offset--) {
-            $date = date('Y-m-d', strtotime('-' . $offset . ' days'));
+            $date = $today->modify('-' . $offset . ' days')->format('Y-m-d');
             $dailyRevenue[] = ['date' => $date, 'revenue' => $dailyByDate[$date] ?? 0.0];
         }
 
-        $regionalRevenue = $this->database->query(
+        $regionalQuery = $this->database->prepare(
             'SELECT COALESCE(parent.name, region.name, NULLIF(o.region_name, \'\'), \'Chưa phân vùng\') AS region_name,
-                    SUM(o.total_amount) AS revenue
+                    SUM(event.amount) AS revenue
              FROM orders o
+             JOIN ' . $revenueEvents . ' event ON event.order_id = o.id
              LEFT JOIN regions region ON region.id = o.region_id
              LEFT JOIN regions parent ON parent.id = region.parent_id
-             WHERE ' . self::VALID_ORDER . '
-               AND o.placed_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+             WHERE event.event_at >= :from_date AND event.event_at < :to_date
              GROUP BY COALESCE(parent.name, region.name, NULLIF(o.region_name, \'\'), \'Chưa phân vùng\')
              ORDER BY revenue DESC
              LIMIT 8'
-        )->fetchAll();
+        );
+        $regionalQuery->execute([
+            'from_date' => $today->modify('-29 days')->format('Y-m-d H:i:s'),
+            'to_date' => $tomorrow->format('Y-m-d H:i:s'),
+        ]);
+        $regionalRevenue = $regionalQuery->fetchAll();
 
+        $productEvents = PaymentRevenueService::productRevenueEventsSubquery();
         $topProducts = $this->database->query(
-            'SELECT oi.product_name, SUM(oi.quantity) AS quantity, SUM(oi.line_total) AS revenue
-             FROM order_items oi
-             JOIN orders o ON o.id = oi.order_id
-             WHERE ' . self::VALID_ORDER . '
-             GROUP BY oi.product_name
+            'SELECT event.product_name, SUM(event.quantity) AS quantity, SUM(event.amount) AS revenue
+             FROM ' . $productEvents . ' event
+             GROUP BY event.product_name
              ORDER BY quantity DESC, revenue DESC
              LIMIT 10'
         )->fetchAll();
+        $paidOrders = PaymentRevenueService::paidOrdersSubquery();
         $topCustomers = $this->database->query(
-            'SELECT u.name, u.email, COUNT(o.id) AS order_count, SUM(o.total_amount) AS revenue
+            'SELECT u.name, u.email, COUNT(DISTINCT o.id) AS order_count, SUM(received.received_amount) AS revenue
              FROM orders o
              JOIN users u ON u.id = o.user_id
-             WHERE ' . self::VALID_ORDER . '
+             JOIN ' . $paidOrders . ' received ON received.order_id = o.id
              GROUP BY u.id, u.name, u.email
              ORDER BY revenue DESC
              LIMIT 10'
@@ -97,7 +112,8 @@ final class ReportService
         return [
             'revenue' => array_map('floatval', $revenue ?: ['today' => 0, 'last_7_days' => 0, 'last_30_days' => 0]),
             'statusCounts' => $statusCounts,
-            'pendingOrders' => $statusCounts['pending'],
+            'pendingOrders' => $actionablePendingOrders,
+            'pendingPaymentOrders' => $pendingPaymentOrders,
             'newCustomers' => $newCustomers,
             'lowStock' => $lowStock,
             'nearExpiry' => $nearExpiry,
@@ -112,19 +128,19 @@ final class ReportService
     {
         return [
             'revenue' => [
-                'title' => 'Doanh thu theo ngày',
+                'title' => 'Tiền đã nhận theo ngày',
                 'columns' => ['report_date' => 'Ngày', 'order_count' => 'Số đơn', 'revenue' => 'Doanh thu'],
             ],
             'products' => [
-                'title' => 'Doanh thu theo sản phẩm',
+                'title' => 'Doanh thu sản phẩm sau hoàn tiền',
                 'columns' => ['product_name' => 'Sản phẩm', 'quantity' => 'Đã bán', 'revenue' => 'Doanh thu'],
             ],
             'regions' => [
-                'title' => 'Doanh thu theo vùng miền',
+                'title' => 'Tiền đã nhận theo vùng miền',
                 'columns' => ['region_name' => 'Vùng miền', 'order_count' => 'Số đơn', 'revenue' => 'Doanh thu'],
             ],
             'payments' => [
-                'title' => 'Doanh thu theo phương thức thanh toán',
+                'title' => 'Tiền đã nhận theo phương thức thanh toán',
                 'columns' => ['method_name' => 'Phương thức', 'order_count' => 'Số đơn', 'revenue' => 'Doanh thu'],
             ],
             'inventory' => [
@@ -208,45 +224,47 @@ final class ReportService
 
     private function queryParts(string $type, string $from, string $to): array
     {
-        $parameters = ['from_date' => $from . ' 00:00:00', 'to_date' => date('Y-m-d 00:00:00', strtotime($to . ' +1 day'))];
-        $valid = self::VALID_ORDER;
-        $dateRange = 'o.placed_at >= :from_date AND o.placed_at < :to_date';
+        $parameters = PaymentRevenueService::dateBounds($from, $to);
+        $dateRange = 'event.event_at >= :from_date AND event.event_at < :to_date';
+        $revenueEvents = PaymentRevenueService::revenueEventsSubquery();
+        $productEvents = PaymentRevenueService::productRevenueEventsSubquery();
 
         switch ($type) {
             case 'revenue':
-                $sql = 'SELECT DATE(o.placed_at) AS report_date, COUNT(*) AS order_count,
-                               SUM(o.total_amount) AS revenue
-                        FROM orders o
-                        WHERE ' . $valid . ' AND ' . $dateRange . '
-                        GROUP BY DATE(o.placed_at)
+                $sql = 'SELECT DATE(event.event_at) AS report_date,
+                               COUNT(DISTINCT CASE WHEN event.event_type = \'payment\' THEN event.order_id END) AS order_count,
+                               SUM(event.amount) AS revenue
+                        FROM ' . $revenueEvents . ' event
+                        WHERE ' . $dateRange . '
+                        GROUP BY DATE(event.event_at)
                         ORDER BY report_date DESC';
                 break;
             case 'products':
-                $sql = 'SELECT oi.product_name, SUM(oi.quantity) AS quantity, SUM(oi.line_total) AS revenue
-                        FROM order_items oi JOIN orders o ON o.id = oi.order_id
-                        WHERE ' . $valid . ' AND ' . $dateRange . '
-                        GROUP BY oi.product_name
+                $sql = 'SELECT event.product_name, SUM(event.quantity) AS quantity, SUM(event.amount) AS revenue
+                        FROM ' . $productEvents . ' event
+                        WHERE ' . $dateRange . '
+                        GROUP BY event.product_name
                         ORDER BY revenue DESC, quantity DESC';
                 break;
             case 'regions':
                 $sql = 'SELECT COALESCE(parent.name, region.name, NULLIF(o.region_name, \'\'), \'Chưa phân vùng\') AS region_name,
-                               COUNT(*) AS order_count, SUM(o.total_amount) AS revenue
+                               COUNT(DISTINCT CASE WHEN event.event_type = \'payment\' THEN event.order_id END) AS order_count,
+                               SUM(event.amount) AS revenue
                         FROM orders o
+                        JOIN ' . $revenueEvents . ' event ON event.order_id = o.id
                         LEFT JOIN regions region ON region.id = o.region_id
                         LEFT JOIN regions parent ON parent.id = region.parent_id
-                        WHERE ' . $valid . ' AND ' . $dateRange . '
+                        WHERE ' . $dateRange . '
                         GROUP BY COALESCE(parent.name, region.name, NULLIF(o.region_name, \'\'), \'Chưa phân vùng\')
                         ORDER BY revenue DESC';
                 break;
             case 'payments':
-                $sql = 'SELECT COALESCE(payment.method, \'unknown\') AS method_name, COUNT(*) AS order_count,
-                               SUM(o.total_amount) AS revenue
-                        FROM orders o
-                        LEFT JOIN payments payment ON payment.id = (
-                            SELECT MAX(latest.id) FROM payments latest WHERE latest.order_id = o.id
-                        )
-                        WHERE ' . $valid . ' AND ' . $dateRange . '
-                        GROUP BY COALESCE(payment.method, \'unknown\')
+                $sql = 'SELECT event.method AS method_name,
+                               COUNT(DISTINCT CASE WHEN event.event_type = \'payment\' THEN event.order_id END) AS order_count,
+                               SUM(event.amount) AS revenue
+                        FROM ' . $revenueEvents . ' event
+                        WHERE ' . $dateRange . '
+                        GROUP BY event.method
                         ORDER BY revenue DESC';
                 break;
             case 'inventory':
@@ -279,15 +297,17 @@ final class ReportService
                         ORDER BY b.expires_at, b.id';
                 break;
             case 'flash_sales':
+                $parameters['campaign_from'] = $parameters['from_date'];
+                $parameters['campaign_to'] = $parameters['to_date'];
                 $sql = 'SELECT campaign.name AS campaign_name, p.name AS product_name, item.quota,
                                item.sold_quantity,
-                               COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN oi.line_total ELSE 0 END), 0) AS revenue
+                               COALESCE(SUM(event.amount), 0) AS revenue
                         FROM flash_sale_items item
                         JOIN flash_sales campaign ON campaign.id = item.flash_sale_id
                         JOIN products p ON p.id = item.product_id
-                        LEFT JOIN order_items oi ON oi.flash_sale_item_id = item.id
-                        LEFT JOIN orders o ON o.id = oi.order_id AND ' . $valid . '
-                        WHERE campaign.starts_at < :to_date AND campaign.ends_at >= :from_date
+                        LEFT JOIN ' . $productEvents . ' event
+                          ON event.flash_sale_item_id = item.id AND ' . $dateRange . '
+                        WHERE campaign.starts_at < :campaign_to AND campaign.ends_at >= :campaign_from
                         GROUP BY campaign.id, campaign.name, campaign.starts_at,
                                  item.id, p.id, p.name, item.quota, item.sold_quantity
                         ORDER BY campaign.starts_at DESC, campaign.name, p.name';

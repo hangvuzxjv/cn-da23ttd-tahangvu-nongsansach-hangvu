@@ -237,8 +237,9 @@ final class FlashSaleService
         )->execute(['order_id' => $orderId]);
     }
 
-    public function customerCampaigns(?int $userId = null): array
+    public function customerCampaigns(?int $userId = null, bool $includeEnded = false): array
     {
+        $endedFilter = $includeEnded ? '' : ' AND fs.ends_at > ' . self::LOCAL_NOW_SQL;
         $statement = $this->database->prepare(
             "SELECT fs.id AS campaign_id, fs.name AS campaign_name, fs.description,
                     fs.banner_url, fs.starts_at, fs.ends_at,
@@ -286,9 +287,13 @@ final class FlashSaleService
                  GROUP BY flash_sale_item_id
              ) user_purchases ON user_purchases.flash_sale_item_id = fsi.id
              WHERE fs.status NOT IN ('draft','cancelled')
-               AND fs.ends_at > " . self::LOCAL_NOW_SQL . "
+               $endedFilter
              ORDER BY
-                CASE WHEN fs.starts_at <= " . self::LOCAL_NOW_SQL . " THEN 0 ELSE 1 END,
+                CASE
+                    WHEN fs.ends_at <= " . self::LOCAL_NOW_SQL . " THEN 2
+                    WHEN fs.starts_at <= " . self::LOCAL_NOW_SQL . " THEN 0
+                    ELSE 1
+                END,
                 fs.starts_at, fs.ends_at, fs.id, fsi.sort_order, fsi.id"
         );
         $statement->execute(['user_id' => $userId ?? 0]);
@@ -558,6 +563,7 @@ final class FlashSaleService
 
     public function adminCampaigns(?int $limit = null, int $offset = 0): array
     {
+        $productRevenueEvents = PaymentRevenueService::productRevenueEventsSubquery();
         $sql = "SELECT fs.*,
                     CASE
                         WHEN fs.status IN ('draft','cancelled') THEN fs.status
@@ -568,8 +574,8 @@ final class FlashSaleService
                     COALESCE(item_stats.item_count, 0) AS item_count,
                     COALESCE(item_stats.sold, 0) AS sold,
                     COALESCE(item_stats.quota, 0) AS quota,
-                    COALESCE(purchase_stats.revenue, 0) AS revenue,
-                    COALESCE(purchase_stats.buyers, 0) AS buyers
+                    COALESCE(purchase_revenue.revenue, 0) AS revenue,
+                    COALESCE(purchase_buyers.buyers, 0) AS buyers
              FROM flash_sales fs
              LEFT JOIN (
                  SELECT flash_sale_id, COUNT(*) AS item_count,
@@ -577,16 +583,24 @@ final class FlashSaleService
                  FROM flash_sale_items GROUP BY flash_sale_id
              ) item_stats ON item_stats.flash_sale_id = fs.id
              LEFT JOIN (
-                 SELECT fsi.flash_sale_id,
-                        SUM(oi.line_total) AS revenue,
-                        COUNT(DISTINCT fsp.user_id) AS buyers
+                 SELECT fsi.flash_sale_id, SUM(event.amount) AS revenue
+                 FROM flash_sale_items fsi
+                 JOIN " . $productRevenueEvents . " event ON event.flash_sale_item_id = fsi.id
+                 GROUP BY fsi.flash_sale_id
+             ) purchase_revenue ON purchase_revenue.flash_sale_id = fs.id
+             LEFT JOIN (
+                 SELECT fsi.flash_sale_id, COUNT(DISTINCT fsp.user_id) AS buyers
                  FROM flash_sale_purchases fsp
                  JOIN flash_sale_items fsi ON fsi.id = fsp.flash_sale_item_id
-                 LEFT JOIN order_items oi
-                   ON oi.order_id = fsp.order_id AND oi.flash_sale_item_id = fsp.flash_sale_item_id
-                 WHERE fsp.status IN ('reserved','confirmed')
+                 WHERE fsp.status = 'confirmed'
+                   AND EXISTS (
+                       SELECT 1 FROM payments payment
+                       WHERE payment.order_id = fsp.order_id
+                         AND payment.status IN ('paid', 'refunded') AND payment.paid_at IS NOT NULL
+                         AND (payment.status = 'paid' OR payment.refunded_at IS NOT NULL)
+                   )
                  GROUP BY fsi.flash_sale_id
-             ) purchase_stats ON purchase_stats.flash_sale_id = fs.id
+             ) purchase_buyers ON purchase_buyers.flash_sale_id = fs.id
              ORDER BY fs.starts_at DESC, fs.id DESC";
         if ($limit !== null) {
             $sql .= ' LIMIT :limit OFFSET :offset';
@@ -602,6 +616,7 @@ final class FlashSaleService
 
     public function campaignForAdmin(int $campaignId): ?array
     {
+        $productRevenueEvents = PaymentRevenueService::productRevenueEventsSubquery();
         $query = $this->database->prepare(
             "SELECT fs.*,
                     CASE
@@ -624,12 +639,9 @@ final class FlashSaleService
                     COALESCE(purchases.revenue, 0) AS revenue
              FROM flash_sale_items fsi JOIN products p ON p.id = fsi.product_id
              LEFT JOIN (
-                 SELECT fsp.flash_sale_item_id, SUM(oi.line_total) AS revenue
-                 FROM flash_sale_purchases fsp
-                 LEFT JOIN order_items oi
-                   ON oi.order_id = fsp.order_id AND oi.flash_sale_item_id = fsp.flash_sale_item_id
-                 WHERE fsp.status IN ('reserved','confirmed')
-                 GROUP BY fsp.flash_sale_item_id
+                 SELECT event.flash_sale_item_id, SUM(event.amount) AS revenue
+                 FROM " . $productRevenueEvents . " event
+                 GROUP BY event.flash_sale_item_id
              ) purchases ON purchases.flash_sale_item_id = fsi.id
              LEFT JOIN (
                  SELECT b.product_id, SUM(GREATEST(0, b.quantity_remaining - COALESCE(r.reserved, 0))) AS available

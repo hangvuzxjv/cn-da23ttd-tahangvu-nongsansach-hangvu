@@ -7,14 +7,14 @@
 <div class="card mb-3"><div class="card-body">
     <div class="row g-3">
         <div class="col-md-4"><strong>Khách hàng:</strong> <?= e($payment['customer_name']) ?> (<?= e($payment['customer_email']) ?>)</div>
-        <div class="col-md-4"><strong>Phương thức:</strong> <?= e($payment['method']) ?></div>
-        <div class="col-md-4"><strong>Trạng thái giao dịch:</strong> <?= e($payment['order_status'] === 'delivery_failed' && $payment['method'] === 'cod' && $payment['status'] === 'failed' ? 'Không thu được tiền' : $payment['status']) ?></div>
+        <div class="col-md-4"><strong>Phương thức:</strong> <?= e(PaymentLabels::method((string) $payment['method'])) ?></div>
+        <div class="col-md-4"><strong>Trạng thái giao dịch:</strong> <span class="status-badge <?= e(PaymentLabels::statusBadgeClass((string) $payment['status'])) ?>"><?= e(PaymentLabels::status((string) $payment['status'])) ?></span></div>
         <?php if (!empty($payment['refund_required'])): ?><div class="col-md-4"><strong>Hoàn tiền:</strong> <span class="badge text-bg-warning">Cần hoàn tiền</span></div><?php elseif (!empty($payment['refund_reference'])): ?><div class="col-md-4"><strong>Tham chiếu hoàn tiền:</strong> <?= e($payment['refund_reference']) ?></div><?php endif; ?>
         <div class="col-md-4"><strong>Số tiền giao dịch:</strong> <?= number_format((float) $payment['amount'], 0, ',', '.') ?> ₫</div>
         <div class="col-md-4"><strong>Tổng đơn:</strong> <?= number_format((float) $payment['total_amount'], 0, ',', '.') ?> ₫</div>
         <div class="col-md-4"><strong>Mã tham chiếu:</strong> <?= e($payment['transaction_ref'] ?? '—') ?></div>
-        <div class="col-md-4"><strong>Tạo lúc:</strong> <?= e($payment['created_at']) ?></div>
-        <div class="col-md-4"><strong>Thanh toán lúc:</strong> <?= e($payment['paid_at'] ?? '—') ?></div>
+        <div class="col-md-4"><strong>Tạo lúc:</strong> <?= e(PaymentLabels::dateTime($payment['created_at'])) ?></div>
+        <div class="col-md-4"><strong>Thanh toán lúc:</strong> <?= e(PaymentLabels::dateTime($payment['paid_at'] ?? null)) ?></div>
     </div>
     <?php if ($payment['proof_path']): ?><hr><a href="<?= e(url('/admin/payments/' . $payment['id'] . '/proof')) ?>" target="_blank" rel="noopener">Xem ảnh biên lai</a><?php endif; ?>
     <?php if ($payment['raw_response']): ?><hr><h2 class="h6">Thông tin giao dịch đã lọc</h2><pre class="small mb-0"><?= e(json_encode($payment['raw_response'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)) ?></pre><?php endif; ?>

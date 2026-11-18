@@ -27,6 +27,14 @@ final class StorefrontController extends Controller
         $newest = $this->fetchProducts('1 = 1', [], 'p.created_at DESC', 8);
         $bestselling = $this->fetchProducts('1 = 1', [], 'COALESCE(sales.sold, 0) DESC, p.created_at DESC', 8);
         $userId = $this->currentUserId();
+        $voucherWallet = new VoucherWalletService($database);
+        $publicVouchers = $voucherWallet->publicVouchers($userId, 3);
+        $usableVoucherCount = $userId === null
+            ? 0
+            : count(array_filter(
+                $voucherWallet->walletForUser($userId),
+                static fn (array $voucher): bool => $voucher['wallet_status'] === 'available'
+            ));
         $engagement = new CustomerEngagementService($database);
         $recentProducts = $this->recentlyViewedProducts();
         $flashService = new FlashSaleService($database);
@@ -56,6 +64,9 @@ final class StorefrontController extends Controller
             'flashSaleLoggedIn' => $userId !== null,
             'wishlistIds' => $userId === null ? [] : $engagement->wishlistProductIds($userId),
             'recentProducts' => $recentProducts,
+            'publicVouchers' => $publicVouchers,
+            'usableVoucherCount' => $usableVoucherCount,
+            'loadProductSearch' => true,
         ]);
     }
 
@@ -63,7 +74,7 @@ final class StorefrontController extends Controller
     {
         $service = new FlashSaleService();
         $userId = $this->currentUserId();
-        $campaigns = $this->groupFlashSaleOffers($service->customerCampaigns($userId));
+        $campaigns = $this->groupFlashSaleOffers($service->customerCampaigns($userId, true));
         $this->view('client/flash-sales', [
             'title' => 'Flash Sale',
             'metaDescription' => 'Khám phá các chương trình Flash Sale đang diễn ra và sắp bắt đầu.',
@@ -94,6 +105,85 @@ final class StorefrontController extends Controller
     public function shop(): void
     {
         $this->listing();
+    }
+
+    public function search(): void
+    {
+        $queryInput = $_GET['q'] ?? '';
+        if (!is_scalar($queryInput)) {
+            http_response_code(400);
+            View::renderError(400);
+            return;
+        }
+
+        $query = trim((string) $queryInput);
+        $query = mb_substr($query, 0, 100, 'UTF-8');
+        $batchCode = $query === '' ? null : $this->findExactBatchCode($query);
+        if ($batchCode !== null) {
+            redirect('/truy-xuat/' . rawurlencode($batchCode));
+        }
+
+        redirect($query === '' ? '/san-pham' : '/san-pham?' . http_build_query(['q' => $query]));
+    }
+
+    public function suggestions(): Response
+    {
+        $queryInput = $_GET['q'] ?? '';
+        if (!is_scalar($queryInput)) {
+            return new Response(
+                json_encode(['items' => []], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+                400,
+                ['Content-Type' => 'application/json; charset=UTF-8', 'Cache-Control' => 'no-store']
+            );
+        }
+
+        $query = mb_substr(trim((string) $queryInput), 0, 100, 'UTF-8');
+        $items = [];
+        if (mb_strlen($query, 'UTF-8') >= 2) {
+            $parameters = [];
+            $condition = $this->productSearchCondition($query, $parameters, 'suggest');
+            $statement = Database::connection()->prepare(
+                'SELECT p.name, p.slug, COALESCE(p.sale_price, p.price) AS price,
+                        COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url
+                 FROM products p
+                 JOIN categories c ON c.id = p.category_id AND c.is_active = 1
+                 JOIN regions r ON r.id = p.region_id AND r.is_active = 1
+                 LEFT JOIN (
+                     SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
+                     FROM product_images GROUP BY product_id
+                 ) images ON images.product_id = p.id
+                 WHERE p.status = \'active\' AND p.deleted_at IS NULL AND ' . $condition . '
+                 ORDER BY p.is_featured DESC, p.created_at DESC, p.id DESC LIMIT 6'
+            );
+            $statement->execute($parameters);
+            foreach ($statement->fetchAll() as $product) {
+                $items[] = [
+                    'type' => 'product',
+                    'name' => (string) $product['name'],
+                    'price' => (float) $product['price'],
+                    'image' => asset((string) $product['image_url']),
+                    'url' => url('/san-pham/' . rawurlencode((string) $product['slug'])),
+                ];
+            }
+
+            $batchCode = $this->findExactBatchCode($query);
+            if ($batchCode !== null) {
+                $items[] = [
+                    'type' => 'batch',
+                    'label' => 'Truy xuất lô ' . $batchCode,
+                    'url' => url('/truy-xuat/' . rawurlencode($batchCode)),
+                ];
+            }
+        }
+
+        return new Response(
+            json_encode(
+                ['items' => $items],
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT
+            ),
+            200,
+            ['Content-Type' => 'application/json; charset=UTF-8', 'Cache-Control' => 'no-store']
+        );
     }
 
     public function region(string $slug): void
@@ -330,9 +420,9 @@ final class StorefrontController extends Controller
             $filterErrors[] = 'Giá tối thiểu không thể lớn hơn giá tối đa.';
         }
         $validPriceRange = $minimum === null || $maximum === null || $minimum <= $maximum;
-        if (strlen($query) > 200) {
-            $query = mb_substr($query, 0, 200, 'UTF-8');
-            $filterErrors[] = 'Từ khóa tìm kiếm đã được giới hạn ở 200 ký tự.';
+        if (mb_strlen($query, 'UTF-8') > 100) {
+            $query = mb_substr($query, 0, 100, 'UTF-8');
+            $filterErrors[] = 'Từ khóa tìm kiếm đã được giới hạn ở 100 ký tự.';
         }
         $sortInput = $_GET['sort'] ?? 'newest';
         $sort = is_scalar($sortInput) ? (string) $sortInput : '';
@@ -346,8 +436,7 @@ final class StorefrontController extends Controller
         $conditions = ['p.status = \'active\'', 'p.deleted_at IS NULL'];
         $parameters = [];
         if ($query !== '') {
-            $conditions[] = 'p.name LIKE :search_query';
-            $parameters['search_query'] = '%' . $query . '%';
+            $conditions[] = $this->productSearchCondition($query, $parameters, 'search');
         }
         if ($scopeType === 'category') {
             $conditions[] = 'p.category_id IN (' . $this->inClause($scope['category']['category_ids'], 'scope_category', $parameters) . ')';
@@ -506,6 +595,44 @@ final class StorefrontController extends Controller
         $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
         $statement->execute();
         return $statement->fetchAll();
+    }
+
+    private function productSearchCondition(string $query, array &$parameters, string $prefix): string
+    {
+        $normalized = str_replace(['đ', 'Đ'], 'd', $query);
+        $escaped = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalized);
+        $fields = [
+            'name' => 'p.name',
+            'sku' => 'p.sku',
+            'category' => 'c.name',
+            'region' => 'r.name',
+        ];
+        $conditions = [];
+        foreach ($fields as $key => $field) {
+            $parameter = $prefix . '_' . $key;
+            $parameters[$parameter] = '%' . $escaped . '%';
+            $conditions[] = "REPLACE(REPLACE($field, 'đ', 'd'), 'Đ', 'd') COLLATE utf8mb4_unicode_ci LIKE :$parameter ESCAPE '='";
+        }
+
+        return '(' . implode(' OR ', $conditions) . ')';
+    }
+
+    private function findExactBatchCode(string $query): ?string
+    {
+        $normalized = preg_replace('/[\s\x{00A0}]+/u', '', $query);
+        if ($normalized === null || $normalized === '') {
+            return null;
+        }
+
+        $statement = Database::connection()->prepare(
+            "SELECT batch_code FROM product_batches
+             WHERE LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(batch_code, ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(11), ''), CHAR(12), ''), CHAR(13), ''), CONVERT(0xC2A0 USING utf8mb4), ''))
+                   COLLATE utf8mb4_unicode_ci = :batch_code COLLATE utf8mb4_unicode_ci
+             LIMIT 2"
+        );
+        $statement->execute(['batch_code' => mb_strtolower($normalized, 'UTF-8')]);
+        $matches = $statement->fetchAll(PDO::FETCH_COLUMN);
+        return count($matches) === 1 ? (string) $matches[0] : null;
     }
 
     private function recordRecentlyViewed(int $productId): void

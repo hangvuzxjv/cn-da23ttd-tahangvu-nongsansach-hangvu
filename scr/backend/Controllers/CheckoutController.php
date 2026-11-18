@@ -74,6 +74,14 @@ final class CheckoutController extends Controller
             flash('error', 'Giỏ hàng đang trống.');
             redirect('/gio-hang');
         }
+        $walletVouchers = [];
+        if (array_filter($cart['items'], static fn (array $item): bool => !$item['valid']) === []) {
+            $walletVouchers = (new VoucherWalletService())->checkoutOptions(
+                (int) $user['id'],
+                $this->validPricingItems($cart['items']),
+                (int) $cart['subtotal']
+            );
+        }
         Session::start();
         if (!isset($_SESSION['_checkout_token'])) {
             $_SESSION['_checkout_token'] = bin2hex(random_bytes(32));
@@ -110,16 +118,29 @@ final class CheckoutController extends Controller
         $initialQuote = null;
         if ($selectedRegionId && array_filter($cart['items'], static fn (array $item): bool => !$item['valid']) === []) {
             try {
+                $voucherCode = trim((string) ($oldInput['voucher_code'] ?? ''));
+                if ($voucherCode !== '') {
+                    (new VoucherWalletService())->assertCanUseCode((int) $user['id'], $voucherCode);
+                }
                 $initialQuote = (new PricingService())->quote(
                     $this->validPricingItems($cart['items']),
                     $selectedRegionId,
-                    trim((string) ($oldInput['voucher_code'] ?? '')) ?: null,
+                    $voucherCode !== '' ? $voucherCode : null,
                     (int) $user['id']
                 );
             } catch (PricingException | InventoryException) {
                 $initialQuote = null;
             }
         }
+        $codInput = $oldInput;
+        if (!array_key_exists('address_id', $codInput)) {
+            $codInput['address_id'] = $defaultAddress ?? '';
+        }
+        $codAvailability = (new CodRiskService())->assessCheckoutInput(
+            (int) $user['id'],
+            $codInput,
+            (int) ($initialQuote['total'] ?? $cart['subtotal'])
+        );
         $this->view('client/checkout', [
             'title' => 'Thanh toán',
             'cart' => $cart,
@@ -130,7 +151,9 @@ final class CheckoutController extends Controller
             'errors' => flash('checkout_errors') ?? [],
             'oldInput' => $oldInput,
             'initialQuote' => $initialQuote,
+            'walletVouchers' => $walletVouchers,
             'paymentMethods' => $paymentService->enabledMethods(),
+            'codAvailability' => $codAvailability,
         ]);
     }
 
@@ -143,15 +166,49 @@ final class CheckoutController extends Controller
                 throw new PricingException('Chọn địa chỉ nhận hàng để tính phí vận chuyển.');
             }
             $items = $this->validPricingItems($cart['items']);
+            $voucherCode = trim((string) ($_POST['voucher_code'] ?? ''));
+            if ($voucherCode !== '') {
+                (new VoucherWalletService())->assertCanUseCode($this->userId() ?? 0, $voucherCode);
+            }
             $quote = (new PricingService())->quote(
                 $items,
                 (int) $regionId,
-                trim((string) ($_POST['voucher_code'] ?? '')) ?: null,
+                $voucherCode !== '' ? $voucherCode : null,
                 $this->userId()
             );
-            return Response::json(true, 'Đã tính lại tổng tiền.', $this->formatQuote($quote));
+            $data = $this->formatQuote($quote);
+            $codAvailability = (new CodRiskService())->assessCheckoutInput(
+                (int) $this->userId(),
+                $_POST,
+                (int) $quote['total']
+            );
+            $data['cod_available'] = $codAvailability['allowed'];
+            $data['cod_message'] = $codAvailability['message'];
+            return Response::json(true, 'Đã tính lại tổng tiền.', $data);
         } catch (PricingException | InventoryException | InvalidArgumentException $exception) {
-            return Response::json(false, $exception->getMessage(), [], 422);
+            $data = [];
+            $fallbackRegionId = filter_var($_POST['region_id'] ?? null, FILTER_VALIDATE_INT);
+            if ($fallbackRegionId !== false && $fallbackRegionId > 0) {
+                try {
+                    $cart = (new CartService())->summary($this->userId());
+                    $baseQuote = (new PricingService())->quote(
+                        $this->validPricingItems($cart['items']),
+                        $fallbackRegionId,
+                        null,
+                        $this->userId()
+                    );
+                    $codAvailability = (new CodRiskService())->assessCheckoutInput(
+                        (int) $this->userId(),
+                        $_POST,
+                        (int) $baseQuote['total']
+                    );
+                    $data['cod_available'] = $codAvailability['allowed'];
+                    $data['cod_message'] = $codAvailability['message'];
+                } catch (PricingException | InventoryException | InvalidArgumentException $fallbackException) {
+                    error_log('Checkout COD preview fallback failed: ' . $fallbackException->getMessage());
+                }
+            }
+            return Response::json(false, $exception->getMessage(), $data, 422);
         } catch (HttpException $exception) {
             return Response::json(false, $exception->getMessage(), [], $exception->status());
         } catch (PDOException $exception) {
@@ -194,7 +251,7 @@ final class CheckoutController extends Controller
             throw $exception;
         }
         unset($_SESSION['_checkout_token']);
-        if (empty($result['existing'])) {
+        if (empty($result['existing']) && ($result['payment_method'] ?? 'cod') === 'cod') {
             $this->sendConfirmation($result, $user);
         }
         $this->redirectAfterPlace((int) $result['id'], (int) $user['id']);
@@ -400,12 +457,14 @@ final class CheckoutController extends Controller
              FROM delivery_failures WHERE order_id = :id LIMIT 1'
         );
         $failureQuery->execute(['id' => (int) $id]);
+        $returnContext = (new OrderReturnService())->customerOrderContext((int) $id, (int) $this->userId());
         $this->view('client/order-detail', [
             'title' => 'Chi tiết ' . $order['order_no'],
             'order' => $order,
             'deliveryFailure' => $failureQuery->fetch() ?: null,
             'items' => $this->orderItems((int) $id),
             'history' => $this->orderHistory((int) $id),
+            'returnContext' => $returnContext,
             'success' => flash('success'),
             'error' => flash('error'),
         ]);

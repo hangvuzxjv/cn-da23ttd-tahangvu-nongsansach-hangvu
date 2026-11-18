@@ -104,6 +104,36 @@
     const voucherForm = document.getElementById('voucherPreviewForm');
     const quoteTarget = document.getElementById('checkoutQuote');
     const quoteMessage = document.getElementById('voucherPreviewMessage');
+    const updateCodAvailability = (available, message) => {
+        const codMethod = document.getElementById('paycod');
+        const notice = document.getElementById('codRiskNotice');
+        const orderForm = document.getElementById('placeOrderForm');
+        const placeButton = document.getElementById('placeOrderButton');
+        if (codMethod) codMethod.disabled = !available;
+        if (notice) {
+            notice.hidden = available;
+            notice.textContent = available ? '' : message;
+        }
+        if (!available && codMethod?.checked && orderForm) {
+            const alternative = orderForm.querySelector('input[name="payment_method"]:not(:disabled)');
+            if (alternative) alternative.checked = true;
+        }
+        if (placeButton && orderForm) {
+            const hasPaymentMethod = Boolean(orderForm.querySelector('input[name="payment_method"]:checked:not(:disabled)'));
+            placeButton.disabled = placeButton.dataset.cartValid !== '1' || !hasPaymentMethod;
+        }
+    };
+    document.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const button = target.closest('[data-use-wallet-voucher]');
+        if (!button || !(voucherForm instanceof HTMLFormElement)) return;
+        const code = button.getAttribute('data-use-wallet-voucher') || '';
+        const codeInput = document.getElementById('voucherCode');
+        if (!(codeInput instanceof HTMLInputElement)) return;
+        codeInput.value = code;
+        voucherForm.requestSubmit();
+    });
     const toggleAddress = () => {
         if (!newAddress) return;
         newAddress.hidden = Boolean(addressSelect?.value);
@@ -122,6 +152,12 @@
             : regionSelect?.value || '';
         if (!selectedRegion) return;
         data.set('region_id', selectedRegion);
+        if (orderForm) {
+            ['address_id', 'phone', 'address_line', 'ward'].forEach((name) => {
+                const field = orderForm.elements.namedItem(name);
+                if (field && 'value' in field) data.set(name, field.value);
+            });
+        }
         const token = csrf;
         data.set('_token', token);
         try {
@@ -132,6 +168,9 @@
                 credentials: 'same-origin'
             });
             const result = await readResponse(response);
+            if (typeof result.data.cod_available === 'boolean') {
+                updateCodAvailability(result.data.cod_available, result.data.cod_message || '');
+            }
             if (!response.ok || !result.success) throw new Error(result.message || 'Không thể tính tổng tiền.');
             const quote = result.data;
             quoteTarget.querySelector('[data-subtotal]').textContent = quote.formatted_subtotal;
@@ -160,4 +199,13 @@
     voucherForm?.addEventListener('submit', (event) => { event.preventDefault(); preview(); });
     addressSelect?.addEventListener('change', preview);
     regionSelect?.addEventListener('change', preview);
+    const orderForm = document.getElementById('placeOrderForm');
+    let codPreviewTimer = 0;
+    ['phone', 'address_line', 'ward'].forEach((name) => {
+        const field = orderForm?.elements.namedItem(name);
+        field?.addEventListener('input', () => {
+            window.clearTimeout(codPreviewTimer);
+            codPreviewTimer = window.setTimeout(preview, 350);
+        });
+    });
 })();

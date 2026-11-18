@@ -177,10 +177,20 @@ final class ProfileController extends Controller
         $regions = Database::connection()->query(
             'SELECT id, name FROM regions WHERE level = 2 AND is_active = 1 ORDER BY name'
         )->fetchAll();
+        $formState = [
+            'recipient_name' => (string) old('recipient_name'),
+            'phone' => (string) old('phone'),
+            'region_id' => (string) old('region_id'),
+            'address_line' => (string) old('address_line'),
+            'ward' => (string) old('ward'),
+            'is_default' => (string) old('is_default'),
+            'address_id' => (string) old('_address_id'),
+        ];
         $this->view('client/addresses', [
             'title' => 'Sổ địa chỉ',
             'addresses' => $statement->fetchAll(),
             'regions' => $regions,
+            'formState' => $formState,
             'errors' => form_errors(),
             'success' => flash('success'),
             'error' => flash('error'),
@@ -197,13 +207,48 @@ final class ProfileController extends Controller
         $this->persistAddress((int) $id);
     }
 
+    public function setDefaultAddress(string $id): void
+    {
+        $user = Auth::user();
+        $database = Database::connection();
+        $database->beginTransaction();
+        try {
+            $owned = $database->prepare(
+                'SELECT id FROM addresses WHERE id = :id AND user_id = :user_id FOR UPDATE'
+            );
+            $owned->execute(['id' => (int) $id, 'user_id' => (int) $user['id']]);
+            if ($owned->fetchColumn() === false) {
+                $database->rollBack();
+                flash('error', 'Không tìm thấy địa chỉ thuộc tài khoản của bạn.');
+                redirect('/addresses');
+            }
+
+            $database->prepare('UPDATE addresses SET is_default = 0 WHERE user_id = :user_id')
+                ->execute(['user_id' => (int) $user['id']]);
+            $database->prepare(
+                'UPDATE addresses SET is_default = 1 WHERE id = :id AND user_id = :user_id'
+            )->execute(['id' => (int) $id, 'user_id' => (int) $user['id']]);
+            $database->commit();
+        } catch (Throwable $exception) {
+            if ($database->inTransaction()) {
+                $database->rollBack();
+            }
+            throw $exception;
+        }
+
+        flash('success', 'Đã đặt địa chỉ mặc định.');
+        redirect('/addresses');
+    }
+
     public function deleteAddress(string $id): void
     {
         $user = Auth::user();
         $database = Database::connection();
         $database->beginTransaction();
         try {
-            $find = $database->prepare('SELECT is_default FROM addresses WHERE id = :id AND user_id = :user_id');
+            $find = $database->prepare(
+                'SELECT is_default FROM addresses WHERE id = :id AND user_id = :user_id FOR UPDATE'
+            );
             $find->execute(['id' => $id, 'user_id' => $user['id']]);
             $address = $find->fetch();
             if (!$address) {
@@ -214,12 +259,17 @@ final class ProfileController extends Controller
             $database->prepare('DELETE FROM addresses WHERE id = :id AND user_id = :user_id')
                 ->execute(['id' => $id, 'user_id' => $user['id']]);
             if ((int) $address['is_default'] === 1) {
-                $replacement = $database->prepare('SELECT id FROM addresses WHERE user_id = :user_id ORDER BY id LIMIT 1');
+                $replacement = $database->prepare(
+                    'SELECT id FROM addresses WHERE user_id = :user_id ORDER BY id DESC LIMIT 1'
+                );
                 $replacement->execute(['user_id' => $user['id']]);
                 $replacementId = $replacement->fetchColumn();
                 if ($replacementId !== false) {
-                    $database->prepare('UPDATE addresses SET is_default = 1 WHERE id = :id')
-                        ->execute(['id' => $replacementId]);
+                    $database->prepare('UPDATE addresses SET is_default = 0 WHERE user_id = :user_id')
+                        ->execute(['user_id' => $user['id']]);
+                    $database->prepare(
+                        'UPDATE addresses SET is_default = 1 WHERE id = :id AND user_id = :user_id'
+                    )->execute(['id' => $replacementId, 'user_id' => $user['id']]);
                 }
             }
             $database->commit();
@@ -268,7 +318,9 @@ final class ProfileController extends Controller
             }
         }
         if ($errors !== []) {
-            remember_form_data($input);
+            $formData = $input;
+            $formData['_address_id'] = $addressId === null ? '' : (string) $addressId;
+            remember_form_data($formData);
             flash('validation_errors', $errors);
             redirect('/addresses');
         }

@@ -1,5 +1,5 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-    <div><h1 class="h2 mb-1">Báo cáo thống kê</h1><p class="text-secondary mb-0">Doanh thu dựa trên số tiền và giá sản phẩm đã chụp tại thời điểm đặt hàng.</p></div>
+    <div><h1 class="h2 mb-1">Báo cáo thống kê</h1><p class="text-secondary mb-0">Tiền nhận dựa trên các giao dịch đã thanh toán, theo thời điểm thanh toán; giao dịch đã hoàn được loại trừ.</p></div>
     <a class="btn btn-outline-success" href="<?= e(url('/admin/reports.csv?' . http_build_query(['type' => $type, 'from' => $from, 'to' => $to]))) ?>">Xuất CSV · UTF-8</a>
 </div>
 <?php if ($error): ?><div class="alert alert-warning"><?= e($error) ?></div><?php endif; ?>

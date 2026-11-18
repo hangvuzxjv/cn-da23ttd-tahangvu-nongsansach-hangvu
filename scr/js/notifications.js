@@ -7,6 +7,7 @@
     const pageMessage = document.querySelector('[data-notification-page-message]');
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
     const baseUrl = document.querySelector('meta[name="app-base-url"]')?.content || '/';
+    const itemLimit = Number(list?.dataset.notificationLimit) || 8;
     if (!list || !itemsList || !count) return;
     const csrfHeaders = { 'X-CSRF-Token': csrf, Accept: 'application/json' };
     const csrfBody = () => new URLSearchParams({ _token: csrf });
@@ -23,7 +24,7 @@
             itemsList.append(empty);
             return;
         }
-        data.items.slice(0, 8).forEach((item) => {
+        data.items.slice(0, itemLimit).forEach((item) => {
             const link = document.createElement('a');
             link.className = `notification-item${item.read_at ? '' : ' is-unread'}`;
             const target = typeof item.link_url === 'string' && /^\/(?!\/)/.test(item.link_url)

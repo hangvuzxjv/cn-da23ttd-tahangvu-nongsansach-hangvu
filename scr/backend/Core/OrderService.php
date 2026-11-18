@@ -41,14 +41,18 @@ final class OrderService
     {
         $token = (string) ($input['idempotency_token'] ?? '');
         $paymentMethod = (string) ($input['payment_method'] ?? 'cod');
+        $paymentService = new PaymentService($this->database, $this->paymentConfiguration);
         if ($userId < 1 || preg_match('/\A[a-f0-9]{64}\z/', $token) !== 1) {
             throw new InvalidArgumentException('Phiên đặt hàng không hợp lệ. Hãy tải lại trang thanh toán.');
         }
         if (!in_array($paymentMethod, ['cod', 'bank_transfer', 'vnpay'], true)
-            || !isset((new PaymentService($this->database, $this->paymentConfiguration))->enabledMethods()[$paymentMethod])) {
+            || !isset($paymentService->enabledMethods()[$paymentMethod])) {
             throw new InvalidArgumentException('Phương thức thanh toán hiện không khả dụng.');
         }
-        (new PaymentService($this->database, $this->paymentConfiguration))->expirePending();
+        $paymentService->expirePending();
+        $codRiskService = new CodRiskService($this->database);
+        $codRiskLocks = [];
+        $notifyCodRiskUser = false;
         $this->database->beginTransaction();
         try {
             $existingQuery = $this->database->prepare('SELECT id, order_no FROM orders WHERE user_id = :user_id AND idempotency_token = :token FOR UPDATE');
@@ -101,6 +105,9 @@ final class OrderService
                 'unit_price' => (string) $item['current_price'],
             ], $items);
             $voucherCode = trim((string) ($input['voucher_code'] ?? ''));
+            if ($voucherCode !== '') {
+                (new VoucherWalletService($this->database))->assertCanUseCode($userId, $voucherCode, true);
+            }
             $quote = (new PricingService($this->database))->quote(
                 $pricingItems,
                 (int) $address['region_id'],
@@ -108,6 +115,24 @@ final class OrderService
                 $userId,
                 true
             );
+            if ($paymentMethod === 'cod') {
+                $codRiskLocks = $codRiskService->lockOrderIdentities(
+                    $userId,
+                    (string) $address['phone'],
+                    (string) $address['full_address']
+                );
+                $codRisk = $codRiskService->assess(
+                    $userId,
+                    (string) $address['phone'],
+                    (string) $address['full_address'],
+                    (int) $quote['total'],
+                    true
+                );
+                if (!$codRisk['allowed']) {
+                    $notifyCodRiskUser = !empty($codRisk['user_rule_a']);
+                    throw new PricingException($codRisk['message']);
+                }
+            }
             $orderNo = $this->nextOrderNumber();
             $onlinePayment = $paymentMethod !== 'cod';
             $this->database->prepare(
@@ -139,8 +164,9 @@ final class OrderService
             $orderId = (int) $this->database->lastInsertId();
 
             $inventory = new InventoryService($this->database);
+            $holdMinutes = 0;
             if ($onlinePayment) {
-                $holdMinutes = (new PaymentService($this->database, $this->paymentConfiguration))->holdMinutes();
+                $holdMinutes = $paymentService->holdMinutes();
                 $allocations = $inventory->reserveForOrder(
                     $orderId,
                     $pricingItems,
@@ -209,6 +235,11 @@ final class OrderService
                     'order_id' => $orderId,
                     'discount' => $this->decimal($quote['discount']),
                 ]);
+                (new VoucherWalletService($this->database))->markUsedIfHeld(
+                    $userId,
+                    (int) $quote['voucher']['id'],
+                    $orderId
+                );
             }
 
             $this->database->prepare(
@@ -229,22 +260,23 @@ final class OrderService
                  VALUES (:id, \'pending\', :note, :user_id)'
             )->execute(['id' => $orderId, 'note' => $historyNote, 'user_id' => $userId]);
             $historyId = (int) $this->database->lastInsertId();
-            $this->database->prepare(
-                'INSERT IGNORE INTO notifications
-                    (user_id, title, message, link_url, source_type, source_id)
-                 VALUES (:user_id, :title, :message, :link, \'order_status\', :source_id)'
-            )->execute([
-                'user_id' => $userId,
-                'title' => 'Đặt hàng thành công',
-                'message' => $onlinePayment
-                    ? 'Đơn hàng ' . $orderNo . ' đang chờ thanh toán.'
-                    : 'Đơn hàng ' . $orderNo . ' đã được tiếp nhận.',
-                'link' => '/tai-khoan/don-hang/' . $orderId,
-                'source_id' => $historyId,
-            ]);
+            $notifications = new NotificationService($this->database);
+            $notifications->notifyOrderPlaced(
+                $userId,
+                $orderId,
+                $historyId,
+                $orderNo,
+                $paymentMethod,
+                $holdMinutes
+            );
+            if (!$onlinePayment) {
+                $notifications->notifyAdminNewOrder($orderId, $orderNo, false);
+            }
             $this->database->prepare('DELETE FROM cart_items WHERE cart_id = :cart_id')->execute(['cart_id' => $cartId]);
             AuditLog::record($userId, 'order_placed', 'order', $orderId, $orderNo, $this->database);
             $this->database->commit();
+            $codRiskService->releaseLocks($codRiskLocks);
+            $codRiskLocks = [];
             return [
                 'id' => $orderId,
                 'order_no' => $orderNo,
@@ -258,6 +290,11 @@ final class OrderService
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();
             }
+            if ($notifyCodRiskUser) {
+                $codRiskService->notifyUserRuleAOnceSafely($userId);
+            }
+            $codRiskService->releaseLocks($codRiskLocks);
+            $codRiskLocks = [];
             $mysqlError = $exception instanceof PDOException ? (int) ($exception->errorInfo[1] ?? 0) : 0;
             if ($exception instanceof PDOException && $attempt < 2
                 && ($exception->getCode() === '40001' || in_array($mysqlError, [1205, 1213], true))) {
@@ -313,9 +350,16 @@ final class OrderService
                 (string) $order['order_no'],
                 $nextStatus
             );
+            if ($refund) {
+                $this->database->prepare(
+                    "UPDATE payments SET refunded_at = :refunded_at
+                     WHERE order_id = :id AND status = 'paid' AND refunded_at IS NULL"
+                )->execute(['refunded_at' => PaymentRevenueService::now(), 'id' => $orderId]);
+            }
             $this->database->prepare(
-                "UPDATE payments SET status = CASE WHEN :refunded = 1 AND status = 'paid' THEN 'refunded'
-                                                   WHEN status = 'pending' THEN 'failed' ELSE status END
+                "UPDATE payments
+                 SET status = CASE WHEN :refunded = 1 AND status = 'paid' THEN 'refunded'
+                                   WHEN status = 'pending' THEN 'failed' ELSE status END
                  WHERE order_id = :id"
             )->execute(['refunded' => $refund ? 1 : 0, 'id' => $orderId]);
             if ($nextPayment === 'refunded') {
@@ -543,8 +587,24 @@ final class OrderService
             );
         }
 
-        $this->database->beginTransaction();
+        $codRiskService = new CodRiskService($this->database);
+        $codRiskLocks = [];
         try {
+            $identityQuery = $this->database->prepare(
+                'SELECT user_id, recipient_phone, shipping_address FROM orders WHERE id = :id'
+            );
+            $identityQuery->execute(['id' => $orderId]);
+            $identity = $identityQuery->fetch();
+            if (!$identity) {
+                throw new InventoryException('Không tìm thấy đơn hàng.');
+            }
+            $codRiskLocks = $codRiskService->lockOrderIdentities(
+                (int) $identity['user_id'],
+                (string) $identity['recipient_phone'],
+                (string) $identity['shipping_address']
+            );
+
+            $this->database->beginTransaction();
             $query = $this->database->prepare('SELECT * FROM orders WHERE id = :id FOR UPDATE');
             $query->execute(['id' => $orderId]);
             $order = $query->fetch();
@@ -594,6 +654,7 @@ final class OrderService
                 throw new InventoryException('Số điện thoại người nhận của đơn hàng không hợp lệ.');
             }
             $addressKey = DeliveryFailureNormalizer::addressKey((string) $order['shipping_address']);
+            $countsAgainstCustomer = in_array($reason, ['customer_refused', 'unreachable'], true);
             $this->database->prepare(
                 'INSERT INTO delivery_failures
                     (order_id, user_id, phone_norm, address_key, reason, note, counts_against_customer)
@@ -605,7 +666,7 @@ final class OrderService
                 'address_key' => $addressKey,
                 'reason' => $reason,
                 'note' => $note === '' ? null : $note,
-                'counts' => in_array($reason, ['customer_refused', 'unreachable'], true) ? 1 : 0,
+                'counts' => $countsAgainstCustomer ? 1 : 0,
             ]);
 
             (new NotificationService($this->database))->notifyOrderStatus(
@@ -624,6 +685,11 @@ final class OrderService
                 $this->database
             );
             $this->database->commit();
+            if ($countsAgainstCustomer) {
+                $codRiskService->notifyUserRuleAOnceSafely((int) $order['user_id']);
+            }
+            $codRiskService->releaseLocks($codRiskLocks);
+            $codRiskLocks = [];
             (new NotificationService($this->database))->sendOrderStatusEmail(
                 (int) $order['user_id'],
                 $orderId,
@@ -633,6 +699,9 @@ final class OrderService
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
                 $this->database->rollBack();
+            }
+            if (isset($codRiskService, $codRiskLocks)) {
+                $codRiskService->releaseLocks($codRiskLocks);
             }
             throw $exception;
         }
@@ -706,6 +775,7 @@ final class OrderService
             'shipping' => ['completed', 'refunded'],
             'completed' => ['refunded'],
         ];
+        $firstDeliveredOrder = false;
         $this->database->beginTransaction();
         try {
             $sql = 'SELECT * FROM orders WHERE id = :id';
@@ -734,6 +804,14 @@ final class OrderService
                 if (!$customerConfirmation && !$automaticConfirmation && !$adminOverride) {
                     throw new InventoryException('Chỉ khách hàng, hệ thống hoặc quản trị viên có lý do mới được xác nhận đã giao.');
                 }
+                $deliveredCount = $this->database->prepare(
+                    "SELECT COUNT(DISTINCT h.order_id)
+                     FROM order_status_history h
+                     JOIN orders delivered ON delivered.id = h.order_id
+                     WHERE delivered.user_id = :user_id AND h.status = 'completed'"
+                );
+                $deliveredCount->execute(['user_id' => $order['user_id']]);
+                $firstDeliveredOrder = (int) $deliveredCount->fetchColumn() === 0;
             }
             if ($order['payment_status'] === 'pending') {
                 $online = $this->database->prepare(
@@ -765,9 +843,9 @@ final class OrderService
             if ($nextStatus === 'completed') {
                 $paymentStatus = 'paid';
                 $this->database->prepare(
-                    'UPDATE payments SET status = \'paid\', paid_at = NOW()
+                    'UPDATE payments SET status = \'paid\', paid_at = :paid_at
                      WHERE order_id = :id AND method = \'cod\' AND status = \'pending\''
-                )->execute(['id' => $orderId]);
+                )->execute(['paid_at' => PaymentRevenueService::now(), 'id' => $orderId]);
             } elseif ($nextStatus === 'cancelled' && $paymentStatus === 'pending') {
                 $paymentStatus = 'failed';
                 $this->database->prepare(
@@ -799,6 +877,12 @@ final class OrderService
                 $this->database
             );
             $this->database->commit();
+            if ($firstDeliveredOrder) {
+                (new VoucherWalletService($this->database))->grantFirstDeliveredOrderSafely(
+                    (int) $order['user_id'],
+                    $orderId
+                );
+            }
             (new NotificationService($this->database))->sendOrderStatusEmail(
                 (int) $order['user_id'],
                 $orderId,
@@ -952,6 +1036,7 @@ final class OrderService
         )->execute(['id' => $orderId]);
         $this->database->prepare('UPDATE vouchers SET used_count = CASE WHEN used_count > 0 THEN used_count - 1 ELSE 0 END WHERE id = :id')
             ->execute(['id' => $voucherId]);
+        (new VoucherWalletService($this->database))->releaseUsageForOrder($orderId);
     }
 
     private function restoreOrderResources(int $orderId, int $userId): void

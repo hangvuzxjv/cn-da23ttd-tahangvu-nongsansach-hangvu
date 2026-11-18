@@ -81,6 +81,7 @@ final class InventoryAdminController extends Controller
             'paginationLabel' => 'lô tồn kho',
             'warningDays' => $this->expiryWarningDays(),
             'canManage' => Auth::can('inventory.manage'),
+            'loadInventoryStockScript' => true,
             'success' => flash('success'),
             'error' => flash('error'),
         ]);
@@ -157,7 +158,7 @@ final class InventoryAdminController extends Controller
         $query->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
         $query->execute();
         $this->adminView('admin/inventory-movements', [
-            'title' => 'Sổ cái biến động',
+            'title' => 'Nhật ký kho',
             'rows' => $query->fetchAll(),
             'filters' => $filters,
             'products' => $database->query('SELECT id, name, sku FROM products ORDER BY name')->fetchAll(),
@@ -189,7 +190,7 @@ final class InventoryAdminController extends Controller
         $receiptQuery->execute();
         $receipts = $receiptQuery->fetchAll();
         $this->adminView('admin/inventory-receipts', [
-            'title' => 'Phiếu nhập kho',
+            'title' => 'Nhập hàng',
             'receipts' => $receipts,
             'page' => $page,
             'pages' => $pages,
@@ -202,6 +203,7 @@ final class InventoryAdminController extends Controller
                 'SELECT id, product_id, batch_code FROM product_batches WHERE status <> \'ended\' ORDER BY id DESC LIMIT 500'
             )->fetchAll(),
             'canManage' => Auth::can('inventory.manage'),
+            'loadInventoryReceiptsScript' => true,
             'success' => flash('success'),
             'error' => flash('error'),
         ]);
@@ -355,7 +357,7 @@ final class InventoryAdminController extends Controller
     {
         try {
             (new InventoryService())->cancelReceipt((int) $id, (int) Auth::user()['id'], trim((string) ($_POST['reason'] ?? '')));
-            flash('success', 'Đã hủy phiếu nhập bằng các movement điều chỉnh đảo.');
+            flash('success', 'Đã hủy phiếu nhập và ghi nhận các điều chỉnh tồn tương ứng.');
         } catch (InventoryException | InvalidArgumentException $exception) {
             flash('error', $exception->getMessage());
         }
@@ -431,7 +433,7 @@ final class InventoryAdminController extends Controller
             $items = $query->fetchAll();
         }
         $this->adminView('admin/inventory-stocktakes', [
-            'title' => 'Kiểm kê kho',
+            'title' => 'Kiểm kê',
             'stocktakes' => $stocktakes,
             'items' => $items,
             'selectedId' => (int) $selectedId,
@@ -441,6 +443,7 @@ final class InventoryAdminController extends Controller
             'paginationQuery' => $selectedId ? ['id' => (int) $selectedId] : [],
             'paginationLabel' => 'đợt kiểm kê',
             'canManage' => Auth::can('inventory.manage'),
+            'loadInventoryStocktakeScript' => true,
             'success' => flash('success'),
             'error' => flash('error'),
         ]);
@@ -532,7 +535,7 @@ final class InventoryAdminController extends Controller
     {
         try {
             (new InventoryService())->confirmStocktake((int) $id, (int) Auth::user()['id']);
-            flash('success', 'Đã xác nhận kiểm kê và tạo movement cho các chênh lệch.');
+            flash('success', 'Đã xác nhận kiểm kê và ghi nhận chênh lệch vào nhật ký kho.');
         } catch (InventoryException | InvalidArgumentException $exception) {
             flash('error', $exception->getMessage());
         }
@@ -759,9 +762,9 @@ final class InventoryAdminController extends Controller
             ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
             ['permission' => 'inventory.view', 'label' => 'Tồn kho', 'url' => '/admin/inventory/stock'],
             ['permission' => 'inventory.manage', 'label' => 'Phiếu nhập', 'url' => '/admin/inventory/receipts'],
-            ['permission' => 'inventory.view', 'label' => 'Sổ cái kho', 'url' => '/admin/inventory/movements'],
+            ['permission' => 'inventory.view', 'label' => 'Nhật ký kho', 'url' => '/admin/inventory/movements'],
             ['permission' => 'inventory.manage', 'label' => 'Kiểm kê', 'url' => '/admin/inventory/stocktakes'],
-            ['permission' => 'batches.view', 'label' => 'Lô hàng và truy xuất', 'url' => '/admin/batches'],
+            ['permission' => 'batches.view', 'label' => 'Lô hàng', 'url' => '/admin/batches'],
             ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],
         ];
         return array_values(array_filter($items, static fn (array $item): bool => Auth::can($item['permission'])));

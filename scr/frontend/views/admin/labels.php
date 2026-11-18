@@ -1,3 +1,4 @@
+<?php include FRONTEND_PATH . '/views/admin/_inventory-navigation.php'; ?>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 label-screen-controls"><h1 class="h2">Tem truy xuất nguồn gốc</h1><button class="btn btn-success" type="button" onclick="window.print()" <?= !$batches ? 'disabled' : '' ?>>In</button></div>
 <?php if ($error): ?><div class="alert alert-warning"><?= e($error) ?></div><?php elseif (!$batches): ?><div class="alert alert-warning">Không tìm thấy lô được chọn.</div><?php else: ?>
 <div class="label-grid"><?php foreach ($batches as $batch): ?><article class="trace-label">

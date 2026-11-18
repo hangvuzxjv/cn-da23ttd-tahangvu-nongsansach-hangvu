@@ -307,6 +307,109 @@ final class InventoryService
         });
     }
 
+    public function restockForReturn(int $orderId, int $returnId, array $items, ?int $userId): int
+    {
+        if ($orderId < 1 || $returnId < 1 || $items === []) {
+            throw new InvalidArgumentException('Thông tin nhập lại kho không hợp lệ.');
+        }
+
+        return $this->transaction(function () use ($orderId, $returnId, $items, $userId): int {
+            $orderLock = $this->database->prepare('SELECT id FROM orders WHERE id = :id FOR UPDATE');
+            $orderLock->execute(['id' => $orderId]);
+            if (!$orderLock->fetchColumn()) {
+                throw new InventoryException('Không tìm thấy đơn hàng #' . $orderId . '.');
+            }
+            $returnQuery = $this->database->prepare(
+                'SELECT id FROM order_returns WHERE id = :return_id AND order_id = :order_id FOR UPDATE'
+            );
+            $returnQuery->execute(['return_id' => $returnId, 'order_id' => $orderId]);
+            if (!$returnQuery->fetchColumn()) {
+                throw new InventoryException('Yêu cầu trả hàng không thuộc đơn đang xử lý.');
+            }
+
+            $quantitiesByProduct = [];
+            $itemQuery = $this->database->prepare(
+                'SELECT product_id FROM order_items WHERE id = :item_id AND order_id = :order_id'
+            );
+            foreach ($items as $item) {
+                $itemId = (int) ($item['order_item_id'] ?? 0);
+                $quantity = (int) ($item['quantity'] ?? 0);
+                if ($itemId < 1 || $quantity < 1) {
+                    throw new InvalidArgumentException('Sản phẩm trả lại không hợp lệ.');
+                }
+                $itemQuery->execute(['item_id' => $itemId, 'order_id' => $orderId]);
+                $productId = $itemQuery->fetchColumn();
+                if ($productId === false || $productId === null) {
+                    throw new InventoryException('Không thể nhập lại sản phẩm không còn liên kết với sản phẩm gốc.');
+                }
+                $productId = (int) $productId;
+                $quantitiesByProduct[$productId] = ($quantitiesByProduct[$productId] ?? 0) + $quantity;
+            }
+
+            $restoredTotal = 0;
+            foreach ($quantitiesByProduct as $productId => $requestedQuantity) {
+                $soldQuery = $this->database->prepare(
+                    'SELECT m.batch_id, SUM(-m.quantity) AS sold_quantity, MIN(m.id) AS first_movement_id
+                     FROM inventory_movements m
+                     WHERE m.reference_type = \'order\' AND m.reference_id = :order_id
+                       AND m.product_id = :product_id AND m.movement_type = \'out\'
+                     GROUP BY m.batch_id
+                     ORDER BY first_movement_id'
+                );
+                $soldQuery->execute(['order_id' => $orderId, 'product_id' => $productId]);
+                $remainingToAllocate = (int) $requestedQuantity;
+                foreach ($soldQuery->fetchAll() as $allocation) {
+                    if ($allocation['batch_id'] === null) {
+                        continue;
+                    }
+                    $batchId = (int) $allocation['batch_id'];
+                    $priorReturns = $this->database->prepare(
+                        'SELECT COALESCE(SUM(m.quantity), 0)
+                         FROM inventory_movements m
+                         JOIN order_returns r ON r.id = m.reference_id
+                         WHERE m.reference_type = \'order_return\'
+                           AND r.order_id = :order_id AND m.batch_id = :batch_id'
+                    );
+                    $priorReturns->execute(['order_id' => $orderId, 'batch_id' => $batchId]);
+                    $available = max(0, (int) $allocation['sold_quantity'] - (int) $priorReturns->fetchColumn());
+                    $quantity = min($remainingToAllocate, $available);
+                    if ($quantity < 1) {
+                        continue;
+                    }
+
+                    $batch = $this->lockBatch($batchId);
+                    $remaining = (int) $batch['quantity_remaining'] + $quantity;
+                    if ($remaining > 4294967295) {
+                        throw new InventoryException('Số lượng nhập lại vượt giới hạn lưu trữ.');
+                    }
+                    $this->database->prepare(
+                        'UPDATE product_batches SET quantity_remaining = :remaining WHERE id = :id'
+                    )->execute(['remaining' => $remaining, 'id' => $batchId]);
+                    $this->insertMovement(
+                        $productId,
+                        $batchId,
+                        'return',
+                        $quantity,
+                        'order_return',
+                        $returnId,
+                        $userId,
+                        'Nhập lại kho theo yêu cầu trả hàng #' . $returnId,
+                        (float) $batch['average_unit_cost'],
+                        $remaining
+                    );
+                    $this->syncProductTotal($productId);
+                    $remainingToAllocate -= $quantity;
+                    $restoredTotal += $quantity;
+                }
+
+                if ($remainingToAllocate > 0) {
+                    throw new InventoryException('Số lượng trả lại vượt lượng đã xuất từ các lô của đơn.');
+                }
+            }
+            return $restoredTotal;
+        });
+    }
+
     public function reserveForOrder(int $orderId, array $items, DateTimeImmutable $expiresAt): array
     {
         if ($orderId < 1 || !$items || $expiresAt <= new DateTimeImmutable()) {
@@ -448,7 +551,7 @@ final class InventoryService
             $query->execute(['id' => $receiptId]);
             $receipt = $query->fetch();
             if (!$receipt || $receipt['status'] !== 'received') {
-                throw new InventoryException('Chỉ phiếu nhập đã xác nhận mới được hủy bằng phiếu đảo.');
+                throw new InventoryException('Chỉ phiếu nhập đã xác nhận mới được hủy.');
             }
             $items = $this->database->prepare('SELECT * FROM warehouse_receipt_items WHERE receipt_id = :id ORDER BY id');
             $items->execute(['id' => $receiptId]);

@@ -81,6 +81,7 @@ final class AuthController extends Controller
         }
 
         AuditLog::record($userId, 'register', 'user', $userId);
+        (new VoucherWalletService($database))->grantWelcomeSafely($userId);
         $verificationMail = null;
         try {
             $verifyUrl = absolute_url('/verify-email/' . $verificationToken);

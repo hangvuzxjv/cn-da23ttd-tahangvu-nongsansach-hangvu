@@ -1,4 +1,4 @@
-<div class="d-flex justify-content-between align-items-center mb-3"><h1 class="h2">Nông trại và nhà cung cấp</h1><a class="btn btn-outline-secondary" href="<?= e(url('/admin/batches')) ?>">Quản lý lô hàng</a></div>
+<div class="d-flex justify-content-between align-items-center mb-3"><h1 class="h2">Nông trại và nhà cung cấp</h1><a class="btn btn-outline-secondary" href="<?= e(url('/admin/batches')) ?>">Danh sách lô</a></div>
 <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if (!empty($error)): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
 

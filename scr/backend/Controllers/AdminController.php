@@ -30,11 +30,56 @@ final class AdminController extends Controller
             )->fetchAll()
             : [];
         $dashboard = Auth::can('reports.view') ? (new ReportService())->dashboard() : null;
+        $actionCounts = [];
+        $database = Database::connection();
+        if (Auth::can('orders.view')) {
+            $actionCounts['pendingOrders'] = $dashboard !== null
+                ? (int) $dashboard['pendingOrders']
+                : (int) $database->query(
+                    "SELECT COUNT(*) FROM orders o
+                     WHERE o.status = 'pending'
+                       AND NOT (o.payment_status = 'pending' AND EXISTS (
+                           SELECT 1 FROM payments p
+                           WHERE p.order_id = o.id AND p.method IN ('bank_transfer', 'vnpay')
+                       ))"
+                )->fetchColumn();
+            $actionCounts['refundsRequired'] = (int) $database->query(
+                'SELECT COUNT(DISTINCT order_id) FROM payments WHERE refund_required = 1'
+            )->fetchColumn();
+        }
+        if (Auth::can('returns.manage')) {
+            $actionCounts['pendingReturns'] = (int) $database->query(
+                "SELECT COUNT(*) FROM order_returns WHERE status = 'pending'"
+            )->fetchColumn();
+        }
+        if (Auth::can('support.manage')) {
+            $actionCounts['unansweredTickets'] = (int) $database->query(
+                "SELECT COUNT(*) FROM support_tickets WHERE status = 'open'"
+            )->fetchColumn();
+        }
+        if (Auth::can('inventory.view')) {
+            $actionCounts['lowStock'] = $dashboard !== null
+                ? (int) $dashboard['lowStock']
+                : (int) $database->query(
+                    'SELECT COUNT(*) FROM products WHERE deleted_at IS NULL AND total_stock < min_stock'
+                )->fetchColumn();
+        }
+        if ($canViewBatches) {
+            $actionCounts['nearExpiry'] = $dashboard !== null
+                ? (int) $dashboard['nearExpiry']
+                : (int) $database->query(
+                    'SELECT COUNT(*) FROM product_batches
+                     WHERE status = \'selling\' AND quantity_remaining > 0
+                       AND expires_at BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)'
+                )->fetchColumn();
+        }
         $this->view('admin/dashboard', [
             'title' => 'Quản trị',
             'user' => Auth::user(),
             'topScanned' => $topScanned,
             'canViewBatches' => $canViewBatches,
+            'canViewReports' => Auth::can('reports.view'),
+            'actionCounts' => $actionCounts,
             'dashboard' => $dashboard,
             'menu' => $this->menu(),
             'quickLinks' => AdminNavigation::quickLinks(),

@@ -13,12 +13,12 @@ final class AdminReportsController extends Controller
         } else {
             $error = null;
         }
-        $today = date('Y-m-d');
-        $from = (string) ($_GET['from'] ?? date('Y-m-d', strtotime('-29 days')));
+        $today = PaymentRevenueService::today();
+        $from = (string) ($_GET['from'] ?? PaymentRevenueService::daysBeforeToday(29));
         $to = (string) ($_GET['to'] ?? $today);
         if (!$this->validDate($from) || !$this->validDate($to) || $from > $to) {
             $error = 'Khoảng ngày không hợp lệ. Vui lòng chọn ngày bắt đầu trước hoặc bằng ngày kết thúc.';
-            $from = date('Y-m-d', strtotime('-29 days'));
+            $from = PaymentRevenueService::daysBeforeToday(29);
             $to = $today;
         }
         try {
@@ -55,8 +55,8 @@ final class AdminReportsController extends Controller
     public function exportCsv(): void
     {
         $type = (string) ($_GET['type'] ?? 'revenue');
-        $from = (string) ($_GET['from'] ?? date('Y-m-d', strtotime('-29 days')));
-        $to = (string) ($_GET['to'] ?? date('Y-m-d'));
+        $from = (string) ($_GET['from'] ?? PaymentRevenueService::daysBeforeToday(29));
+        $to = (string) ($_GET['to'] ?? PaymentRevenueService::today());
         if (!isset(ReportService::definitions()[$type]) || !$this->validDate($from) || !$this->validDate($to) || $from > $to) {
             http_response_code(400);
             header('Content-Type: text/plain; charset=UTF-8');

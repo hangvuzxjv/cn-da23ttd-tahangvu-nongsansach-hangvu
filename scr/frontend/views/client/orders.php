@@ -1,3 +1,9 @@
+<?php $activeAccountTab = 'orders'; ?>
+<div class="client-account-layout">
+    <aside class="client-account-layout__sidebar">
+        <?php include FRONTEND_PATH . '/views/client/_account-navigation.php'; ?>
+    </aside>
+    <div class="client-account-layout__content">
 <header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/profile')) ?>">Tài khoản</a></li><li class="breadcrumb-item active" aria-current="page">Đơn hàng của tôi</li></ol></nav><h1 class="h2">Đơn hàng của tôi</h1><p class="text-secondary">Theo dõi trạng thái, thanh toán và chi tiết các đơn đã đặt.</p></header>
 <?php if ($success): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if ($error): ?><div class="alert alert-warning"><?= e($error) ?></div><?php endif; ?>
@@ -28,3 +34,5 @@
     </tbody>
 </table></div>
 <?php if ($pages > 1): ?><nav><ul class="pagination"><?php for ($index=1;$index<=$pages;$index++): ?><li class="page-item <?= $index===$page?'active':'' ?>"><a class="page-link" href="?status=<?= e($status) ?>&page=<?= $index ?>"><?= $index ?></a></li><?php endfor; ?></ul></nav><?php endif; ?>
+    </div>
+</div>

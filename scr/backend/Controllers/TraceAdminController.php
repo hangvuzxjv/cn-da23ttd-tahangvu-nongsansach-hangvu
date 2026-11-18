@@ -899,7 +899,7 @@ final class TraceAdminController extends Controller
             ['permission' => 'flash_sales.view', 'label' => 'Flash Sale', 'url' => '/admin/flash-sales'],
             ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],
             ['permission' => 'farms.view', 'label' => 'Nông trại', 'url' => '/admin/farms'],
-            ['permission' => 'batches.view', 'label' => 'Lô hàng và truy xuất', 'url' => '/admin/batches'],
+            ['permission' => 'batches.view', 'label' => 'Lô hàng', 'url' => '/admin/batches'],
             ['permission' => 'regions.view', 'label' => 'Vùng miền', 'url' => '/admin/regions'],
             ['permission' => 'categories.view', 'label' => 'Danh mục', 'url' => '/admin/categories'],
             ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],

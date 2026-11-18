@@ -1,3 +1,9 @@
+<?php $activeAccountTab = 'wishlist'; ?>
+<div class="client-account-layout">
+    <aside class="client-account-layout__sidebar">
+        <?php include FRONTEND_PATH . '/views/client/_account-navigation.php'; ?>
+    </aside>
+    <div class="client-account-layout__content">
 <header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item active" aria-current="page">Sản phẩm yêu thích</li></ol></nav><div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
     <div>
         <h1 class="h2 mb-1">Sản phẩm yêu thích</h1>
@@ -16,3 +22,5 @@
         <div class="visually-hidden" data-wishlist-message role="status" aria-live="polite"></div>
     <?php endif; ?>
 <?php endif; ?>
+    </div>
+</div>

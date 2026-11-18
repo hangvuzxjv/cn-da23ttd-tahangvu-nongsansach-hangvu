@@ -1,4 +1,10 @@
 <?php $statusTone = ['open' => 'warning', 'answered' => 'success', 'closed' => 'neutral'][$ticket['status']] ?? 'neutral'; ?>
+<?php $activeAccountTab = 'support'; ?>
+<div class="client-account-layout">
+    <aside class="client-account-layout__sidebar">
+        <?php include FRONTEND_PATH . '/views/client/_account-navigation.php'; ?>
+    </aside>
+    <div class="client-account-layout__content">
 <header class="page-heading">
     <nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/ho-tro')) ?>">Phiếu hỗ trợ</a></li><li class="breadcrumb-item active" aria-current="page">#<?= (int) $ticket['id'] ?></li></ol></nav>
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -45,3 +51,5 @@
 <?php else: ?>
     <div class="alert alert-secondary">Phiếu đã đóng và không thể gửi thêm trả lời.</div>
 <?php endif; ?>
+</div>
+</div>

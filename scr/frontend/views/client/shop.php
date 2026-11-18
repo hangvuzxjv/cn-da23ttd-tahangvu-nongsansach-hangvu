@@ -21,7 +21,15 @@
 <?php if ($query !== '' || $regionId || $categoryId || $minimum !== '' || $maximum !== ''): ?>
     <div class="alert alert-success d-flex flex-wrap justify-content-between align-items-center"><span>Đã lọc theo: <?= e(implode(' · ', array_filter([$query !== '' ? 'từ khóa "' . $query . '"' : '', $regionId ? 'vùng miền' : '', $categoryId ? 'danh mục' : '', $minimum !== '' ? 'giá từ ' . $minimum : '', $maximum !== '' ? 'giá đến ' . $maximum : '']))) ?></span><a class="btn btn-sm btn-outline-success" href="<?= e(url($scopeType === 'region' ? '/vung-mien/' . $scope['region']['slug'] : ($scopeType === 'category' ? '/danh-muc/' . $scope['category']['slug'] : '/san-pham'))) ?>">Xóa bộ lọc</a></div>
 <?php endif; ?>
-<p class="text-secondary"><?= (int) $total ?> sản phẩm</p>
-<?php require FRONTEND_PATH . '/views/client/product-cards.php'; ?>
+<?php if ($query !== ''): ?>
+    <p class="text-secondary">Kết quả cho '<?= e($query) ?>' - <?= (int) $total ?> sản phẩm</p>
+<?php else: ?>
+    <p class="text-secondary"><?= (int) $total ?> sản phẩm</p>
+<?php endif; ?>
+<?php if ($query !== '' && $total === 0): ?>
+    <p class="alert alert-light border">Không tìm thấy sản phẩm phù hợp. Hãy kiểm tra lại tên sản phẩm hoặc mã lô in trên nhãn.</p>
+<?php else: ?>
+    <?php require FRONTEND_PATH . '/views/client/product-cards.php'; ?>
+<?php endif; ?>
 <?php if ($pages > 1): ?><nav class="mt-4" aria-label="Phân trang"><ul class="pagination"><?php for ($number = 1; $number <= $pages; $number++): $params = $_GET; $params['page'] = $number; ?><li class="page-item <?= $number === $page ? 'active' : '' ?>"><a class="page-link" href="<?= e(url($scopeType === 'region' ? '/vung-mien/' . $scope['region']['slug'] : ($scopeType === 'category' ? '/danh-muc/' . $scope['category']['slug'] : '/san-pham')) . '?' . http_build_query($params)) ?>"><?= $number ?></a></li><?php endfor; ?></ul></nav><?php endif; ?>
 </div>

@@ -1,3 +1,16 @@
+<?php
+$codAllowed = (bool) ($codAvailability['allowed'] ?? true);
+$usablePaymentMethods = array_filter(
+    $paymentMethods,
+    static fn (string $method): bool => $method !== 'cod' || $codAllowed,
+    ARRAY_FILTER_USE_KEY
+);
+$selectedPaymentMethod = (string) ($oldInput['payment_method'] ?? 'cod');
+if (!isset($usablePaymentMethods[$selectedPaymentMethod])) {
+    $selectedPaymentMethod = (string) (array_key_first($usablePaymentMethods) ?? '');
+}
+$cartCanPlace = array_filter($cart['items'], static fn (array $item): bool => !$item['valid']) === [];
+?>
 <header class="page-heading"><nav aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="<?= e(url('/')) ?>">Trang chủ</a></li><li class="breadcrumb-item"><a href="<?= e(url('/gio-hang')) ?>">Giỏ hàng</a></li><li class="breadcrumb-item active" aria-current="page">Thanh toán</li></ol></nav><h1 class="h2">Thanh toán và đặt hàng</h1><p class="text-secondary">Xác nhận địa chỉ nhận hàng, phương thức thanh toán và tổng đơn.</p></header>
 <?php foreach ($errors as $error): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endforeach; ?>
 <div class="row g-4 checkout-layout">
@@ -33,14 +46,19 @@
                 <div class="card-body">
                     <?php foreach ($paymentMethods as $method => $label): ?>
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="payment_method" value="<?= e($method) ?>" id="pay<?= e($method) ?>" <?= $method === (string) ($oldInput['payment_method'] ?? 'cod') ? 'checked' : '' ?>>
+                            <input class="form-check-input" type="radio" name="payment_method" value="<?= e($method) ?>" id="pay<?= e($method) ?>" <?= $method === $selectedPaymentMethod ? 'checked' : '' ?> <?= $method === 'cod' && !$codAllowed ? 'disabled' : '' ?>>
                             <label class="form-check-label" for="pay<?= e($method) ?>"><?= e($label) ?></label>
                         </div>
                     <?php endforeach; ?>
+                    <?php if (isset($paymentMethods['cod']) && !$codAllowed): ?>
+                        <div class="alert alert-warning mt-2 mb-0" id="codRiskNotice" role="status"><?= e($codAvailability['message']) ?></div>
+                    <?php else: ?>
+                        <div class="alert alert-warning mt-2 mb-0" id="codRiskNotice" role="status" hidden></div>
+                    <?php endif; ?>
                     <label class="form-label mt-3" for="customerNote">Ghi chú đơn hàng</label><textarea class="form-control" id="customerNote" name="customer_note" rows="2"><?= e($oldInput['customer_note'] ?? '') ?></textarea>
                 </div>
             </div>
-            <button class="btn btn-success btn-lg w-100" type="submit" id="placeOrderButton" <?= !$paymentMethods || array_filter($cart['items'], static fn (array $item): bool => !$item['valid']) ? 'disabled' : '' ?>>Đặt hàng</button>
+            <button class="btn btn-success btn-lg w-100" type="submit" id="placeOrderButton" data-cart-valid="<?= $cartCanPlace ? '1' : '0' ?>" <?= !$usablePaymentMethods || !$cartCanPlace ? 'disabled' : '' ?>>Đặt hàng</button>
         </form>
     </div>
     <div class="col-lg-5">
@@ -58,6 +76,34 @@
                     </div>
                 <?php endforeach; ?>
                 <hr>
+                <section class="voucher-picker mb-3" aria-labelledby="checkoutVoucherHeading">
+                    <h3 class="h6 mb-2" id="checkoutVoucherHeading">Voucher của tôi</h3>
+                    <?php if ($walletVouchers): ?>
+                        <div class="voucher-picker-list">
+                            <?php foreach ($walletVouchers as $walletVoucher): ?>
+                                <div class="voucher-picker-option<?= $walletVoucher['selection_reason'] !== '' ? ' is-unavailable' : '' ?>">
+                                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                                        <div>
+                                            <strong><?= e($walletVoucher['code']) ?></strong>
+                                            <span class="d-block small"><?= e(VoucherWalletService::formatDiscount($walletVoucher)) ?></span>
+                                            <?php if ($walletVoucher['selection_reason'] !== ''): ?>
+                                                <span class="d-block small text-secondary"><?= e($walletVoucher['selection_reason']) ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <button class="btn btn-sm btn-outline-success" type="button"
+                                                data-use-wallet-voucher="<?= e($walletVoucher['code']) ?>"
+                                                <?= $walletVoucher['selection_reason'] !== '' ? 'disabled' : '' ?>>
+                                            <?= $walletVoucher['selection_reason'] !== '' ? 'Chưa đủ điều kiện' : 'Dùng mã này' ?>
+                                        </button>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php else: ?>
+                        <p class="small text-secondary mb-2">Bạn chưa có voucher khả dụng trong ví.</p>
+                        <a class="small" href="<?= e(url('/kho-voucher')) ?>">Khám phá Kho voucher</a>
+                    <?php endif; ?>
+                </section>
                 <form id="voucherPreviewForm" method="post" action="<?= e(url('/thanh-toan/xem-voucher')) ?>" data-ajax-form>
                     <?= csrf_field() ?>
                     <label class="form-label" for="voucherCode">Mã giảm giá</label>

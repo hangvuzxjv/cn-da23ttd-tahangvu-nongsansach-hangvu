@@ -501,7 +501,9 @@ final class CatalogAdminController extends Controller
             'category_id' => $this->postId('category_id'),
             'region_id' => $this->postId('region_id'),
             'farm_id' => $this->postId('farm_id'),
-            'unit' => $this->postText('unit'),
+            'sale_unit' => $this->postText('sale_unit'),
+            'pack_size' => $this->postText('pack_size'),
+            'pack_size_unit' => $this->postText('pack_size_unit'),
             'price' => $this->postText('price'),
             'sale_price' => $this->postText('sale_price'),
             'short_description' => $this->postText('short_description'),
@@ -554,9 +556,34 @@ final class CatalogAdminController extends Controller
         if ($input['sale_price'] !== '' && ($salePrice === null || $salePrice <= 0 || ($price !== null && $salePrice >= $price))) {
             $errors['sale_price'] = 'Giá khuyến mãi phải lớn hơn 0 và thấp hơn giá bán.';
         }
-        if ($input['unit'] === '' || mb_strlen($input['unit'], 'UTF-8') > 40) {
-            $errors['unit'] = 'Đơn vị tính là bắt buộc, tối đa 40 ký tự.';
+        if (!in_array($input['sale_unit'], ProductUnitFormatter::SALE_UNITS, true)) {
+            $errors['sale_unit'] = 'Vui lòng chọn đơn vị bán hợp lệ.';
         }
+        $packSize = null;
+        $packSizeUnit = null;
+        if ($input['pack_size'] !== '') {
+            $parsedPackSize = filter_var($input['pack_size'], FILTER_VALIDATE_FLOAT);
+            if ($parsedPackSize === false
+                || !preg_match('/\A[0-9]+(?:\.[0-9]{1,2})?\z/', $input['pack_size'])
+                || (float) $parsedPackSize <= 0
+                || (float) $parsedPackSize > 99999999.99) {
+                $errors['pack_size'] = 'Quy cách phải là số lớn hơn 0, tối đa 2 chữ số thập phân.';
+            } else {
+                $packSize = (float) $parsedPackSize;
+            }
+            if (!in_array($input['pack_size_unit'], ProductUnitFormatter::PACK_SIZE_UNITS, true)) {
+                $errors['pack_size_unit'] = 'Vui lòng chọn đơn vị quy cách hợp lệ.';
+            } else {
+                $packSizeUnit = $input['pack_size_unit'];
+            }
+        } elseif ($input['pack_size_unit'] !== '') {
+            $errors['pack_size_unit'] = 'Vui lòng nhập số quy cách khi đã chọn đơn vị quy cách.';
+        }
+        if ($input['sale_unit'] === 'Kg') {
+            $packSize = 1.0;
+            $packSizeUnit = 'kg';
+        }
+        $unitLabel = ProductUnitFormatter::shortLabel($input['sale_unit'], $packSize, $packSizeUnit);
         if (!in_array($input['status'], ['draft', 'active', 'inactive'], true)) {
             $errors['status'] = 'Trạng thái sản phẩm không hợp lệ.';
         }
@@ -611,7 +638,10 @@ final class CatalogAdminController extends Controller
                 'name' => $input['name'],
                 'slug' => $input['slug'],
                 'sku' => $input['sku'],
-                'unit' => $input['unit'],
+                'unit' => $unitLabel,
+                'sale_unit' => $input['sale_unit'],
+                'pack_size' => $packSize,
+                'pack_size_unit' => $packSizeUnit,
                 'price' => $price,
                 'sale_price' => $salePrice,
                 'suggested_shelf_life_days' => $shelfLife,
@@ -632,12 +662,12 @@ final class CatalogAdminController extends Controller
             if ($productId === null) {
                 $statement = $database->prepare(
                     'INSERT INTO products
-                     (category_id, region_id, farm_id, name, slug, sku, unit, price, sale_price,
+                     (category_id, region_id, farm_id, name, slug, sku, unit, sale_unit, pack_size, pack_size_unit, price, sale_price,
                       suggested_shelf_life_days, storage_instructions, season, nutrition, preparation, tags,
                       seo_title, seo_description, certifications, short_description,
                       status, is_featured, min_stock, description)
                      VALUES
-                     (:category_id, :region_id, :farm_id, :name, :slug, :sku, :unit, :price, :sale_price,
+                     (:category_id, :region_id, :farm_id, :name, :slug, :sku, :unit, :sale_unit, :pack_size, :pack_size_unit, :price, :sale_price,
                       :suggested_shelf_life_days, :storage_instructions, :season, :nutrition, :preparation, :tags,
                       :seo_title, :seo_description, :certifications, :short_description,
                       :status, :is_featured, :min_stock, :description)'
@@ -648,7 +678,8 @@ final class CatalogAdminController extends Controller
             } else {
                 $statement = $database->prepare(
                     'UPDATE products SET category_id = :category_id, region_id = :region_id, farm_id = :farm_id,
-                        name = :name, slug = :slug, sku = :sku, unit = :unit, price = :price, sale_price = :sale_price,
+                        name = :name, slug = :slug, sku = :sku, unit = :unit, sale_unit = :sale_unit,
+                        pack_size = :pack_size, pack_size_unit = :pack_size_unit, price = :price, sale_price = :sale_price,
                         suggested_shelf_life_days = :suggested_shelf_life_days, storage_instructions = :storage_instructions,
                         season = :season, nutrition = :nutrition, preparation = :preparation, tags = :tags,
                         seo_title = :seo_title, seo_description = :seo_description,

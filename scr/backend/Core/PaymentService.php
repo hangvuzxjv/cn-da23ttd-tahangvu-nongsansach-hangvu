@@ -192,10 +192,15 @@ final class PaymentService
                 'INSERT INTO order_status_history (order_id, status, note)
                  VALUES (:id, \'cancelled\', :reason)'
             )->execute(['id' => $orderId, 'reason' => mb_substr($reason, 0, 500, 'UTF-8')]);
-            $this->notifyOrderStatus($order, $orderId, 'cancelled');
+            (new NotificationService($this->database))->notifyOrderExpired(
+                (int) $order['user_id'],
+                $orderId,
+                (int) $this->database->lastInsertId(),
+                (string) $order['order_no']
+            );
             AuditLog::record(null, 'online_payment_expired', 'order', $orderId, $reason, $this->database);
             $this->database->commit();
-            $this->sendOrderStatusEmail($order, $orderId, 'cancelled');
+            $this->sendOrderStatusEmail($order, $orderId, 'payment_expired');
             return true;
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
@@ -210,7 +215,7 @@ final class PaymentService
         ?string $transactionRef,
         array $response,
         ?int $actorId = null,
-        bool $allowFailedVnpay = true
+        bool $allowFailedVnpay = false
     ): array
     {
         $this->expirePending();
@@ -266,9 +271,10 @@ final class PaymentService
             $sanitized = $this->sanitizeResponse($response);
             $this->database->prepare(
                 "UPDATE payments SET status = 'paid', transaction_ref = COALESCE(:transaction_ref, transaction_ref),
-                    paid_at = NOW(), raw_response = :response WHERE id = :id"
+                    paid_at = :paid_at, raw_response = :response WHERE id = :id"
             )->execute([
                 'transaction_ref' => $transactionRef,
+                'paid_at' => PaymentRevenueService::now(),
                 'response' => json_encode($sanitized, JSON_THROW_ON_ERROR),
                 'id' => $paymentId,
             ]);
@@ -292,7 +298,15 @@ final class PaymentService
                 'note' => 'Thanh toán trực tuyến đã được xác nhận.',
                 'actor' => $actorId,
             ]);
-            $this->notifyOrderStatus($order, $orderId, 'confirmed');
+            $historyId = (int) $this->database->lastInsertId();
+            $notifications = new NotificationService($this->database);
+            $notifications->notifyOrderPaid(
+                (int) $order['user_id'],
+                $orderId,
+                $historyId,
+                (string) $order['order_no']
+            );
+            $notifications->notifyAdminNewOrder($orderId, (string) $order['order_no'], true);
             $isManualVnpay = ($sanitized['source'] ?? null) === 'manual_vnpay_reconciliation';
             $auditAction = $isManualVnpay ? 'vnpay_manual_reconciled' : 'payment_confirmed';
             $auditDetails = $isManualVnpay
@@ -304,7 +318,11 @@ final class PaymentService
                 : $transactionRef;
             AuditLog::record($actorId, $auditAction, 'payment', $paymentId, $auditDetails, $this->database);
             $this->database->commit();
-            $this->sendOrderStatusEmail($order, $orderId, 'confirmed');
+            (new NotificationService($this->database))->sendPaidOrderEmail(
+                (int) $order['user_id'],
+                $orderId,
+                (string) $order['order_no']
+            );
             return ['order_id' => $orderId, 'already_paid' => false];
         } catch (Throwable $exception) {
             if ($this->database->inTransaction()) {
@@ -316,13 +334,47 @@ final class PaymentService
 
     public function markFailed(int $paymentId, array $response): void
     {
-        $this->database->prepare(
-            "UPDATE payments SET status = 'failed', raw_response = :response
-             WHERE id = :id AND status = 'pending'"
-        )->execute([
-            'response' => json_encode($this->sanitizeResponse($response), JSON_THROW_ON_ERROR),
-            'id' => $paymentId,
-        ]);
+        $this->database->beginTransaction();
+        try {
+            $query = $this->database->prepare('SELECT order_id FROM payments WHERE id = :id');
+            $query->execute(['id' => $paymentId]);
+            $orderId = (int) $query->fetchColumn();
+            if ($orderId < 1) {
+                $this->database->commit();
+                return;
+            }
+            $orderQuery = $this->database->prepare('SELECT user_id, order_no FROM orders WHERE id = :id FOR UPDATE');
+            $orderQuery->execute(['id' => $orderId]);
+            $order = $orderQuery->fetch();
+            $paymentQuery = $this->database->prepare(
+                'SELECT status, method FROM payments WHERE id = :id FOR UPDATE'
+            );
+            $paymentQuery->execute(['id' => $paymentId]);
+            $payment = $paymentQuery->fetch();
+            if (!$order || !$payment || $payment['status'] !== 'pending') {
+                $this->database->commit();
+                return;
+            }
+            $this->database->prepare(
+                "UPDATE payments SET status = 'failed', raw_response = :response WHERE id = :id"
+            )->execute([
+                'response' => json_encode($this->sanitizeResponse($response), JSON_THROW_ON_ERROR),
+                'id' => $paymentId,
+            ]);
+            (new NotificationService($this->database))->notifyPaymentIncomplete(
+                (int) $order['user_id'],
+                $orderId,
+                $paymentId,
+                (string) $order['order_no'],
+                (string) $payment['method']
+            );
+            $this->database->commit();
+        } catch (Throwable $exception) {
+            if ($this->database->inTransaction()) {
+                $this->database->rollBack();
+            }
+            throw $exception;
+        }
     }
 
     public function createVnpayAttempt(int $orderId, int $userId): string
@@ -522,7 +574,7 @@ final class PaymentService
             return ['code' => '04', 'message' => $this->vnpayMismatchMessage($mismatchReason)];
         }
         $safe = $this->sanitizeResponse($parameters);
-        if (in_array($payment['status'], ['paid', 'refunded'], true) || $payment['payment_status'] === 'paid') {
+        if ($payment['status'] === 'paid') {
             $this->logVnpayCallback($source, $receivedParameters, true, $payment, null);
             return [
                 'code' => '00',
@@ -530,6 +582,24 @@ final class PaymentService
                 'payment' => $payment,
                 'success' => true,
                 'already_paid' => true,
+            ];
+        }
+        if ($payment['status'] === 'refunded') {
+            $this->logVnpayCallback($source, $receivedParameters, true, $payment, 'payment_already_refunded');
+            return [
+                'code' => '00',
+                'message' => 'Giao dịch đã được hoàn tiền.',
+                'payment' => $payment,
+                'success' => false,
+            ];
+        }
+        if ($payment['payment_status'] === 'paid') {
+            $this->logVnpayCallback($source, $receivedParameters, true, $payment, 'order_paid_by_another_payment');
+            return [
+                'code' => '00',
+                'message' => 'Đơn hàng đã được thanh toán bằng một giao dịch khác.',
+                'payment' => $payment,
+                'success' => false,
             ];
         }
         if ((string) ($parameters['vnp_ResponseCode'] ?? '') !== '00'
@@ -546,12 +616,23 @@ final class PaymentService
                 return ['code' => '99', 'message' => 'Chưa thể xác nhận kết quả thanh toán. Vui lòng liên hệ hỗ trợ.', 'payment' => $payment, 'success' => false];
             }
             $this->logVnpayCallback($source, $receivedParameters, true, $payment, $reason);
-            $message = $responseCode !== '00'
+            $message = $responseCode === '24'
+                ? 'Bạn đã hủy giao dịch VNPay. Đơn hàng chưa được thanh toán; vui lòng thanh toán lại hoặc chọn phương thức khác.'
+                : ($responseCode !== '00'
                 ? 'VNPay từ chối thanh toán (mã ' . $responseCode . '). Vui lòng thử lại hoặc liên hệ hỗ trợ.'
                 : 'VNPay chưa xác nhận giao dịch thành công (trạng thái '
                     . (string) ($parameters['vnp_TransactionStatus'] ?? '')
-                    . '). Vui lòng thử lại hoặc liên hệ hỗ trợ.';
+                    . '). Vui lòng thử lại hoặc liên hệ hỗ trợ.');
             return ['code' => '00', 'message' => $message, 'payment' => $payment, 'success' => false];
+        }
+        if ($payment['status'] === 'failed') {
+            $this->logVnpayCallback($source, $receivedParameters, true, $payment, 'successful_callback_for_failed_payment');
+            return [
+                'code' => '00',
+                'message' => 'Giao dịch này đã thất bại hoặc bị hủy; không thể ghi nhận thanh toán.',
+                'payment' => $payment,
+                'success' => false,
+            ];
         }
         try {
             $result = $this->markSuccessful(
@@ -734,8 +815,15 @@ final class PaymentService
             (new InventoryService($this->database))->restoreForOrder($orderId, $actorId);
             (new FlashSaleService($this->database))->releaseForOrder($orderId);
             $this->reverseVoucher($orderId);
-            $this->database->prepare("UPDATE payments SET status = 'refunded', raw_response = :response WHERE id = :id")
+            $this->database->prepare(
+                "UPDATE payments
+                 SET status = 'refunded', refunded_at = :refunded_at,
+                     refund_reference = :refund_reference, raw_response = :response
+                 WHERE id = :id"
+            )
                 ->execute([
+                    'refunded_at' => PaymentRevenueService::now(),
+                    'refund_reference' => mb_substr(trim($reason), 0, 150, 'UTF-8'),
                     'response' => json_encode(['reason' => trim($reason)], JSON_THROW_ON_ERROR),
                     'id' => $paymentId,
                 ]);
@@ -785,9 +873,13 @@ final class PaymentService
             $this->database->prepare(
                 "UPDATE payments
                  SET status = 'refunded', refund_required = 0,
-                     refund_reference = :reference, refunded_at = NOW()
+                     refund_reference = :reference, refunded_at = :refunded_at
                  WHERE id = :id AND refund_required = 1 AND status = 'paid'"
-            )->execute(['reference' => $reference, 'id' => $paymentId]);
+            )->execute([
+                'reference' => $reference,
+                'refunded_at' => PaymentRevenueService::now(),
+                'id' => $paymentId,
+            ]);
             $this->database->prepare(
                 "UPDATE orders SET payment_status = 'refunded'
                  WHERE id = :id AND status = 'delivery_failed' AND payment_status = 'paid'"
@@ -867,6 +959,7 @@ final class PaymentService
         $this->database->prepare(
             'UPDATE vouchers SET used_count = GREATEST(used_count - 1, 0) WHERE id = :id'
         )->execute(['id' => $voucherId]);
+        (new VoucherWalletService($this->database))->releaseUsageForOrder($orderId);
     }
 
     public function sanitizeResponse(array $response): array

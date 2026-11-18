@@ -1,11 +1,12 @@
 <?php
 
 return [
-    'admin' => ['*', 'support.manage', 'faq.manage', 'delivery_failures.view'],
+    'admin' => ['*', 'support.manage', 'faq.manage', 'delivery_failures.view', 'cod_risk.manage', 'returns.manage'],
     'staff_sales' => [
         'dashboard.view',
         'orders.view',
         'orders.manage',
+        'returns.manage',
         'vouchers.view',
         'vouchers.manage',
         'reviews.view',

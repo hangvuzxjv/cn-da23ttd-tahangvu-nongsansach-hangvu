@@ -2,6 +2,28 @@
 $value = static function (string $key, mixed $default = '') use ($product): mixed {
     return old($key, $product[$key] ?? $default);
 };
+$previewSaleUnit = (string) $value('sale_unit');
+$previewSize = $value('pack_size');
+$previewSizeUnit = (string) $value('pack_size_unit');
+$previewUnitLabel = ProductUnitFormatter::shortLabel(
+    $previewSaleUnit,
+    is_numeric($previewSize) ? (float) $previewSize : null,
+    $previewSizeUnit !== '' ? $previewSizeUnit : null
+);
+$previewPrice = $value('price');
+$initialPreview = 'Chọn đơn vị bán và nhập giá để xem trước.';
+if ($previewSaleUnit !== '' && $previewUnitLabel !== '' && is_numeric($previewPrice) && (float) $previewPrice > 0) {
+    $initialPreview = 'Hiển thị: ' . ProductUnitFormatter::priceLabel($previewPrice, $previewUnitLabel);
+    $referencePrice = ProductUnitFormatter::referencePriceLabel(
+        $previewPrice,
+        $previewSaleUnit,
+        is_numeric($previewSize) ? (float) $previewSize : null,
+        $previewSizeUnit !== '' ? $previewSizeUnit : null
+    );
+    if ($referencePrice !== null) {
+        $initialPreview .= ' (' . $referencePrice . ')';
+    }
+}
 ?>
 <div class="d-flex justify-content-between align-items-center mb-3"><h1 class="h2"><?= e($title) ?></h1><a class="btn btn-outline-secondary" href="<?= e(url('/admin/products')) ?>">Quay lại danh sách</a></div>
 <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
@@ -14,7 +36,6 @@ $value = static function (string $key, mixed $default = '') use ($product): mixe
             'name' => ['Tên sản phẩm', 'text', 'required'],
             'slug' => ['Slug (để trống tự sinh)', 'text', ''],
             'sku' => ['SKU', 'text', 'required'],
-            'unit' => ['Đơn vị tính', 'text', 'required'],
             'price' => ['Giá bán (VND)', 'number', 'required min="0.01" step="0.01"'],
             'sale_price' => ['Giá khuyến mãi (tùy chọn)', 'number', 'min="0.01" step="0.01"'],
             'suggested_shelf_life_days' => ['Hạn dùng gợi ý (ngày)', 'number', 'min="0" step="1"'],
@@ -27,6 +48,35 @@ $value = static function (string $key, mixed $default = '') use ($product): mixe
                 <?php if (isset($errors[$field])): ?><div class="invalid-feedback"><?= e($errors[$field]) ?></div><?php endif; ?>
             </div>
         <?php endforeach; ?>
+        <div class="col-md-4">
+            <label class="form-label" for="sale_unit">Đơn vị bán</label>
+            <select class="form-select<?= isset($errors['sale_unit']) ? ' is-invalid' : '' ?>" id="sale_unit" name="sale_unit" required>
+                <option value="">Chọn đơn vị</option>
+                <?php foreach (ProductUnitFormatter::SALE_UNITS as $saleUnit): ?>
+                    <option value="<?= e($saleUnit) ?>" <?= $value('sale_unit') === $saleUnit ? 'selected' : '' ?>><?= e($saleUnit) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (isset($errors['sale_unit'])): ?><div class="invalid-feedback"><?= e($errors['sale_unit']) ?></div><?php endif; ?>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="pack_size">Quy cách (không bắt buộc)</label>
+            <input class="form-control<?= isset($errors['pack_size']) ? ' is-invalid' : '' ?>" id="pack_size" name="pack_size" type="number" min="0.01" max="99999999.99" step="0.01" value="<?= e($value('pack_size')) ?>">
+            <?php if (isset($errors['pack_size'])): ?><div class="invalid-feedback"><?= e($errors['pack_size']) ?></div><?php endif; ?>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label" for="pack_size_unit">Đơn vị quy cách</label>
+            <select class="form-select<?= isset($errors['pack_size_unit']) ? ' is-invalid' : '' ?>" id="pack_size_unit" name="pack_size_unit">
+                <option value="">Chọn đơn vị quy cách</option>
+                <?php foreach (['g' => 'g', 'kg' => 'kg', 'ml' => 'ml', 'l' => 'lít'] as $packUnit => $packLabel): ?>
+                    <option value="<?= e($packUnit) ?>" <?= $value('pack_size_unit') === $packUnit ? 'selected' : '' ?>><?= e($packLabel) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php if (isset($errors['pack_size_unit'])): ?><div class="invalid-feedback"><?= e($errors['pack_size_unit']) ?></div><?php endif; ?>
+        </div>
+        <div class="col-12">
+            <div class="form-text">Khách mua theo số gói; hãy nhập giá cho 1 gói. Quy cách không bắt buộc với Trái, Khay, Hộp.</div>
+            <div class="form-text" id="product-unit-preview" aria-live="polite"><?= e($initialPreview) ?></div>
+        </div>
         <?php foreach (['category_id' => ['Danh mục', $categories], 'region_id' => ['Tỉnh/vùng', $regions], 'farm_id' => ['Nông trại', $farms]] as $field => [$label, $options]): ?>
             <div class="col-md-4"><label class="form-label" for="<?= e($field) ?>"><?= e($label) ?></label><select class="form-select<?= isset($errors[$field]) ? ' is-invalid' : '' ?>" id="<?= e($field) ?>" name="<?= e($field) ?>" required><option value="">Chọn</option><?php foreach ($options as $option): ?><option value="<?= (int) $option['id'] ?>" <?= (string) $value($field) === (string) $option['id'] ? 'selected' : '' ?> <?= $field === 'farm_id' ? 'data-region="' . (int) $option['region_id'] . '"' : '' ?>><?= e($option['name']) ?></option><?php endforeach; ?></select><?php if (isset($errors[$field])): ?><div class="invalid-feedback"><?= e($errors[$field]) ?></div><?php endif; ?></div>
         <?php endforeach; ?>
@@ -46,6 +96,64 @@ $value = static function (string $key, mixed $default = '') use ($product): mixe
     </div></div>
     <div class="card-footer"><input type="hidden" name="_token" value="<?= e(Csrf::token()) ?>"><button class="btn btn-success" type="submit">Lưu sản phẩm</button></div>
 </form>
+<script>
+(() => {
+    const saleUnit = document.getElementById('sale_unit');
+    const size = document.getElementById('pack_size');
+    const sizeUnit = document.getElementById('pack_size_unit');
+    const price = document.getElementById('price');
+    const preview = document.getElementById('product-unit-preview');
+    if (!saleUnit || !size || !sizeUnit || !price || !preview) return;
+
+    const money = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 });
+    const sizeNumber = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 });
+    let kgDefaultsApplied = saleUnit.value === 'Kg';
+
+    const updatePreview = () => {
+        const isKg = saleUnit.value === 'Kg';
+        if (isKg) {
+            size.value = '1';
+            sizeUnit.value = 'kg';
+        } else if (kgDefaultsApplied) {
+            size.value = '';
+            sizeUnit.value = '';
+        }
+        kgDefaultsApplied = isKg;
+        size.disabled = isKg;
+        sizeUnit.disabled = isKg;
+
+        const amount = Number.parseFloat(price.value);
+        const packSize = Number.parseFloat(size.value);
+        const packUnit = sizeUnit.value;
+        if (!saleUnit.value || !Number.isFinite(amount) || amount <= 0) {
+            preview.textContent = 'Chọn đơn vị bán và nhập giá để xem trước.';
+            return;
+        }
+
+        const hasPack = Number.isFinite(packSize) && packSize > 0
+            && ['g', 'kg', 'ml', 'l'].includes(packUnit)
+            && !['Kg', 'Lít'].includes(saleUnit.value);
+        const label = hasPack ? `${saleUnit.value} ${sizeNumber.format(packSize)}${packUnit}` : saleUnit.value;
+        let text = `Hiển thị: ${money.format(amount)} ₫ / ${label}`;
+
+        if (hasPack) {
+            const isWeight = ['g', 'kg'].includes(packUnit);
+            const baseSize = packSize * (packUnit === 'g' || packUnit === 'ml' ? 0.001 : 1);
+            if (baseSize > 0) {
+                const baseUnit = isWeight ? 'kg' : 'lít';
+                text += ` (≈ ${money.format(amount / baseSize)} ₫/${baseUnit})`;
+            }
+        }
+        preview.textContent = text;
+    };
+
+    [saleUnit, size, sizeUnit, price].forEach((field) => {
+        field.addEventListener('input', updatePreview);
+        field.addEventListener('change', updatePreview);
+    });
+    updatePreview();
+})();
+</script>
 <?php if ($images): ?>
 <section class="card"><div class="card-body">
     <h2 class="h5">Ảnh hiện có</h2><p class="text-secondary">Kéo nút ↑ / ↓ để sắp xếp; ảnh đầu tiên là ảnh đại diện.</p>

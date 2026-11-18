@@ -12,25 +12,17 @@
     }
 
     const dots = Array.from(slider.querySelectorAll('[data-home-banner-dot]'));
-    const pauseButton = slider.querySelector('[data-home-banner-pause]');
     const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const interval = Number(slider.dataset.interval) || 6000;
     let current = 0;
     let timer = null;
-    let manuallyPaused = false;
-    let temporarilyPaused = false;
+    let pointerOver = false;
+    let focusWithin = false;
+    let touching = false;
     let hidden = document.visibilityState !== 'visible';
     let touchStartX = null;
 
-    const isPaused = () => manuallyPaused || temporarilyPaused || hidden;
-
-    const updatePauseButton = () => {
-        if (!pauseButton) {
-            return;
-        }
-        pauseButton.setAttribute('aria-pressed', manuallyPaused ? 'true' : 'false');
-        pauseButton.dataset.paused = manuallyPaused ? 'true' : 'false';
-    };
+    const isPaused = () => pointerOver || focusWithin || touching || hidden || reducedMotionQuery.matches;
 
     const show = (next) => {
         current = (next + slides.length) % slides.length;
@@ -60,14 +52,14 @@
         }
     };
 
-    const setManualPause = (value) => {
-        manuallyPaused = value;
-        updatePauseButton();
-        schedule();
-    };
-
-    const setTemporaryPause = (value) => {
-        temporarilyPaused = value;
+    const setPauseState = (state, value) => {
+        if (state === 'pointer') {
+            pointerOver = value;
+        } else if (state === 'focus') {
+            focusWithin = value;
+        } else if (state === 'touch') {
+            touching = value;
+        }
         schedule();
     };
 
@@ -79,50 +71,50 @@
         show(current + 1);
         schedule();
     });
-    pauseButton?.addEventListener('click', () => {
-        setTemporaryPause(false);
-        setManualPause(!manuallyPaused);
-    });
     dots.forEach((dot) => dot.addEventListener('click', () => {
         show(Number(dot.dataset.homeBannerDot));
         schedule();
     }));
 
-    slider.addEventListener('pointerenter', () => setTemporaryPause(true));
-    slider.addEventListener('pointerleave', () => setTemporaryPause(false));
-    slider.addEventListener('focusin', (event) => {
-        if (event.target !== pauseButton) {
-            setTemporaryPause(true);
-        }
-    });
+    slider.addEventListener('pointerenter', () => setPauseState('pointer', true));
+    slider.addEventListener('pointerleave', () => setPauseState('pointer', false));
+    slider.addEventListener('focusin', () => setPauseState('focus', true));
     slider.addEventListener('focusout', (event) => {
         if (!slider.contains(event.relatedTarget)) {
-            setTemporaryPause(false);
+            setPauseState('focus', false);
         }
     });
     slider.addEventListener('touchstart', (event) => {
         touchStartX = event.changedTouches[0].clientX;
-        setTemporaryPause(true);
+        setPauseState('touch', true);
     }, { passive: true });
-    slider.addEventListener('touchend', (event) => {
-        if (touchStartX !== null) {
-            const distance = event.changedTouches[0].clientX - touchStartX;
+    const endTouch = (event) => {
+        const touch = event.changedTouches[0];
+        if (touchStartX !== null && touch) {
+            const distance = touch.clientX - touchStartX;
             if (Math.abs(distance) > 40) {
                 show(current + (distance < 0 ? 1 : -1));
             }
         }
         touchStartX = null;
-        setTemporaryPause(false);
-    }, { passive: true });
+        setPauseState('touch', false);
+    };
+    slider.addEventListener('touchend', endTouch, { passive: true });
+    slider.addEventListener('touchcancel', endTouch, { passive: true });
     document.addEventListener('visibilitychange', () => {
         hidden = document.visibilityState !== 'visible';
         schedule();
     });
-    reducedMotionQuery.addEventListener?.('change', () => {
+    const handleReducedMotionChange = () => {
         slider.classList.toggle('is-reduced-motion', reducedMotionQuery.matches);
-    });
+        schedule();
+    };
+    if (reducedMotionQuery.addEventListener) {
+        reducedMotionQuery.addEventListener('change', handleReducedMotionChange);
+    } else {
+        reducedMotionQuery.addListener(handleReducedMotionChange);
+    }
 
     slider.classList.toggle('is-reduced-motion', reducedMotionQuery.matches);
-    updatePauseButton();
     schedule();
 })();

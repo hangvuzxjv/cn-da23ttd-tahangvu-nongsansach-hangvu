@@ -29,7 +29,9 @@ final class AdminNavigation
                 'label' => 'Bán hàng',
                 'items' => [
                     ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
+                    ['permission' => 'returns.manage', 'label' => 'Trả hàng / Hoàn tiền', 'url' => '/admin/returns'],
                     ['permission' => 'delivery_failures.view', 'label' => 'Giao thất bại', 'url' => '/admin/delivery-failures'],
+                    ['permission' => 'cod_risk.manage', 'label' => 'Rủi ro COD', 'url' => '/admin/cod-risk'],
                     ['permission' => 'orders.view', 'label' => 'Thanh toán', 'url' => '/admin/payments'],
                     ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
                     ['permission' => 'shipping.view', 'label' => 'Phí vận chuyển', 'url' => '/admin/shipping'],
@@ -39,18 +41,26 @@ final class AdminNavigation
             [
                 'label' => 'Kho và nguồn gốc',
                 'items' => [
-                    ['permission' => 'inventory.view', 'label' => 'Kho hàng', 'url' => '/admin/inventory'],
-                    ['permission' => 'inventory.view', 'label' => 'Tồn kho', 'url' => '/admin/inventory/stock'],
-                    ['permission' => 'inventory.view', 'label' => 'Phiếu nhập', 'url' => '/admin/inventory/receipts'],
-                    ['permission' => 'inventory.view', 'label' => 'Lịch sử kho', 'url' => '/admin/inventory/movements'],
-                    ['permission' => 'inventory.view', 'label' => 'Kiểm kê', 'url' => '/admin/inventory/stocktakes'],
-                    ['permission' => 'batches.view', 'label' => 'Lô hàng', 'url' => '/admin/batches'],
-                    ['permission' => 'farms.view', 'label' => 'Nông trại', 'url' => '/admin/farms'],
+                    ['permission' => 'inventory.view', 'label' => 'Tổng quan kho', 'url' => '/admin/inventory'],
+                    ['permission' => 'inventory.view', 'label' => 'Nhập hàng', 'url' => '/admin/inventory/receipts'],
+                    [
+                        'permissions' => ['inventory.view', 'batches.view'],
+                        'label' => 'Hàng trong kho',
+                        'url' => $can('inventory.view') ? '/admin/inventory/stock' : '/admin/batches',
+                        'activeUrls' => ['/admin/inventory/stock', '/admin/batches', '/admin/labels'],
+                    ],
+                    [
+                        'permission' => 'inventory.view',
+                        'label' => 'Kiểm kê và nhật ký',
+                        'url' => '/admin/inventory/stocktakes',
+                        'activeUrls' => ['/admin/inventory/stocktakes', '/admin/inventory/movements'],
+                    ],
                 ],
             ],
             [
                 'label' => 'Danh mục',
                 'items' => [
+                    ['permission' => 'farms.view', 'label' => 'Nông trại', 'url' => '/admin/farms'],
                     ['permission' => 'regions.view', 'label' => 'Vùng miền', 'url' => '/admin/regions'],
                     ['permission' => 'categories.view', 'label' => 'Danh mục', 'url' => '/admin/categories'],
                     ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],
@@ -96,7 +106,18 @@ final class AdminNavigation
         foreach ($groups as &$group) {
             $group['items'] = array_values(array_filter(
                 $group['items'],
-                static fn (array $item): bool => $can($item['permission'])
+                static function (array $item) use ($can): bool {
+                    if (isset($item['permissions'])) {
+                        foreach ($item['permissions'] as $permission) {
+                            if ($can($permission)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+
+                    return $can($item['permission']);
+                }
             ));
             foreach ($group['items'] as $item) {
                 $items[] = $item;
@@ -106,10 +127,7 @@ final class AdminNavigation
 
         $activeUrl = '';
         foreach ($items as $item) {
-            $candidatePaths = [$item['url']];
-            if ($item['url'] === '/admin/batches') {
-                $candidatePaths[] = '/admin/labels';
-            }
+            $candidatePaths = $item['activeUrls'] ?? [$item['url']];
             foreach ($candidatePaths as $candidatePath) {
                 $matches = $requestPath === $candidatePath
                     || ($candidatePath !== '/admin' && str_starts_with($requestPath, $candidatePath . '/'));

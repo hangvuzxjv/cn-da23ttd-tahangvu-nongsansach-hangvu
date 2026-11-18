@@ -131,6 +131,66 @@ final class CommerceAdminController extends Controller
         ]);
     }
 
+    public function codRisk(): void
+    {
+        $service = new CodRiskService();
+        $risk = $service->activeBlocks((int) ($_GET['page'] ?? 1));
+        $this->adminView('admin/cod-risk', [
+            'title' => 'Rủi ro COD',
+            'settings' => $service->settings(),
+            'oldSettings' => flash('cod_risk_old') ?? [],
+            'blocks' => $risk['items'],
+            'page' => $risk['page'],
+            'pages' => $risk['pages'],
+            'total' => $risk['total'],
+            'waivers' => $service->recentWaivers(),
+            'paginationUrl' => '/admin/cod-risk',
+            'paginationQuery' => [],
+            'paginationLabel' => 'định danh đang bị chặn',
+            'success' => flash('success'),
+            'error' => flash('error'),
+        ]);
+    }
+
+    public function saveCodRiskSettings(): void
+    {
+        try {
+            (new CodRiskService())->saveSettings($_POST, (int) Auth::user()['id']);
+            flash('success', 'Đã lưu ngưỡng chặn COD.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+            $oldSettings = [];
+            foreach ([
+                'cod_risk_failure_days',
+                'cod_risk_failure_threshold',
+                'cod_risk_new_customer_limit',
+                'cod_risk_open_orders_limit',
+            ] as $key) {
+                if (isset($_POST[$key]) && is_scalar($_POST[$key])) {
+                    $oldSettings[$key] = (string) $_POST[$key];
+                }
+            }
+            flash('cod_risk_old', $oldSettings);
+        }
+        redirect('/admin/cod-risk');
+    }
+
+    public function waiveCodRisk(): void
+    {
+        try {
+            (new CodRiskService())->waive(
+                (string) ($_POST['type'] ?? ''),
+                (string) ($_POST['value'] ?? ''),
+                (string) ($_POST['reason'] ?? ''),
+                (int) Auth::user()['id']
+            );
+            flash('success', 'Đã gỡ chặn Luật A. Luật B và Luật C vẫn được áp dụng.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/cod-risk');
+    }
+
     public function order(string $id): void
     {
         (new PaymentService())->expireForOrder((int) $id);
@@ -368,11 +428,7 @@ final class CommerceAdminController extends Controller
         $query->bindValue(':limit', $perPage, PDO::PARAM_INT);
         $query->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
         $query->execute();
-        $totals = $database->query(
-            "SELECT method, SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS received,
-                    SUM(CASE WHEN status = 'refunded' THEN amount ELSE 0 END) AS refunded
-             FROM payments GROUP BY method ORDER BY method"
-        )->fetchAll();
+        $totals = (new PaymentRevenueService($database))->totalsByMethod();
         $this->adminView('admin/payments', [
             'title' => 'Thanh toán',
             'payments' => $query->fetchAll(),
@@ -531,127 +587,344 @@ final class CommerceAdminController extends Controller
     public function vouchers(): void
     {
         $database = Database::connection();
-        $total = (int) $database->query('SELECT COUNT(*) FROM vouchers')->fetchColumn();
+        $filters = [
+            'q' => trim((string) ($_GET['q'] ?? '')),
+            'status' => (string) ($_GET['status'] ?? ''),
+            'audience' => (string) ($_GET['audience'] ?? ''),
+        ];
+        $statusExpression = "CASE
+            WHEN v.status <> 'active' THEN 'inactive'
+            WHEN v.starts_at > NOW() THEN 'upcoming'
+            WHEN v.ends_at < NOW() THEN 'expired'
+            WHEN v.usage_limit IS NOT NULL AND v.used_count >= v.usage_limit THEN 'exhausted'
+            ELSE 'running'
+        END";
+        $conditions = [];
+        $parameters = [];
+        if ($filters['q'] !== '') {
+            $conditions[] = 'v.code LIKE :code';
+            $parameters['code'] = '%' . $filters['q'] . '%';
+        }
+        if (in_array($filters['status'], ['running', 'upcoming', 'inactive', 'expired', 'exhausted'], true)) {
+            $conditions[] = $statusExpression . ' = :computed_status';
+            $parameters['computed_status'] = $filters['status'];
+        } else {
+            $filters['status'] = '';
+        }
+        if (in_array($filters['audience'], ['code', 'public', 'targeted'], true)) {
+            $conditions[] = 'v.audience = :audience';
+            $parameters['audience'] = $filters['audience'];
+        } else {
+            $filters['audience'] = '';
+        }
+        $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
+        $countQuery = $database->prepare('SELECT COUNT(*) FROM vouchers v ' . $where);
+        $countQuery->execute($parameters);
+        $total = (int) $countQuery->fetchColumn();
         $perPage = 20;
         $pages = max(1, (int) ceil($total / $perPage));
         $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
         $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
         $voucherQuery = $database->prepare(
-            'SELECT v.*,
-                (SELECT GROUP_CONCAT(category_id) FROM voucher_categories vc WHERE vc.voucher_id = v.id) AS category_ids,
-                (SELECT GROUP_CONCAT(product_id) FROM voucher_products vp WHERE vp.voucher_id = v.id) AS product_ids,
-                (SELECT COUNT(*) FROM voucher_usages vu WHERE vu.voucher_id = v.id AND vu.status = \'used\') AS active_uses
-             FROM vouchers v ORDER BY v.id DESC LIMIT :limit OFFSET :offset'
+            'SELECT v.*, NOW() AS status_now,
+                ' . $statusExpression . ' AS computed_status,
+                EXISTS(SELECT 1 FROM voucher_usages vu WHERE vu.voucher_id = v.id) AS has_ever_been_used
+             FROM vouchers v ' . $where . '
+             ORDER BY CASE WHEN (' . $statusExpression . ') = \'running\' THEN 0
+                           WHEN (' . $statusExpression . ') = \'upcoming\' THEN 1 ELSE 2 END,
+                      v.id DESC
+             LIMIT :limit OFFSET :offset'
         );
+        foreach ($parameters as $key => $value) {
+            $voucherQuery->bindValue(':' . $key, $value);
+        }
         $voucherQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
         $voucherQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
         $voucherQuery->execute();
         $vouchers = $voucherQuery->fetchAll();
-        $categories = $database->query('SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name')->fetchAll();
-        $products = $database->query('SELECT id, name, sku FROM products WHERE status = \'active\' AND deleted_at IS NULL ORDER BY name')->fetchAll();
+        foreach ($vouchers as &$voucher) {
+            $voucher['computed_status'] = VoucherAdminService::status($voucher, new DateTimeImmutable($voucher['status_now']));
+            unset($voucher['status_now']);
+        }
+        unset($voucher);
         $this->adminView('admin/vouchers', [
             'title' => 'Quản lý voucher',
             'vouchers' => $vouchers,
-            'categories' => $categories,
-            'products' => $products,
+            'filters' => $filters,
             'page' => $page,
             'pages' => $pages,
             'paginationUrl' => '/admin/vouchers',
-            'paginationQuery' => [],
+            'paginationQuery' => $filters,
             'paginationLabel' => 'voucher',
+            'total' => $total,
+            'canManage' => Auth::can('vouchers.manage'),
             'success' => flash('success'),
             'error' => flash('error'),
         ]);
     }
 
-    public function saveVoucher(?string $id = null): void
+    public function createVoucher(): void
     {
-        $code = strtoupper(trim((string) ($_POST['code'] ?? '')));
-        $type = (string) ($_POST['discount_type'] ?? '');
-        $value = filter_var($_POST['discount_value'] ?? null, FILTER_VALIDATE_INT);
-        $minimum = filter_var($_POST['minimum_order'] ?? 0, FILTER_VALIDATE_INT);
-        $maximum = ($_POST['maximum_discount'] ?? '') === '' ? null : filter_var($_POST['maximum_discount'], FILTER_VALIDATE_INT);
-        $usageLimit = ($_POST['usage_limit'] ?? '') === '' ? null : filter_var($_POST['usage_limit'], FILTER_VALIDATE_INT);
-        $perUser = filter_var($_POST['per_user_limit'] ?? 1, FILTER_VALIDATE_INT);
-        $starts = trim((string) ($_POST['starts_at'] ?? ''));
-        $ends = trim((string) ($_POST['ends_at'] ?? ''));
-        $status = (string) ($_POST['status'] ?? 'active');
-        if (preg_match('/\A[A-Z0-9_-]{3,50}\z/', $code) !== 1
-            || !in_array($type, ['fixed', 'percent'], true) || $value === false || $value < 1
-            || $minimum === false || $minimum < 0 || ($maximum !== null && ($maximum === false || $maximum < 1))
-            || ($usageLimit !== null && ($usageLimit === false || $usageLimit < 1))
-            || $perUser === false || $perUser < 1
-            || !$this->validDateTime($starts) || !$this->validDateTime($ends) || $ends <= $starts
-            || !in_array($status, ['active', 'inactive'], true) || ($type === 'percent' && $value > 100)) {
-            flash('error', 'Dữ liệu voucher không hợp lệ.');
+        $this->renderVoucherEditor(null);
+    }
+
+    public function editVoucher(string $id): void
+    {
+        $voucherId = filter_var($id, FILTER_VALIDATE_INT);
+        if ($voucherId === false || $voucherId < 1) {
+            flash('error', 'Không tìm thấy voucher.');
             redirect('/admin/vouchers');
         }
-        $categoryIds = $this->validIds($_POST['category_ids'] ?? []);
-        $productIds = $this->validIds($_POST['product_ids'] ?? []);
-        $database = Database::connection();
-        $database->beginTransaction();
-        try {
-            if ($id === null) {
-                $database->prepare(
-                    'INSERT INTO vouchers
-                     (code, description, discount_type, discount_value, minimum_order, maximum_discount,
-                      usage_limit, per_user_limit, starts_at, ends_at, status)
-                     VALUES (:code, :description, :type, :value, :minimum, :maximum, :usage_limit, :per_user, :starts, :ends, :status)'
-                )->execute([
-                    'code' => $code, 'description' => trim((string) ($_POST['description'] ?? '')) ?: null,
-                    'type' => $type, 'value' => $value, 'minimum' => $minimum, 'maximum' => $maximum,
-                    'usage_limit' => $usageLimit, 'per_user' => $perUser, 'starts' => str_replace('T', ' ', $starts) . ':00',
-                    'ends' => str_replace('T', ' ', $ends) . ':00', 'status' => $status,
-                ]);
-                $voucherId = (int) $database->lastInsertId();
-            } else {
-                $voucherId = (int) $id;
-                $database->prepare(
-                    'UPDATE vouchers SET code = :code, description = :description, discount_type = :type,
-                        discount_value = :value, minimum_order = :minimum, maximum_discount = :maximum,
-                        usage_limit = :usage_limit, per_user_limit = :per_user, starts_at = :starts,
-                        ends_at = :ends, status = :status WHERE id = :id'
-                )->execute([
-                    'code' => $code, 'description' => trim((string) ($_POST['description'] ?? '')) ?: null,
-                    'type' => $type, 'value' => $value, 'minimum' => $minimum, 'maximum' => $maximum,
-                    'usage_limit' => $usageLimit, 'per_user' => $perUser, 'starts' => str_replace('T', ' ', $starts) . ':00',
-                    'ends' => str_replace('T', ' ', $ends) . ':00', 'status' => $status, 'id' => $voucherId,
-                ]);
-                if ($database->query('SELECT ROW_COUNT()')->fetchColumn() === '0') {
-                    $exists = $database->prepare('SELECT id FROM vouchers WHERE id = :id');
-                    $exists->execute(['id' => $voucherId]);
-                    if ($exists->fetchColumn() === false) {
-                        throw new InvalidArgumentException('Không tìm thấy voucher cần cập nhật.');
-                    }
-                }
+        $this->renderVoucherEditor((int) $voucherId);
+    }
 
+    public function saveVoucher(?string $id = null): void
+    {
+        $voucherId = null;
+        if ($id !== null) {
+            $validatedId = filter_var($id, FILTER_VALIDATE_INT);
+            if ($validatedId === false || $validatedId < 1) {
+                flash('error', 'Không tìm thấy voucher cần cập nhật.');
+                redirect('/admin/vouchers');
             }
-            $database->prepare('DELETE FROM voucher_categories WHERE voucher_id = :id')->execute(['id' => $voucherId]);
-            $database->prepare('DELETE FROM voucher_products WHERE voucher_id = :id')->execute(['id' => $voucherId]);
-            $categoryInsert = $database->prepare('INSERT INTO voucher_categories (voucher_id, category_id) VALUES (:voucher_id, :target_id)');
-            foreach ($categoryIds as $categoryId) {
-                $categoryInsert->execute(['voucher_id' => $voucherId, 'target_id' => $categoryId]);
-            }
-            $productInsert = $database->prepare('INSERT INTO voucher_products (voucher_id, product_id) VALUES (:voucher_id, :target_id)');
-            foreach ($productIds as $productId) {
-                $productInsert->execute(['voucher_id' => $voucherId, 'target_id' => $productId]);
-            }
-            AuditLog::record((int) Auth::user()['id'], $id === null ? 'voucher_created' : 'voucher_updated', 'voucher', $voucherId, $code, $database);
-            $database->commit();
-            flash('success', $id === null ? 'Đã tạo voucher.' : 'Đã cập nhật voucher.');
+            $voucherId = (int) $validatedId;
+        }
+        $service = new VoucherAdminService();
+        $validation = $service->validateInput($_POST, $voucherId);
+        if ($validation['errors']) {
+            $this->renderVoucherEditor($voucherId, $_POST, $validation['errors']);
+            return;
+        }
+        try {
+            $service->save(
+                $validation['values'],
+                $validation['values']['category_ids'],
+                $validation['values']['product_ids'],
+                $voucherId,
+                (int) Auth::user()['id']
+            );
+            flash('success', $voucherId === null ? 'Đã tạo voucher.' : 'Đã cập nhật voucher.');
+            redirect('/admin/vouchers');
         } catch (Throwable $exception) {
-            if ($database->inTransaction()) {
-                $database->rollBack();
-            }
             if ($exception instanceof PDOException && $exception->getCode() === '23000') {
-                flash('error', 'Mã voucher đã tồn tại hoặc danh mục/sản phẩm không hợp lệ.');
+                $this->renderVoucherEditor($voucherId, $_POST, [
+                    'code' => 'Mã này đã được sử dụng. Hãy chọn mã khác.',
+                ]);
             } elseif ($exception instanceof InvalidArgumentException) {
-                flash('error', $exception->getMessage());
+                $this->renderVoucherEditor($voucherId, $_POST, ['form' => $exception->getMessage()]);
             } else {
                 throw $exception;
             }
         }
+    }
+
+    public function toggleVoucher(string $id): void
+    {
+        try {
+            $status = (new VoucherAdminService())->toggle((int) $id, (int) Auth::user()['id']);
+            flash('success', $status === 'active' ? 'Đã bật voucher.' : 'Đã tắt voucher.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
         redirect('/admin/vouchers');
+    }
+
+    public function duplicateVoucher(string $id): void
+    {
+        try {
+            $copyId = (new VoucherAdminService())->duplicate((int) $id, (int) Auth::user()['id']);
+            flash('success', 'Đã nhân bản voucher ở trạng thái tắt. Hãy kiểm tra và sửa mã trước khi bật.');
+            redirect('/admin/vouchers/' . $copyId . '/edit');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+            redirect('/admin/vouchers');
+        }
+    }
+
+    public function deleteVoucher(string $id): void
+    {
+        try {
+            $deleted = (new VoucherAdminService())->delete((int) $id, (int) Auth::user()['id']);
+            flash(
+                $deleted ? 'success' : 'error',
+                $deleted ? 'Đã xóa voucher.' : 'Voucher đã từng được sử dụng nên không thể xóa; hãy tắt voucher nếu không muốn tiếp tục áp dụng.'
+            );
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/vouchers');
+    }
+
+    private function renderVoucherEditor(?int $voucherId, ?array $formValues = null, array $errors = []): void
+    {
+        $database = Database::connection();
+        $voucher = null;
+        $usageHistory = [];
+        $walletHolders = [];
+        $walletHolderTotal = 0;
+        $walletHolderPage = 1;
+        $walletHolderPages = 1;
+        if ($voucherId !== null) {
+            $query = $database->prepare(
+                'SELECT v.*,
+                    (SELECT GROUP_CONCAT(category_id) FROM voucher_categories WHERE voucher_id = v.id) AS category_ids,
+                    (SELECT GROUP_CONCAT(product_id) FROM voucher_products WHERE voucher_id = v.id) AS product_ids
+                 FROM vouchers v WHERE v.id = :id'
+            );
+            $query->execute(['id' => $voucherId]);
+            $voucher = $query->fetch();
+            if (!$voucher) {
+                flash('error', 'Không tìm thấy voucher.');
+                redirect('/admin/vouchers');
+            }
+            $history = $database->prepare(
+                'SELECT o.order_no, u.name AS customer_name, vu.used_at, vu.discount_amount, vu.status
+                 FROM voucher_usages vu
+                 JOIN orders o ON o.id = vu.order_id
+                 JOIN users u ON u.id = vu.user_id
+                 WHERE vu.voucher_id = :id
+                 ORDER BY vu.used_at DESC, vu.id DESC LIMIT 10'
+            );
+            $history->execute(['id' => $voucherId]);
+            $usageHistory = $history->fetchAll();
+            $holderCount = $database->prepare('SELECT COUNT(*) FROM user_vouchers WHERE voucher_id = :id');
+            $holderCount->execute(['id' => $voucherId]);
+            $walletHolderTotal = (int) $holderCount->fetchColumn();
+            $walletHolderPages = max(1, (int) ceil($walletHolderTotal / 50));
+            $requestedHolderPage = filter_var($_GET['holder_page'] ?? 1, FILTER_VALIDATE_INT);
+            $walletHolderPage = min(
+                max(1, $requestedHolderPage === false ? 1 : $requestedHolderPage),
+                $walletHolderPages
+            );
+            $holders = $database->prepare(
+                'SELECT uv.id AS user_voucher_id, u.name AS customer_name, uv.granted_at,
+                        COALESCE(uv.expires_at, v.ends_at) AS expires_at,
+                        uv.used_order_id, uv.used_at, uv.source
+                 FROM user_vouchers uv
+                 JOIN users u ON u.id = uv.user_id
+                 JOIN vouchers v ON v.id = uv.voucher_id
+                 WHERE uv.voucher_id = :id
+                 ORDER BY uv.granted_at DESC, uv.id DESC LIMIT :limit OFFSET :offset'
+            );
+            $holders->bindValue(':id', $voucherId, PDO::PARAM_INT);
+            $holders->bindValue(':limit', 50, PDO::PARAM_INT);
+            $holders->bindValue(':offset', ($walletHolderPage - 1) * 50, PDO::PARAM_INT);
+            $holders->execute();
+            $walletHolders = $holders->fetchAll();
+        }
+        $this->adminView('admin/voucher-edit', [
+            'title' => $voucherId === null ? 'Tạo voucher' : 'Sửa voucher',
+            'voucher' => $voucher,
+            'voucherId' => $voucherId,
+            'formValues' => $formValues ?? $voucher ?? [],
+            'errors' => $errors,
+            'categories' => $database->query('SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name')->fetchAll(),
+            'products' => $database->query("SELECT id, name, sku FROM products WHERE status = 'active' AND deleted_at IS NULL ORDER BY name")->fetchAll(),
+            'usageHistory' => $usageHistory,
+            'walletHolders' => $walletHolders,
+            'walletHolderTotal' => $walletHolderTotal,
+            'walletHolderPage' => $walletHolderPage,
+            'walletHolderPages' => $walletHolderPages,
+            'formAction' => $voucherId === null ? '/admin/vouchers' : '/admin/vouchers/' . $voucherId,
+            'success' => flash('success'),
+        ]);
+    }
+
+    public function voucherGift(string $id): void
+    {
+        $voucherId = filter_var($id, FILTER_VALIDATE_INT);
+        if ($voucherId === false || $voucherId < 1) {
+            flash('error', 'Không tìm thấy voucher.');
+            redirect('/admin/vouchers');
+        }
+
+        $database = Database::connection();
+        $voucherQuery = $database->prepare('SELECT id, code, description, audience FROM vouchers WHERE id = :id');
+        $voucherQuery->execute(['id' => $voucherId]);
+        $voucher = $voucherQuery->fetch();
+        if (!$voucher) {
+            flash('error', 'Không tìm thấy voucher.');
+            redirect('/admin/vouchers');
+        }
+        if ($voucher['audience'] !== 'targeted') {
+            flash('error', 'Chỉ voucher dành cho khách được tặng mới có thể phát hành thủ công.');
+            redirect('/admin/vouchers/' . (int) $voucherId . '/edit');
+        }
+
+        $search = trim((string) ($_GET['q'] ?? ''));
+        $customerSql = "SELECT id, name, email, phone FROM users WHERE role = 'customer' AND status = 'active'";
+        $parameters = [];
+        if ($search !== '') {
+            $customerSql .= ' AND (name LIKE :name OR email LIKE :email OR phone LIKE :phone)';
+            $parameters = [
+                'name' => '%' . $search . '%',
+                'email' => '%' . $search . '%',
+                'phone' => '%' . $search . '%',
+            ];
+        }
+        $customerSql .= ' ORDER BY name, id LIMIT 100';
+        $customers = $database->prepare($customerSql);
+        $customers->execute($parameters);
+        $this->adminView('admin/voucher-gift', [
+            'title' => 'Tặng voucher ' . $voucher['code'],
+            'voucher' => $voucher,
+            'customers' => $customers->fetchAll(),
+            'search' => $search,
+            'success' => flash('success'),
+            'error' => flash('error'),
+        ]);
+    }
+
+    public function giftVoucher(string $id): void
+    {
+        $voucherId = filter_var($id, FILTER_VALIDATE_INT);
+        if ($voucherId === false || $voucherId < 1) {
+            flash('error', 'Không tìm thấy voucher.');
+            redirect('/admin/vouchers');
+        }
+
+        try {
+            $allActiveCustomers = (string) ($_POST['all_active'] ?? '') === '1';
+            if ($allActiveCustomers && (string) ($_POST['confirm_all'] ?? '') !== '1') {
+                throw new InvalidArgumentException('Hãy xác nhận trước khi tặng voucher cho toàn bộ khách đang hoạt động.');
+            }
+            $userIds = $_POST['user_ids'] ?? [];
+            if (!is_array($userIds)) {
+                throw new InvalidArgumentException('Danh sách khách hàng không hợp lệ.');
+            }
+            $result = (new VoucherWalletService())->giftToUsers(
+                (int) $voucherId,
+                $userIds,
+                $allActiveCustomers,
+                (int) Auth::user()['id']
+            );
+            flash('success', 'Đã tặng ' . $result['granted'] . ', bỏ qua ' . $result['skipped'] . ' khách.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/vouchers/' . (int) $voucherId . '/gift');
+    }
+
+    public function revokeVoucherHolder(string $id): void
+    {
+        $voucherId = filter_var($id, FILTER_VALIDATE_INT);
+        $walletId = filter_var($_POST['user_voucher_id'] ?? null, FILTER_VALIDATE_INT);
+        if ($voucherId === false || $voucherId < 1 || $walletId === false || $walletId < 1) {
+            flash('error', 'Không tìm thấy voucher trong ví khách hàng.');
+            redirect('/admin/vouchers');
+        }
+
+        try {
+            (new VoucherWalletService())->revoke(
+                (int) $voucherId,
+                (int) $walletId,
+                (int) Auth::user()['id']
+            );
+            flash('success', 'Đã thu hồi voucher chưa sử dụng.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/vouchers/' . (int) $voucherId . '/edit');
     }
 
     public function shipping(): void
@@ -773,21 +1046,6 @@ final class CommerceAdminController extends Controller
     {
         $data['menu'] = (new AdminController())->menu();
         $this->view($template, $data, 'admin');
-    }
-
-    private function validIds(mixed $input): array
-    {
-        if (!is_array($input)) {
-            return [];
-        }
-        $ids = [];
-        foreach ($input as $value) {
-            $id = filter_var($value, FILTER_VALIDATE_INT);
-            if ($id !== false && $id > 0) {
-                $ids[] = $id;
-            }
-        }
-        return array_values(array_unique($ids));
     }
 
     private function validDate(string $value): bool
