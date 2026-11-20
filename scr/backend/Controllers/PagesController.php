@@ -30,6 +30,7 @@ final class PagesController extends Controller
     public function contact(): void
     {
         $database = Database::connection();
+        $chatConfigured = Auth::user() !== null && (new TawkChatService($database))->isConfigured();
         $keys = ['store_name', 'store_contact_address', 'store_contact_phone', 'store_contact_email', 'store_business_hours'];
         $query = $database->prepare(
             'SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('
@@ -49,8 +50,7 @@ final class PagesController extends Controller
                 'email' => $settings['store_contact_email'] ?? '',
                 'business_hours' => $settings['store_business_hours'] ?? '',
             ],
-            'chatConfigured' => (new TawkChatService($database))->isConfigured(),
-            'canOpenSupport' => Auth::can('support.access'),
+            'chatConfigured' => $chatConfigured,
             'success' => flash('success'),
             'error' => flash('error'),
         ]);

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+date_default_timezone_set('Asia/Ho_Chi_Minh');
+
 ini_set('display_errors', '0');
 ini_set('display_startup_errors', '0');
 
@@ -76,9 +78,10 @@ try {
         return;
     }
 
-    http_response_code(500);
+    $status = $exception instanceof HttpException ? $exception->status() : 500;
+    http_response_code($status);
     try {
-        View::renderError(500, $exception, (bool) ($config['app']['debug'] ?? false));
+        View::renderError($status, $exception, (bool) ($config['app']['debug'] ?? false));
     } catch (Throwable $renderException) {
         error_log(sprintf(
             "[%s] Unable to render error page: %s in %s:%d\n",

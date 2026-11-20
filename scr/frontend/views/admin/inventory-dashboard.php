@@ -16,7 +16,18 @@
         <section class="card">
             <div class="card-header d-flex justify-content-between align-items-center"><h2 class="h5 mb-0">Sản phẩm dưới tồn tối thiểu</h2><a href="<?= e(url('/admin/inventory/stock?filter=low')) ?>">Xem tất cả</a></div>
             <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Sản phẩm</th><th>Tồn</th><th>Ngưỡng</th></tr></thead><tbody>
-                <?php foreach ($underStock as $product): ?><tr><td><?= e($product['name']) ?> <small class="text-secondary"><?= e($product['sku']) ?></small></td><td><?= (int) $product['total_stock'] ?></td><td><?= (int) $product['min_stock'] ?></td></tr><?php endforeach; ?>
+                <?php foreach ($underStock as $product): ?>
+                    <?php
+                    $saleUnit = trim((string) ($product['sale_unit'] ?? ''));
+                    $unitName = mb_strtolower($saleUnit !== '' ? $saleUnit : (string) $product['unit'], 'UTF-8');
+                    $unitLabel = ProductUnitFormatter::shortLabel(
+                        $saleUnit !== '' ? $saleUnit : (string) $product['unit'],
+                        $saleUnit !== '' && $product['pack_size'] !== null ? (float) $product['pack_size'] : null,
+                        $saleUnit !== '' ? ($product['pack_size_unit'] ?? null) : null
+                    );
+                    ?>
+                    <tr><td><?= e($product['name']) ?><small class="d-block text-secondary"><?= e($unitLabel) ?></small><small class="d-block text-secondary"><?= e($product['sku']) ?></small></td><td><?= (int) $product['total_stock'] ?> <?= e($unitName) ?></td><td><?= (int) $product['min_stock'] ?> <?= e($unitName) ?></td></tr>
+                <?php endforeach; ?>
                 <?php if (!$underStock): ?><tr><td colspan="3" class="text-secondary">Không có sản phẩm nào dưới ngưỡng.</td></tr><?php endif; ?>
             </tbody></table></div>
         </section>
@@ -35,11 +46,22 @@
     <div class="col-lg-7">
         <section class="card"><div class="card-header"><h2 class="h5 mb-0">10 biến động gần nhất</h2></div>
             <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Thời điểm</th><th>Sản phẩm / lô</th><th>Loại thay đổi</th><th>Số lượng thay đổi</th><th>Người thực hiện</th></tr></thead><tbody>
-            <?php foreach ($recentMovements as $movement): ?><tr>
-                <td><?= e($movement['created_at']) ?></td><td><?= e($movement['product_name']) ?><br><code><?= e($movement['batch_code'] ?? '-') ?></code></td>
-                <td><?= e(InventoryLabels::movement($movement['movement_type'], $movement['reference_type'] ?? null)) ?></td><td class="<?= (int) $movement['quantity'] < 0 ? 'text-danger' : 'text-success' ?>"><?= (int) $movement['quantity'] ?></td>
-                <td><?= e($movement['performed_by_name'] ?? 'Hệ thống') ?></td>
-            </tr><?php endforeach; ?>
+            <?php foreach ($recentMovements as $movement): ?>
+                <?php
+                $saleUnit = trim((string) ($movement['sale_unit'] ?? ''));
+                $unitName = mb_strtolower($saleUnit !== '' ? $saleUnit : (string) $movement['unit'], 'UTF-8');
+                $unitLabel = ProductUnitFormatter::shortLabel(
+                    $saleUnit !== '' ? $saleUnit : (string) $movement['unit'],
+                    $saleUnit !== '' && $movement['pack_size'] !== null ? (float) $movement['pack_size'] : null,
+                    $saleUnit !== '' ? ($movement['pack_size_unit'] ?? null) : null
+                );
+                ?>
+                <tr>
+                    <td><?= e($movement['created_at']) ?></td><td><?= e($movement['product_name']) ?><small class="d-block text-secondary"><?= e($unitLabel) ?></small><code><?= e($movement['batch_code'] ?? '-') ?></code></td>
+                    <td><?= e(InventoryLabels::movement($movement['movement_type'], $movement['reference_type'] ?? null)) ?></td><td class="<?= (int) $movement['quantity'] < 0 ? 'text-danger' : 'text-success' ?>"><?= (int) $movement['quantity'] ?> <?= e($unitName) ?></td>
+                    <td><?= e($movement['performed_by_name'] ?? 'Hệ thống') ?></td>
+                </tr>
+            <?php endforeach; ?>
             <?php if (!$recentMovements): ?><tr><td colspan="5" class="text-secondary">Chưa có biến động kho.</td></tr><?php endif; ?>
             </tbody></table></div>
         </section>

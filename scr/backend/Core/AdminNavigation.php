@@ -34,6 +34,7 @@ final class AdminNavigation
                     ['permission' => 'cod_risk.manage', 'label' => 'Rủi ro COD', 'url' => '/admin/cod-risk'],
                     ['permission' => 'orders.view', 'label' => 'Thanh toán', 'url' => '/admin/payments'],
                     ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
+                    ['permission' => 'vouchers.manage', 'label' => 'Thưởng nhiệm vụ', 'url' => '/admin/vouchers/missions'],
                     ['permission' => 'shipping.view', 'label' => 'Phí vận chuyển', 'url' => '/admin/shipping'],
                     ['permission' => 'reviews.view', 'label' => 'Đánh giá', 'url' => '/admin/reviews'],
                 ],
@@ -64,6 +65,7 @@ final class AdminNavigation
                     ['permission' => 'regions.view', 'label' => 'Vùng miền', 'url' => '/admin/regions'],
                     ['permission' => 'categories.view', 'label' => 'Danh mục', 'url' => '/admin/categories'],
                     ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],
+                    ['permission' => 'products.view', 'label' => 'Sản phẩm thiếu ảnh', 'url' => '/admin/products/missing-images'],
                 ],
             ],
             [
@@ -90,7 +92,7 @@ final class AdminNavigation
                 'label' => 'Nội dung và liên hệ',
                 'items' => [
                     ['permission' => 'content.view', 'label' => 'Nội dung', 'url' => '/admin/content/pages'],
-                    ['permission' => 'content.view', 'label' => 'Banner', 'url' => '/admin/content/banners'],
+                    ['permission' => 'content.view', 'label' => 'Banner trang chủ', 'url' => '/admin/content/banners'],
                     ['permission' => 'faq.manage', 'label' => 'Câu hỏi thường gặp', 'url' => '/admin/content/faqs'],
                     ['permission' => 'contacts.view', 'label' => 'Liên hệ', 'url' => '/admin/contacts'],
                     ['permission' => 'mail.view', 'label' => 'Email / Hộp thư chờ', 'url' => '/admin/mail'],

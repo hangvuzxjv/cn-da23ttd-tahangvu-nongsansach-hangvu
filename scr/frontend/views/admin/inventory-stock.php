@@ -28,7 +28,7 @@
     </nav>
     <div class="table-responsive">
         <table class="table table-striped align-middle inventory-stock__table">
-            <thead><tr><th>Sản phẩm</th><th>Mã lô <span class="small text-secondary" title="Lô là một đợt hàng nhập có mã riêng để truy xuất." aria-label="Giải thích về lô" tabindex="0">?</span></th><th>Hạn dùng</th><th>Còn trong kho</th><th>Còn có thể bán <span class="small text-secondary" title="Đã đặt chờ giao là hàng dành cho đơn chưa giao; số này được trừ khi tính lượng còn có thể bán." aria-label="Giải thích hàng đã đặt chờ giao và lượng còn có thể bán" tabindex="0">?</span></th><th>Trạng thái</th><?php if ($canManage): ?><th></th><?php endif; ?></tr></thead>
+            <thead><tr><th>Sản phẩm</th><th>Mã lô <span class="small text-secondary" title="Lô là một đợt hàng nhập có mã riêng để truy xuất." aria-label="Giải thích về lô" tabindex="0">?</span></th><th>Hạn dùng</th><th>Còn trong kho</th><th>Đã đặt chờ giao</th><th>Còn có thể bán <span class="small text-secondary" title="Đã đặt chờ giao là hàng dành cho đơn chưa giao; số này được trừ khi tính lượng còn có thể bán." aria-label="Giải thích hàng đã đặt chờ giao và lượng còn có thể bán" tabindex="0">?</span></th><th>Trạng thái</th><?php if ($canManage): ?><th></th><?php endif; ?></tr></thead>
             <tbody>
             <?php foreach ($rows as $row): ?>
                 <?php
@@ -45,24 +45,33 @@
                 if (!$isExpired && !$isStopped && $isNearExpiry) {
                     $statusLabel = 'Sắp hết hạn';
                 }
+                $saleUnit = trim((string) ($row['sale_unit'] ?? ''));
+                $unitName = mb_strtolower($saleUnit !== '' ? $saleUnit : (string) $row['unit'], 'UTF-8');
+                $unitLabel = ProductUnitFormatter::shortLabel(
+                    $saleUnit !== '' ? $saleUnit : (string) $row['unit'],
+                    $saleUnit !== '' && $row['pack_size'] !== null ? (float) $row['pack_size'] : null,
+                    $saleUnit !== '' ? ($row['pack_size_unit'] ?? null) : null
+                );
                 ?>
                 <tr>
-                    <td class="inventory-stock__product"><?= e($row['product_name']) ?><small class="d-block text-secondary"><?= e($row['sku']) ?></small></td>
+                    <td class="inventory-stock__product"><?= e($row['product_name']) ?><small class="d-block text-secondary"><?= e($unitLabel) ?></small><small class="d-block text-secondary"><?= e($row['sku']) ?></small></td>
                     <td><a href="<?= e(url('/admin/batches/' . $row['batch_id'])) ?>"><code><?= e($row['batch_code']) ?></code></a></td>
                     <td><?= e($row['expires_at'] ?? '—') ?></td>
-                    <td><?= (int) $row['quantity_remaining'] ?></td>
-                    <td><strong><?= (int) $row['available_quantity'] ?></strong></td>
+                    <td><?= (int) $row['quantity_remaining'] ?> <?= e($unitName) ?></td>
+                    <td><?= (int) $row['reserved_quantity'] ?> <?= e($unitName) ?></td>
+                    <td><strong><?= (int) $row['available_quantity'] ?> <?= e($unitName) ?></strong></td>
                     <td><span class="badge rounded-pill <?= e($statusClass) ?>"><?= e($statusLabel) ?></span></td>
                     <?php if ($canManage): ?><td>
                         <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="modal"
                                 data-bs-target="#stockAdjustmentModal" data-stock-adjustment-trigger
                                 data-batch-id="<?= (int) $row['batch_id'] ?>"
                                 data-batch-code="<?= e($row['batch_code']) ?>"
-                                data-product-name="<?= e($row['product_name']) ?>">Điều chỉnh</button>
+                                data-product-name="<?= e($row['product_name']) ?>"
+                                data-unit-name="<?= e($unitName) ?>">Điều chỉnh</button>
                     </td><?php endif; ?>
                 </tr>
             <?php endforeach; ?>
-            <?php if (!$rows): ?><tr><td colspan="<?= $canManage ? 7 : 6 ?>" class="text-secondary">Không tìm thấy lô phù hợp.</td></tr><?php endif; ?>
+            <?php if (!$rows): ?><tr><td colspan="<?= $canManage ? 8 : 7 ?>" class="text-secondary">Không tìm thấy lô phù hợp.</td></tr><?php endif; ?>
             </tbody>
         </table>
     </div>
@@ -95,7 +104,7 @@
                                 </select>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label" for="stockAdjustmentQuantity">Số lượng</label>
+                                <label class="form-label" for="stockAdjustmentQuantity">Số lượng (<span data-stock-adjustment-unit>đơn vị</span>)</label>
                                 <input class="form-control" id="stockAdjustmentQuantity" type="number" name="quantity" min="1" required>
                             </div>
                             <div class="mb-3">
@@ -105,7 +114,7 @@
                                     <option value="damage">Hư hỏng</option>
                                     <option value="expired">Hết hạn</option>
                                     <option value="loss">Mất mát</option>
-                                    <option value="sample">Hàng mẫu</option>
+                                    <option value="sample">Hàng trải nghiệm</option>
                                     <option value="other">Khác</option>
                                 </select>
                             </div>

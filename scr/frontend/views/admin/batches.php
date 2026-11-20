@@ -24,16 +24,28 @@
 <form method="get" action="<?= e(url('/admin/labels')) ?>" id="labelSelection">
     <div class="d-flex justify-content-between align-items-center mb-2"><h2 class="h5 mb-0">Danh sách lô</h2><button class="btn btn-sm btn-outline-primary">In tem các lô đã chọn</button></div>
     <div class="table-responsive bg-white border rounded"><table class="table align-middle mb-0">
-        <thead><tr><th><span class="visually-hidden">Chọn</span></th><th>Mã lô</th><th>Sản phẩm / nông trại</th><th>Ngày</th><th>Số lượng</th><th>Kiểm định</th><th>Trạng thái</th><th>Lượt quét</th><th></th></tr></thead>
-        <tbody><?php if (!$batches): ?><tr><td colspan="9" class="text-center text-secondary py-4">Chưa có lô hàng.</td></tr><?php endif; ?>
-        <?php foreach ($batches as $batch): ?><tr>
+        <thead><tr><th><span class="visually-hidden">Chọn</span></th><th>Mã lô</th><th>Sản phẩm / nông trại</th><th>Ngày</th><th>Số lượng</th><th>Giá nhập trung bình</th><th>Kiểm định</th><th>Trạng thái</th><th>Lượt quét</th><th></th></tr></thead>
+        <tbody><?php if (!$batches): ?><tr><td colspan="10" class="text-center text-secondary py-4">Chưa có lô hàng.</td></tr><?php endif; ?>
+        <?php foreach ($batches as $batch): ?>
+            <?php
+            $saleUnit = trim((string) ($batch['sale_unit'] ?? ''));
+            $unitName = mb_strtolower($saleUnit !== '' ? $saleUnit : (string) $batch['unit'], 'UTF-8');
+            $unitLabel = ProductUnitFormatter::shortLabel(
+                $saleUnit !== '' ? $saleUnit : (string) $batch['unit'],
+                $saleUnit !== '' && $batch['pack_size'] !== null ? (float) $batch['pack_size'] : null,
+                $saleUnit !== '' ? ($batch['pack_size_unit'] ?? null) : null
+            );
+            ?>
+            <tr>
             <td><input class="form-check-input" type="checkbox" name="ids[]" value="<?= (int) $batch['id'] ?>" aria-label="Chọn <?= e($batch['batch_code']) ?>"></td>
-            <td><code><?= e($batch['batch_code']) ?></code></td><td><?= e($batch['product_name']) ?><br><span class="text-secondary"><?= e($batch['farm_name']) ?></span></td>
+            <td><code><?= e($batch['batch_code']) ?></code></td><td><?= e($batch['product_name']) ?><small class="d-block text-secondary"><?= e($unitLabel) ?></small><span class="text-secondary"><?= e($batch['farm_name']) ?></span></td>
             <td>Thu hoạch: <?= e($batch['harvested_at']) ?><br>Hạn: <?= e($batch['expires_at']) ?></td>
-            <td><?= (int) $batch['quantity_remaining'] ?> / <?= (int) $batch['quantity_received'] ?></td>
+            <td><?= (int) $batch['quantity_remaining'] ?> <?= e($unitName) ?> / <?= (int) $batch['quantity_received'] ?> <?= e($unitName) ?></td>
+            <td><?= number_format((float) $batch['average_unit_cost'], 0, ',', '.') ?> ₫ / <?= e($unitName) ?></td>
             <td><?= e(InventoryLabels::inspectionResult($batch['inspection_result'])) ?></td><td><?= e(InventoryLabels::status($batch['status'])) ?></td><td><?= (int) $batch['scan_count'] ?></td>
             <td><a class="btn btn-sm btn-outline-primary" href="<?= e(url('/admin/batches/' . $batch['id'])) ?>">Chi tiết</a><a class="btn btn-sm btn-outline-secondary mt-1" href="<?= e(url('/qr/' . $batch['batch_code'])) ?>" download="<?= e($batch['batch_code']) ?>.svg">QR SVG</a></td>
-        </tr><?php endforeach; ?></tbody>
+        </tr>
+        <?php endforeach; ?></tbody>
     </table></div>
 </form>
 <?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>

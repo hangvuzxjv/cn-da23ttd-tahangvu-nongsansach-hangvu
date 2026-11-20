@@ -66,12 +66,26 @@ $cartCanPlace = array_filter($cart['items'], static fn (array $item): bool => !$
             <div class="card-header"><h2 class="h5 mb-0">Đơn hàng của bạn</h2></div>
             <div class="card-body">
                 <?php foreach ($cart['items'] as $item): ?>
+                    <?php
+                    $saleUnit = trim((string) ($item['sale_unit'] ?? ''));
+                    $unitLabel = ProductUnitFormatter::shortLabel(
+                        $saleUnit !== '' ? $saleUnit : (string) $item['unit'],
+                        $saleUnit !== '' && $item['pack_size'] !== null ? (float) $item['pack_size'] : null,
+                        $saleUnit !== '' ? ($item['pack_size_unit'] ?? null) : null
+                    );
+                    $estimatedWeight = ProductUnitFormatter::approximateWeightLabel($unitLabel, (int) $item['quantity']);
+                    ?>
                     <div class="d-flex justify-content-between gap-3 mb-2">
-                        <span>
+                        <div class="d-flex gap-2">
+                            <img src="<?= e(asset($item['image_url'] ?: '/public/images/no-image.svg')) ?>"<?= product_image_fallback_attributes() ?> alt="" width="48" height="48" class="rounded object-fit-cover flex-shrink-0">
+                            <span>
                             <?php if (!empty($item['is_flash_sale'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?>
-                            <?= e($item['name']) ?> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?>
+                            <?= e($item['name']) ?> · <?= e($unitLabel) ?>
+                            <span class="d-block small"><?= (int) $item['quantity'] ?> × <?= number_format($item['current_price'], 0, ',', '.') ?> ₫</span>
+                            <?php if ($estimatedWeight !== null): ?><span class="d-block small text-secondary"><?= e($estimatedWeight) ?></span><?php endif; ?>
                             <?php if (!empty($item['flash_sale_message'])): ?><span class="d-block small text-warning-emphasis"><?= e($item['flash_sale_message']) ?></span><?php endif; ?>
-                        </span>
+                            </span>
+                        </div>
                         <strong><?= number_format($item['current_price'] * (int) $item['quantity'], 0, ',', '.') ?> ₫</strong>
                     </div>
                 <?php endforeach; ?>

@@ -6,7 +6,7 @@
     <meta name="description" content="Trang thông báo lỗi của Nông Sản Sạch.">
     <meta name="theme-color" content="#176b3a">
     <title><?= (int) http_response_code() ?> - Nông Sản Sạch</title>
-    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/favicon.svg')) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/public/images/logo.svg')) ?>">
     <link href="<?= e(asset('/css/vendor/bootstrap.min.css')) ?>" rel="stylesheet">
     <link href="<?= e(asset('/css/app.css')) ?>" rel="stylesheet">
 </head>

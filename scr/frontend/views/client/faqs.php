@@ -32,4 +32,4 @@
 <p class="alert alert-light border" id="faqNoResults" role="status" aria-live="polite" <?= $faqGroups ? 'hidden' : '' ?>>
     <?= $faqGroups ? 'Không tìm thấy câu hỏi phù hợp.' : 'Hiện chưa có câu hỏi thường gặp được công bố.' ?>
 </p>
-<p class="text-secondary">Chưa tìm thấy câu trả lời? <a href="<?= e(url('/lien-he')) ?>">Liên hệ cửa hàng</a> hoặc <a href="<?= e(url('/ho-tro')) ?>">gửi phiếu hỗ trợ</a>.</p>
+<p class="text-secondary">Chưa tìm thấy câu trả lời? <a href="<?= e(url('/lien-he')) ?>">Liên hệ cửa hàng</a>.</p>

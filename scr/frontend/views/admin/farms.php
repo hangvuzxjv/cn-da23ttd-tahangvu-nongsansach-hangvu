@@ -15,7 +15,7 @@
         <div class="col-md-4"><label class="form-label">Ngày hết hạn chứng nhận</label><input class="form-control" type="date" name="certification_expires_at"></div>
         <div class="col-md-4"><label class="form-label">Vĩ độ</label><input class="form-control" type="number" step="any" min="-90" max="90" name="latitude"></div>
         <div class="col-md-4"><label class="form-label">Kinh độ</label><input class="form-control" type="number" step="any" min="-180" max="180" name="longitude"></div>
-        <div class="col-md-6"><label class="form-label">Ảnh nông trại (JPG/PNG/WebP, tối đa 2 MB)</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp"></div>
+        <div class="col-md-6"><label class="form-label">Ảnh nông trại (JPG/PNG/WebP, tối đa 8 MB)</label><input class="form-control" type="file" name="image" accept=".jpg,.jpeg,.png,.webp"></div>
         <div class="col-md-6"><label class="form-label">Ảnh giấy chứng nhận</label><input class="form-control" type="file" name="certificate_image" accept=".jpg,.jpeg,.png,.webp"></div>
         <div class="col-12"><label class="form-label">Mô tả</label><textarea class="form-control" name="description" rows="2"></textarea></div>
         <div class="col-12"><button class="btn btn-success">Thêm nông trại</button></div>
@@ -42,9 +42,9 @@
             <label class="form-label">Số chứng nhận</label><input class="form-control mb-2" name="certification_number" value="<?= e($farm['certification_number']) ?>">
             <label class="form-label">Ngày hết hạn</label><input class="form-control mb-2" type="date" name="certification_expires_at" value="<?= e($farm['certification_expires_at']) ?>">
             <div class="row g-2"><div class="col"><label class="form-label">Vĩ độ</label><input class="form-control" type="number" step="any" min="-90" max="90" name="latitude" value="<?= e($farm['latitude']) ?>"></div><div class="col"><label class="form-label">Kinh độ</label><input class="form-control" type="number" step="any" min="-180" max="180" name="longitude" value="<?= e($farm['longitude']) ?>"></div></div>
-            <label class="form-label mt-2">Đổi ảnh nông trại</label><input class="form-control mb-2" type="file" name="image" accept=".jpg,.jpeg,.png,.webp">
+            <label class="form-label mt-2">Đổi ảnh nông trại (tối đa 8 MB)</label><input class="form-control mb-2" type="file" name="image" accept=".jpg,.jpeg,.png,.webp">
             <?php if ($farm['image_url']): ?><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="remove_image" value="1" id="removeFarmImage<?= (int) $farm['id'] ?>"><label class="form-check-label" for="removeFarmImage<?= (int) $farm['id'] ?>">Xóa ảnh nông trại hiện tại</label></div><?php endif; ?>
-            <label class="form-label">Đổi ảnh chứng nhận</label><input class="form-control mb-2" type="file" name="certificate_image" accept=".jpg,.jpeg,.png,.webp">
+            <label class="form-label">Đổi ảnh chứng nhận (tối đa 8 MB)</label><input class="form-control mb-2" type="file" name="certificate_image" accept=".jpg,.jpeg,.png,.webp">
             <?php if ($farm['certificate_image_url']): ?><div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="remove_certificate_image" value="1" id="removeFarmCertificate<?= (int) $farm['id'] ?>"><label class="form-check-label" for="removeFarmCertificate<?= (int) $farm['id'] ?>">Xóa ảnh chứng nhận hiện tại</label></div><?php endif; ?>
             <label class="form-label">Mô tả</label><textarea class="form-control mb-2" name="description"><?= e($farm['description']) ?></textarea>
             <label class="form-label">Trạng thái</label><select class="form-select mb-2" name="status"><option value="active" <?= $farm['status'] === 'active' ? 'selected' : '' ?>>Đang hoạt động</option><option value="inactive" <?= $farm['status'] === 'inactive' ? 'selected' : '' ?>>Ngừng hoạt động</option></select>

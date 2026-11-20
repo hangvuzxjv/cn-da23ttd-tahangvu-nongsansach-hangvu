@@ -12,7 +12,7 @@ final class AdminContentController extends Controller
              FROM banners ORDER BY sort_order, id'
         )->fetchAll();
         $this->adminView('admin/banners', [
-            'title' => 'Quản lý banner',
+            'title' => 'Banner trang chủ',
             'banners' => $banners,
             'editBanner' => null,
             'success' => flash('success'),
@@ -35,7 +35,7 @@ final class AdminContentController extends Controller
              FROM banners ORDER BY sort_order, id'
         )->fetchAll();
         $this->adminView('admin/banners', [
-            'title' => 'Sửa banner',
+            'title' => 'Banner trang chủ',
             'banners' => $banners,
             'editBanner' => $banner,
             'success' => flash('success'),
@@ -70,12 +70,13 @@ final class AdminContentController extends Controller
                 redirect('/admin/content/banners');
             }
         }
+        $storedImage = null;
         try {
-            $imageUrl = $this->storeBannerUpload($_FILES['image'] ?? null)
-                ?? (string) ($existing['image_url'] ?? '');
-            if ($imageUrl === '') {
-                throw new InvalidArgumentException('Ảnh banner là bắt buộc.');
-            }
+            $storedImage = ImageUploadService::store($_FILES['image'] ?? null, 'banners');
+            $removeImage = isset($_POST['remove_image']) && (string) $_POST['remove_image'] === '1';
+            $imageUrl = $storedImage['url'] ?? (
+                $removeImage ? '' : (string) ($existing['image_url'] ?? '')
+            );
             if ($bannerId) {
                 $query = $database->prepare(
                     'UPDATE banners SET title = :title, description = :description, image_url = :image_url,
@@ -98,13 +99,24 @@ final class AdminContentController extends Controller
                     'status' => $status,
                 ]);
             }
-        } catch (InvalidArgumentException | RuntimeException $exception) {
+        } catch (RuntimeException $exception) {
+            $this->discardBannerUpload($storedImage);
             flash('error', $exception->getMessage());
             redirect('/admin/content/banners' . ($bannerId ? '/' . $bannerId . '/edit' : ''));
         } catch (PDOException $exception) {
+            $this->discardBannerUpload($storedImage);
             error_log('Admin banner save failed: ' . $exception->getMessage());
             flash('error', 'Không thể lưu banner lúc này. Vui lòng thử lại sau.');
             redirect('/admin/content/banners' . ($bannerId ? '/' . $bannerId . '/edit' : ''));
+        }
+        if ($existing && (string) $existing['image_url'] !== $imageUrl) {
+            try {
+                $this->deleteBannerImage((string) $existing['image_url']);
+            } catch (RuntimeException $exception) {
+                error_log('Admin banner old-image cleanup failed: ' . $exception->getMessage());
+                flash('error', 'Banner đã được lưu nhưng không thể xóa ảnh cũ. Vui lòng kiểm tra thư mục uploads.');
+                redirect('/admin/content/banners');
+            }
         }
         flash('success', $bannerId ? 'Đã cập nhật banner.' : 'Đã thêm banner.');
         redirect('/admin/content/banners');
@@ -117,8 +129,23 @@ final class AdminContentController extends Controller
             flash('error', 'Banner không hợp lệ.');
             redirect('/admin/content/banners');
         }
-        $query = Database::connection()->prepare('DELETE FROM banners WHERE id = :id');
+        $database = Database::connection();
+        $lookup = $database->prepare('SELECT image_url FROM banners WHERE id = :id LIMIT 1');
+        $lookup->execute(['id' => $bannerId]);
+        $imageUrl = $lookup->fetchColumn();
+        if ($imageUrl === false) {
+            flash('error', 'Không tìm thấy banner cần xóa.');
+            redirect('/admin/content/banners');
+        }
+        $query = $database->prepare('DELETE FROM banners WHERE id = :id');
         $query->execute(['id' => $bannerId]);
+        try {
+            $this->deleteBannerImage((string) $imageUrl);
+        } catch (RuntimeException $exception) {
+            error_log('Admin banner delete cleanup failed: ' . $exception->getMessage());
+            flash('error', 'Đã xóa banner nhưng không thể xóa ảnh cũ. Vui lòng kiểm tra thư mục uploads.');
+            redirect('/admin/content/banners');
+        }
         flash('success', 'Đã xóa banner.');
         redirect('/admin/content/banners');
     }
@@ -134,57 +161,45 @@ final class AdminContentController extends Controller
         redirect('/admin/content/banners');
     }
 
-    private function storeBannerUpload(mixed $file): ?string
+    private function discardBannerUpload(?array $image): void
     {
-        if (!is_array($file) || (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
-            return null;
+        if ($image === null) {
+            return;
         }
-        if ((int) ($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK
-            || (int) ($file['size'] ?? 0) < 1 || (int) $file['size'] > 2 * 1024 * 1024
-            || !is_string($file['tmp_name'] ?? null) || !is_uploaded_file($file['tmp_name'])) {
-            throw new InvalidArgumentException('Ảnh phải là tệp hợp lệ và không vượt quá 2MB.');
+        try {
+            ImageUploadService::deleteStored((string) ($image['url'] ?? ''), 'banners');
+        } catch (Throwable $exception) {
+            error_log('Admin banner upload cleanup failed: ' . $exception->getMessage());
         }
-        $finfo = new finfo(FILEINFO_MIME_TYPE);
-        $mime = $finfo->file($file['tmp_name']);
-        $allowed = [
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/webp' => 'webp',
-            'image/svg+xml' => 'svg',
-            'text/xml' => 'svg',
-            'application/xml' => 'svg',
-        ];
-        if (!isset($allowed[$mime])) {
-            throw new InvalidArgumentException('Chỉ chấp nhận ảnh JPG, PNG, WebP hoặc SVG.');
+    }
+
+    private function deleteBannerImage(string $url): void
+    {
+        if (str_starts_with($url, '/uploads/banners/')) {
+            ImageUploadService::deleteStored($url, 'banners');
+            return;
         }
-        $contents = file_get_contents($file['tmp_name']);
-        if (!is_string($contents) || $contents === '') {
-            throw new InvalidArgumentException('Không thể đọc ảnh tải lên.');
+
+        $prefix = '/img/banners/';
+        if (!str_starts_with($url, $prefix)) {
+            return;
         }
-        if ($allowed[$mime] === 'svg') {
-            $contents = preg_replace('/<script\b[^>]*>.*?<\/script\s*>/is', '', $contents);
-            $contents = preg_replace('/\s+on[a-z]+\s*=\s*(["\']).*?\1/is', '', (string) $contents);
-            $contents = preg_replace('/\s+(?:href|xlink:href)\s*=\s*(["\'])(?!#).*?\1/is', '', (string) $contents);
-            $contents = preg_replace('/url\s*\(\s*(?!#)[^)]*\)/i', '', (string) $contents);
-            $contents = preg_replace('/<(!DOCTYPE|\\?xml-stylesheet)\b[^>]*>/i', '', (string) $contents);
-            if (!is_string($contents) || stripos($contents, '<svg') === false) {
-                throw new InvalidArgumentException('SVG không hợp lệ.');
-            }
+        $filename = substr($url, strlen($prefix));
+        if (!preg_match('/\A[a-f0-9]{32}\.(?:jpe?g|png|webp|svg)\z/i', $filename)) {
+            return;
         }
-        $directory = dirname(__DIR__, 2) . '/img/banners';
-        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
-            throw new RuntimeException('Không thể tạo thư mục ảnh banner.');
+        $root = realpath(ROOT_PATH);
+        $directory = realpath(ROOT_PATH . DIRECTORY_SEPARATOR . 'img' . DIRECTORY_SEPARATOR . 'banners');
+        $path = $directory === false ? false : realpath($directory . DIRECTORY_SEPARATOR . $filename);
+        $rootPrefix = $root === false ? '' : rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        if ($directory === false || $path === false || $rootPrefix === ''
+            || !str_starts_with(strtolower($directory . DIRECTORY_SEPARATOR), strtolower($rootPrefix))
+            || !is_file($path) || dirname($path) !== $directory) {
+            return;
         }
-        $filename = bin2hex(random_bytes(16)) . '.' . $allowed[$mime];
-        $destination = $directory . '/' . $filename;
-        if ($allowed[$mime] === 'svg') {
-            if (file_put_contents($destination, $contents, LOCK_EX) === false) {
-                throw new RuntimeException('Không thể lưu ảnh banner.');
-            }
-        } elseif (!move_uploaded_file($file['tmp_name'], $destination)) {
-            throw new RuntimeException('Không thể lưu ảnh banner.');
+        if (!unlink($path)) {
+            throw new RuntimeException('Không thể xóa tệp ảnh banner khỏi ổ đĩa: ' . basename($path));
         }
-        return '/img/banners/' . $filename;
     }
 
     public function pages(): void

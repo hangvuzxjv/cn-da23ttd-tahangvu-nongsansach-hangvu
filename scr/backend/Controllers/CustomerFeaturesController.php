@@ -4,6 +4,23 @@ declare(strict_types=1);
 
 final class CustomerFeaturesController extends Controller
 {
+    public function missions(): void
+    {
+        $data = null;
+        $error = null;
+        try {
+            $data = (new CustomerMissionService())->dashboard((int) Auth::user()['id']);
+        } catch (Throwable $exception) {
+            error_log('Customer missions page failed: ' . $exception->getMessage());
+            $error = 'Không thể tải nhiệm vụ nhận voucher lúc này. Vui lòng thử lại sau.';
+        }
+        $this->view('client/customer-missions', [
+            'title' => 'Nhiệm vụ nhận voucher',
+            'missions' => $data,
+            'error' => $error,
+        ]);
+    }
+
     public function wishlist(): void
     {
         $userId = (int) Auth::user()['id'];

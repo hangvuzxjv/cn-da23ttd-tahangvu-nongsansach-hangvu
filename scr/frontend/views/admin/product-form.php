@@ -10,6 +10,7 @@ $previewUnitLabel = ProductUnitFormatter::shortLabel(
     is_numeric($previewSize) ? (float) $previewSize : null,
     $previewSizeUnit !== '' ? $previewSizeUnit : null
 );
+$maxNewImages = max(0, 8 - count($images));
 $previewPrice = $value('price');
 $initialPreview = 'Chọn đơn vị bán và nhập giá để xem trước.';
 if ($previewSaleUnit !== '' && $previewUnitLabel !== '' && is_numeric($previewPrice) && (float) $previewPrice > 0) {
@@ -92,7 +93,15 @@ if ($previewSaleUnit !== '' && $previewUnitLabel !== '' && is_numeric($previewPr
         <div class="col-md-6"><label class="form-label" for="seo_title">SEO title</label><input class="form-control" id="seo_title" name="seo_title" maxlength="255" value="<?= e($value('seo_title')) ?>"></div>
         <div class="col-md-6"><label class="form-label" for="seo_description">SEO description</label><textarea class="form-control" id="seo_description" name="seo_description" maxlength="500" rows="2"><?= e($value('seo_description')) ?></textarea></div>
         <div class="col-md-6"><div class="form-check"><input class="form-check-input" id="is_featured" name="is_featured" type="checkbox" value="1" <?= (int) $value('is_featured') === 1 ? 'checked' : '' ?>><label class="form-check-label" for="is_featured">Sản phẩm nổi bật</label></div></div>
-        <div class="col-md-6"><label class="form-label" for="images">Ảnh sản phẩm (JPG, PNG, WebP; tối đa 2 MB/ảnh)</label><input class="form-control" id="images" name="images[]" type="file" accept="image/jpeg,image/png,image/webp" multiple><div class="form-text">Ảnh được kiểm tra MIME phía máy chủ. GD được dùng để thu nhỏ ảnh nếu có.</div></div>
+        <div class="col-12" id="product-images" data-max-new-images="<?= $maxNewImages ?>" data-existing-primary="<?= $hasPrimaryImage ? '1' : '0' ?>">
+            <label class="form-label" for="images">Ảnh sản phẩm (JPG, JPEG, PNG, WebP; tối đa 8 MB/ảnh, 8 ảnh/sản phẩm)</label>
+            <input class="form-control" id="images" name="images[]" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" multiple <?= $maxNewImages === 0 ? 'disabled' : '' ?>>
+            <input type="hidden" id="primary-new-image" name="primary_new_image" value="<?= $hasPrimaryImage ? '' : '0' ?>">
+            <div class="form-text">Ảnh được kiểm tra MIME phía máy chủ; ảnh gốc tối đa 2560 px được giữ nguyên, ảnh lớn hơn được thu theo đúng tỷ lệ nếu máy chủ có GD.</div>
+            <?php if ($maxNewImages === 0): ?><div class="form-text text-warning">Sản phẩm đã đủ 8 ảnh. Hãy xóa bớt ảnh để tải thêm.</div><?php endif; ?>
+            <div class="row g-2 mt-2" id="new-image-preview" aria-live="polite"></div>
+            <div class="small text-danger mt-2" id="image-upload-message" role="status"></div>
+        </div>
     </div></div>
     <div class="card-footer"><input type="hidden" name="_token" value="<?= e(Csrf::token()) ?>"><button class="btn btn-success" type="submit">Lưu sản phẩm</button></div>
 </form>
@@ -156,28 +165,24 @@ if ($previewSaleUnit !== '' && $previewUnitLabel !== '' && is_numeric($previewPr
 </script>
 <?php if ($images): ?>
 <section class="card"><div class="card-body">
-    <h2 class="h5">Ảnh hiện có</h2><p class="text-secondary">Kéo nút ↑ / ↓ để sắp xếp; ảnh đầu tiên là ảnh đại diện.</p>
+    <h2 class="h5">Ảnh hiện có</h2><p class="text-secondary">Dùng nút ↑ / ↓ để sắp xếp hoặc chọn ảnh đại diện.</p>
     <form method="post" action="<?= e(url('/admin/products/' . $product['id'] . '/images/reorder')) ?>" id="image-order-form">
         <?= csrf_field() ?><div class="row g-3" id="image-order-list">
-            <?php foreach ($images as $image): ?><div class="col-6 col-md-3 image-order-item"><div class="border rounded p-2">
-                <img class="img-fluid rounded catalog-preview" src="<?= e(asset($image['image_url'])) ?>" alt="<?= e($image['alt_text']) ?>" loading="lazy">
-                <div class="d-flex justify-content-between mt-2"><span><?= (int) $image['is_primary'] ? 'Ảnh đại diện' : 'Ảnh phụ' ?></span><span>
-                    <button class="btn btn-sm btn-outline-secondary" type="button" data-move="up" aria-label="Chuyển ảnh lên">↑</button>
-                    <button class="btn btn-sm btn-outline-secondary" type="button" data-move="down" aria-label="Chuyển ảnh xuống">↓</button>
-                </span></div>
+            <?php foreach ($images as $imageIndex => $image): $isPrimary = (int) $image['is_primary'] === 1 || (!$hasStoredPrimaryImage && $imageIndex === 0); ?><div class="col-6 col-md-3 image-order-item" data-initial-primary="<?= $isPrimary ? '1' : '0' ?>"><div class="border rounded p-2">
+                <img class="img-fluid rounded catalog-preview" src="<?= e(asset($image['image_url'])) ?>"<?= product_image_fallback_attributes() ?> alt="<?= e($image['alt_text']) ?>" loading="lazy">
+                <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+                    <span class="badge <?= $isPrimary ? 'text-bg-success' : 'text-bg-secondary' ?>" data-image-primary-label><?= $isPrimary ? 'Ảnh đại diện' : 'Ảnh phụ' ?></span>
+                    <span class="text-nowrap">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-existing-move="up" aria-label="Chuyển ảnh lên">↑</button>
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-existing-move="down" aria-label="Chuyển ảnh xuống">↓</button>
+                    </span>
+                </div>
                 <input type="hidden" name="image_ids[]" value="<?= (int) $image['id'] ?>">
-                <button class="btn btn-sm btn-outline-danger mt-2" formaction="<?= e(url('/admin/products/images/' . $image['id'] . '/delete')) ?>" formmethod="post" onclick="return confirm('Xóa ảnh này?')">Xóa ảnh</button>
+                <button class="btn btn-sm btn-outline-success mt-2" type="button" data-set-existing-primary>Chọn làm ảnh đại diện</button>
+                <button class="btn btn-sm btn-outline-danger mt-2" type="submit" formaction="<?= e(url('/admin/products/images/' . $image['id'] . '/delete')) ?>" formmethod="post" onclick="return confirm('Xóa ảnh này?')">Xóa ảnh</button>
             </div></div><?php endforeach; ?>
         </div><button class="btn btn-outline-success mt-3" type="submit">Lưu thứ tự ảnh</button>
     </form>
 </div></section>
-<script>
-document.querySelectorAll('[data-move]').forEach((button) => button.addEventListener('click', () => {
-    const item = button.closest('.image-order-item');
-    const sibling = button.dataset.move === 'up' ? item.previousElementSibling : item.nextElementSibling;
-    if (!sibling) return;
-    if (button.dataset.move === 'up') item.parentElement.insertBefore(item, sibling);
-    else item.parentElement.insertBefore(sibling, item);
-}));
-</script>
 <?php endif; ?>
+<script src="<?= e(asset('/public/js/product-images.js')) ?>" defer></script>

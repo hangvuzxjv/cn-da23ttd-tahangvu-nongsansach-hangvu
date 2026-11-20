@@ -648,9 +648,14 @@ final class CheckoutController extends Controller
     private function orderItems(int $orderId): array
     {
         $query = Database::connection()->prepare(
-            'SELECT i.*, b.batch_code, p.slug AS product_slug
+            'SELECT i.*, b.batch_code, p.slug AS product_slug,
+                    COALESCE(images.image_url, \'/public/images/no-image.svg\') AS image_url
              FROM order_items i LEFT JOIN product_batches b ON b.id = i.batch_id
              LEFT JOIN products p ON p.id = i.product_id
+             LEFT JOIN (
+                 SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
+                 FROM product_images GROUP BY product_id
+             ) images ON images.product_id = i.product_id
              WHERE i.order_id = :id ORDER BY i.id'
         );
         $query->execute(['id' => $orderId]);

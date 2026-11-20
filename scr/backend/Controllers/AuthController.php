@@ -25,9 +25,44 @@ final class AuthController extends Controller
 
     public function showRegister(): void
     {
+        $referralCode = $_GET['ref'] ?? '';
         $this->view('client/register', [
             'title' => 'Tạo tài khoản',
             'errors' => form_errors(),
+            'referralCode' => is_string($referralCode) ? strtoupper(trim($referralCode)) : '',
+        ]);
+    }
+
+    public function showRegistrationOtp(): void
+    {
+        $userId = $this->pendingRegistrationUserId();
+        if ($userId === null) {
+            redirect('/login');
+        }
+
+        $query = Database::connection()->prepare(
+            'SELECT email, email_verified_at FROM users WHERE id = :id LIMIT 1'
+        );
+        $query->execute(['id' => $userId]);
+        $user = $query->fetch();
+        if (!$user) {
+            $this->clearPendingRegistration();
+            redirect('/register');
+        }
+        if ($user['email_verified_at'] !== null) {
+            $this->clearPendingRegistration();
+            flash('success', 'Email của bạn đã được xác minh. Vui lòng đăng nhập.');
+            redirect('/login');
+        }
+
+        $this->view('client/verify-email-otp', [
+            'title' => 'Xác minh email',
+            'email' => (string) $user['email'],
+            'errors' => form_errors(),
+            'success' => flash('success'),
+            'error' => flash('error'),
+            'resendAfter' => (new RegistrationOtpService())->resendAfter($userId),
+            'loadVerificationOtp' => true,
         ]);
     }
 
@@ -37,6 +72,7 @@ final class AuthController extends Controller
             'name' => trim((string) ($_POST['name'] ?? '')),
             'email' => strtolower(trim((string) ($_POST['email'] ?? ''))),
             'phone' => trim((string) ($_POST['phone'] ?? '')),
+            'referral_code' => strtoupper(trim((string) ($_POST['referral_code'] ?? ''))),
         ];
         $password = (string) ($_POST['password'] ?? '');
         $confirmation = (string) ($_POST['password_confirmation'] ?? '');
@@ -58,8 +94,8 @@ final class AuthController extends Controller
         $database->beginTransaction();
         try {
             $statement = $database->prepare(
-                'INSERT INTO users (name, email, phone, password, role, status)
-                 VALUES (:name, :email, :phone, :password, \'customer\', \'active\')'
+                'INSERT INTO users (name, email, phone, password, role, status, email_verified_at)
+                 VALUES (:name, :email, :phone, :password, \'customer\', \'active\', NULL)'
             );
             $statement->execute([
                 'name' => $input['name'],
@@ -68,11 +104,20 @@ final class AuthController extends Controller
                 'password' => password_hash($password, PASSWORD_BCRYPT),
             ]);
             $userId = (int) $database->lastInsertId();
-            $verificationToken = (new AccountTokenService($database))->issueVerification($userId);
+            if ($input['referral_code'] !== '') {
+                (new CustomerMissionService($database))->attachReferrer($userId, $input['referral_code']);
+            }
+            $otp = (new RegistrationOtpService($database))->issue($userId);
+            if ($otp['status'] !== 'issued') {
+                throw new RuntimeException('Không thể tạo mã xác minh cho tài khoản mới.');
+            }
             $database->commit();
         } catch (Throwable $exception) {
             if ($database->inTransaction()) {
                 $database->rollBack();
+            }
+            if ($exception instanceof InvalidArgumentException) {
+                $this->failValidation('/register', $input, ['referral_code' => $exception->getMessage()]);
             }
             if ($exception instanceof PDOException && $exception->getCode() === '23000') {
                 $this->failValidation('/register', $input, ['email' => 'Email này đã được đăng ký.']);
@@ -81,32 +126,22 @@ final class AuthController extends Controller
         }
 
         AuditLog::record($userId, 'register', 'user', $userId);
-        (new VoucherWalletService($database))->grantWelcomeSafely($userId);
-        $verificationMail = null;
-        try {
-            $verifyUrl = absolute_url('/verify-email/' . $verificationToken);
-            $verificationMail = (new MailService())->sendTemplate(
-                $input['email'],
-                'Xác thực email - Nông Sản Sạch',
-                'Xác thực địa chỉ email',
-                ['Xin chào ' . $input['name'] . '.', 'Liên kết có hiệu lực trong 60 phút và chỉ dùng một lần.'],
-                'Xác thực email',
-                $verifyUrl,
-                ['type' => 'email_verification', 'user_id' => $userId]
-            );
-            $this->exposeDemoLink($verifyUrl);
-        } catch (Throwable) {
-            error_log('Registration verification email could not be queued.');
-        }
-        Auth::login($this->findUserById($userId));
-        (new CartService())->mergeSessionCart($userId);
-        flash('success', 'Tạo tài khoản thành công. Bạn có thể mua hàng ngay; email xác thực là tùy chọn.');
-        if ($verificationMail === null || !$verificationMail['accepted']) {
-            flash('error', 'Tài khoản đã tạo; email xác minh chưa thể được lưu để gửi. Bạn có thể yêu cầu gửi lại trong hồ sơ.');
+        Session::start();
+        $_SESSION['pending_registration_user_id'] = $userId;
+        $verificationMail = $this->sendRegistrationOtp(
+            $userId,
+            $input['email'],
+            $input['name'],
+            (string) $otp['code']
+        );
+        if (!$verificationMail['accepted']) {
+            flash('error', 'Chưa thể gửi mã xác minh. Vui lòng thử gửi lại sau.');
         } elseif (!$verificationMail['delivered']) {
-            flash('error', 'Tài khoản đã tạo; email xác minh đang chờ gửi lại.');
+            flash('success', 'Tài khoản đã tạo. Mã xác minh đang được chuyển đến hộp thư Gmail của bạn.');
+        } else {
+            flash('success', 'Tài khoản đã tạo. Mã xác minh đã được gửi đến hộp thư Gmail của bạn.');
         }
-        redirect('/profile');
+        redirect('/verify-email-otp');
     }
 
     public function login(): void
@@ -129,7 +164,8 @@ final class AuthController extends Controller
         }
 
         $statement = Database::connection()->prepare(
-            'SELECT id, name, email, phone, password, role, status FROM users WHERE email = :email LIMIT 1'
+            'SELECT id, name, email, phone, password, role, status, email_verified_at
+             FROM users WHERE email = :email LIMIT 1'
         );
         $statement->execute(['email' => $email]);
         $user = $statement->fetch();
@@ -146,6 +182,13 @@ final class AuthController extends Controller
             'DELETE FROM login_attempts WHERE email_hash = :email_hash AND ip_hash = :ip_hash'
         );
         $clearAttempts->execute(['email_hash' => $emailHash, 'ip_hash' => $ipHash]);
+        if ($user['email_verified_at'] === null) {
+            Session::start();
+            $_SESSION['pending_registration_user_id'] = (int) $user['id'];
+            flash('error', 'Bạn cần xác minh email trước khi đăng nhập. Nhập mã đã gửi vào hộp thư của bạn.');
+            redirect('/verify-email-otp');
+        }
+        $this->clearPendingRegistration();
         Auth::login($user);
         (new CartService())->mergeSessionCart((int) $user['id']);
         AuditLog::record((int) $user['id'], 'login', 'user', (int) $user['id']);
@@ -168,7 +211,6 @@ final class AuthController extends Controller
         $this->view('client/forgot-password', [
             'title' => 'Quên mật khẩu',
             'errors' => form_errors(),
-            'mailLink' => flash('mail_link'),
             'success' => flash('success'),
         ]);
     }
@@ -182,42 +224,143 @@ final class AuthController extends Controller
             redirect('/forgot-password');
         }
 
+        Session::start();
+        $_SESSION['password_reset_email'] = $email;
+        $_SESSION['password_reset_otp_sent_at'] = time();
+        $_SESSION['password_reset_otp_attempts'] = 0;
+
         $allowed = (new MailRateLimiter())->allow(
             'password-reset',
             $email,
             (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
         );
-        $statement = Database::connection()->prepare('SELECT id, name FROM users WHERE email = :email LIMIT 1');
-        $statement->execute(['email' => $email]);
-        $user = $allowed ? $statement->fetch() : false;
-        $mailLink = null;
+        $user = false;
+        if ($allowed) {
+            $statement = Database::connection()->prepare(
+                'SELECT id, name, email FROM users WHERE email = :email LIMIT 1'
+            );
+            $statement->execute(['email' => $email]);
+            $user = $statement->fetch();
+        }
         if ($user) {
-            $token = (new AccountTokenService())->issuePasswordReset((int) $user['id']);
-            try {
-                $mailLink = absolute_url('/reset-password/' . $token);
-                (new MailService())->sendTemplate(
-                    $email,
-                    'Đặt lại mật khẩu - Nông Sản Sạch',
-                    'Yêu cầu đặt lại mật khẩu',
-                    ['Xin chào ' . $user['name'] . '.', 'Liên kết chỉ dùng một lần và hết hạn sau 30 phút.'],
-                    'Đặt lại mật khẩu',
-                    $mailLink,
-                    ['type' => 'password_reset', 'user_id' => (int) $user['id']]
+            $otp = (new RegistrationOtpService())->issuePasswordReset((int) $user['id']);
+            if ($otp['status'] === 'issued') {
+                $this->sendPasswordResetOtp(
+                    (int) $user['id'],
+                    (string) $user['email'],
+                    (string) $user['name'],
+                    (string) $otp['code']
                 );
-            } catch (Throwable) {
-                error_log('Password reset email could not be queued.');
             }
         }
 
-        flash('success', 'Nếu email thuộc tài khoản hợp lệ, hướng dẫn đặt lại mật khẩu sẽ được gửi.');
-        if ($mailLink !== null) {
-            try {
-                $this->exposeDemoLink($mailLink);
-            } catch (Throwable) {
-                error_log('Password reset debug link unavailable.');
+        flash('success', 'Nếu địa chỉ thuộc tài khoản, mã xác minh sẽ được gửi đến hộp thư.');
+        redirect('/forgot-password/code');
+    }
+
+    public function showPasswordResetOtp(): void
+    {
+        $email = $this->pendingPasswordResetEmail();
+        if ($email === null) {
+            redirect('/forgot-password');
+        }
+
+        $this->view('client/forgot-password-code', [
+            'title' => 'Xác minh email',
+            'email' => $email,
+            'errors' => form_errors(),
+            'success' => flash('success'),
+            'error' => flash('error'),
+            'resendAfter' => $this->passwordResetResendAfter(),
+            'loadVerificationOtp' => true,
+        ]);
+    }
+
+    public function verifyPasswordResetOtp(): void
+    {
+        $email = $this->pendingPasswordResetEmail();
+        if ($email === null) {
+            redirect('/forgot-password');
+        }
+
+        Session::start();
+        $attempts = (int) ($_SESSION['password_reset_otp_attempts'] ?? 0);
+        $code = trim((string) ($_POST['code'] ?? ''));
+        if ($attempts >= RegistrationOtpService::MAX_ATTEMPTS) {
+            flash('error', 'Mã xác minh không đúng hoặc đã hết hạn. Hãy kiểm tra thư và thử lại.');
+            redirect('/forgot-password/code');
+        }
+
+        $query = Database::connection()->prepare(
+            'SELECT id FROM users WHERE email = :email LIMIT 1'
+        );
+        $query->execute(['email' => $email]);
+        $userId = $query->fetchColumn();
+        $status = 'invalid';
+        if ($userId !== false) {
+            $status = (new RegistrationOtpService())->verifyPasswordReset((int) $userId, $code);
+        } else {
+            password_verify($code, self::dummyPasswordHash());
+        }
+
+        if ($status === 'verified' && $userId !== false) {
+            $token = (new AccountTokenService())->issuePasswordReset((int) $userId, 10);
+            $this->clearPasswordResetSession();
+            redirect('/reset-password/' . rawurlencode($token));
+        }
+
+        if ($status === 'invalid' || $userId === false) {
+            $_SESSION['password_reset_otp_attempts'] = min(
+                RegistrationOtpService::MAX_ATTEMPTS,
+                $attempts + 1
+            );
+        } elseif ($status === 'locked') {
+            $_SESSION['password_reset_otp_attempts'] = RegistrationOtpService::MAX_ATTEMPTS;
+        }
+        flash('error', 'Mã xác minh không đúng hoặc đã hết hạn. Hãy kiểm tra thư và thử lại.');
+        redirect('/forgot-password/code');
+    }
+
+    public function resendPasswordResetOtp(): void
+    {
+        $email = $this->pendingPasswordResetEmail();
+        if ($email === null) {
+            redirect('/forgot-password');
+        }
+        if ($this->passwordResetResendAfter() > 0) {
+            flash('error', 'Vui lòng đợi hết thời gian đếm ngược trước khi gửi lại mã.');
+            redirect('/forgot-password/code');
+        }
+
+        $allowed = (new MailRateLimiter())->allow(
+            'password-reset',
+            $email,
+            (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown')
+        );
+        if ($allowed) {
+            $query = Database::connection()->prepare(
+                'SELECT id, name, email FROM users WHERE email = :email LIMIT 1'
+            );
+            $query->execute(['email' => $email]);
+            $user = $query->fetch();
+            if ($user) {
+                $otp = (new RegistrationOtpService())->issuePasswordReset((int) $user['id']);
+                if ($otp['status'] === 'issued') {
+                    $this->sendPasswordResetOtp(
+                        (int) $user['id'],
+                        (string) $user['email'],
+                        (string) $user['name'],
+                        (string) $otp['code']
+                    );
+                }
             }
         }
-        redirect('/forgot-password');
+
+        Session::start();
+        $_SESSION['password_reset_otp_sent_at'] = time();
+        $_SESSION['password_reset_otp_attempts'] = 0;
+        flash('success', 'Nếu địa chỉ thuộc tài khoản, mã xác minh sẽ được gửi đến hộp thư.');
+        redirect('/forgot-password/code');
     }
 
     public function showResetPassword(string $token): void
@@ -280,9 +423,87 @@ final class AuthController extends Controller
             flash('error', 'Liên kết xác thực không hợp lệ hoặc đã hết hạn.');
             redirect(Auth::check() ? '/profile' : '/login');
         }
-
         flash('success', 'Email đã được xác thực.');
         redirect(Auth::check() ? '/profile' : '/login');
+    }
+
+    public function verifyRegistrationOtp(): void
+    {
+        $userId = $this->pendingRegistrationUserId();
+        if ($userId === null) {
+            redirect('/login');
+        }
+
+        $code = trim((string) ($_POST['code'] ?? ''));
+        $status = (new RegistrationOtpService())->verify($userId, $code);
+        if ($status === 'verified') {
+            $this->clearPendingRegistration();
+            $user = $this->findUserById($userId);
+            if ($user['status'] !== 'active') {
+                flash('error', 'Tài khoản hiện không thể đăng nhập.');
+                redirect('/login');
+            }
+            if ($user['role'] === 'customer') {
+                (new VoucherWalletService())->grantWelcomeSafely($userId);
+            }
+            Auth::login($user);
+            (new CartService())->mergeSessionCart($userId);
+            AuditLog::record($userId, 'email_verified_otp', 'user', $userId);
+            flash('success', 'Email đã được xác minh. Tài khoản của bạn đã sẵn sàng.');
+            redirect($this->takeIntendedUrl() ?? ($user['role'] === 'customer' ? '/' : '/admin'));
+        }
+
+        $message = match ($status) {
+            'invalid' => 'Mã xác minh không đúng. Vui lòng kiểm tra lại.',
+            'locked' => 'Bạn đã nhập sai 5 lần. Hãy gửi mã mới để tiếp tục.',
+            'expired' => 'Mã xác minh đã hết hạn. Hãy gửi mã mới.',
+            'missing_code' => 'Không tìm thấy mã xác minh. Hãy gửi mã mới.',
+            default => 'Không thể xác minh email. Vui lòng thử lại.',
+        };
+        flash('error', $message);
+        redirect('/verify-email-otp');
+    }
+
+    public function resendRegistrationOtp(): void
+    {
+        $userId = $this->pendingRegistrationUserId();
+        if ($userId === null) {
+            redirect('/login');
+        }
+
+        $otp = (new RegistrationOtpService())->issue($userId);
+        if ($otp['status'] === 'verified') {
+            $this->clearPendingRegistration();
+            flash('success', 'Email của bạn đã được xác minh. Vui lòng đăng nhập.');
+            redirect('/login');
+        }
+        if ($otp['status'] === 'missing') {
+            $this->clearPendingRegistration();
+            redirect('/register');
+        }
+        if ($otp['status'] === 'cooldown') {
+            flash('error', 'Vui lòng đợi ' . (int) $otp['retry_after'] . ' giây trước khi gửi lại mã.');
+            redirect('/verify-email-otp');
+        }
+
+        $query = Database::connection()->prepare('SELECT name FROM users WHERE id = :id LIMIT 1');
+        $query->execute(['id' => $userId]);
+        $name = (string) ($query->fetchColumn() ?: '');
+        $result = $this->sendRegistrationOtp(
+            $userId,
+            (string) $otp['email'],
+            $name,
+            (string) $otp['code']
+        );
+        flash(
+            $result['accepted'] ? 'success' : 'error',
+            !$result['accepted']
+                ? 'Chưa thể gửi mã xác minh. Vui lòng thử lại sau.'
+                : ($result['delivered']
+                ? 'Mã xác minh mới đã được gửi đến hộp thư của bạn.'
+                : 'Mã xác minh mới đang được chuyển đến hộp thư của bạn.')
+        );
+        redirect('/verify-email-otp');
     }
 
     public function resendVerification(): Response
@@ -335,7 +556,9 @@ final class AuthController extends Controller
             $errors['name'] = 'Họ tên là bắt buộc và không vượt quá 150 ký tự.';
         }
         if (!filter_var($input['email'], FILTER_VALIDATE_EMAIL) || strlen($input['email']) > 190) {
-            $errors['email'] = 'Vui lòng nhập email hợp lệ.';
+            $errors['email'] = 'Vui lòng nhập địa chỉ Gmail hợp lệ.';
+        } elseif (!str_ends_with($input['email'], '@gmail.com')) {
+            $errors['email'] = 'Đăng ký chỉ nhận địa chỉ Gmail kết thúc bằng @gmail.com.';
         } else {
             $statement = Database::connection()->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
             $statement->execute(['email' => $input['email']]);
@@ -345,6 +568,15 @@ final class AuthController extends Controller
         }
         if (preg_match('/\A[0-9+()\-\s]{6,30}\z/', $input['phone']) !== 1) {
             $errors['phone'] = 'Vui lòng nhập số điện thoại hợp lệ (6-30 ký tự).';
+        }
+        if (strlen($input['referral_code']) > 16) {
+            $errors['referral_code'] = 'Mã giới thiệu không đúng định dạng.';
+        } elseif ($input['referral_code'] !== '') {
+            try {
+                (new CustomerMissionService())->validateReferralCode($input['referral_code'], $input['phone']);
+            } catch (InvalidArgumentException $exception) {
+                $errors['referral_code'] = $exception->getMessage();
+            }
         }
         return array_merge($errors, $this->validatePassword($password), $confirmation !== $password
             ? ['password_confirmation' => 'Mật khẩu nhập lại không khớp.']
@@ -435,6 +667,77 @@ final class AuthController extends Controller
             throw new RuntimeException('Không tìm thấy tài khoản vừa tạo.');
         }
         return $user;
+    }
+
+    private function pendingRegistrationUserId(): ?int
+    {
+        Session::start();
+        $userId = $_SESSION['pending_registration_user_id'] ?? null;
+        return is_numeric($userId) && (int) $userId > 0 ? (int) $userId : null;
+    }
+
+    private function clearPendingRegistration(): void
+    {
+        Session::start();
+        unset($_SESSION['pending_registration_user_id']);
+    }
+
+    private function pendingPasswordResetEmail(): ?string
+    {
+        Session::start();
+        $email = $_SESSION['password_reset_email'] ?? null;
+        return is_string($email) && filter_var($email, FILTER_VALIDATE_EMAIL) ? $email : null;
+    }
+
+    private function passwordResetResendAfter(): int
+    {
+        Session::start();
+        $sentAt = (int) ($_SESSION['password_reset_otp_sent_at'] ?? 0);
+        return $sentAt > 0 ? max(0, 60 - (time() - $sentAt)) : 0;
+    }
+
+    private function clearPasswordResetSession(): void
+    {
+        Session::start();
+        unset(
+            $_SESSION['password_reset_email'],
+            $_SESSION['password_reset_otp_sent_at'],
+            $_SESSION['password_reset_otp_attempts']
+        );
+    }
+
+    private function sendRegistrationOtp(int $userId, string $email, string $name, string $code): array
+    {
+        return (new MailService())->sendTemplate(
+            $email,
+            'Mã xác minh đăng ký - Nông Sản Sạch',
+            'Xác minh tài khoản',
+            [
+                'Xin chào ' . $name . '.',
+                'Mã xác minh của bạn là: ' . $code,
+                'Mã có hiệu lực trong 10 phút và bạn có tối đa 5 lần nhập. Không chia sẻ mã này với bất kỳ ai.',
+            ],
+            null,
+            null,
+            ['type' => 'registration_email_otp', 'user_id' => $userId]
+        );
+    }
+
+    private function sendPasswordResetOtp(int $userId, string $email, string $name, string $code): array
+    {
+        return (new MailService())->sendTemplate(
+            $email,
+            'Mã xác minh đặt lại mật khẩu - Nông Sản Sạch',
+            'Đặt lại mật khẩu',
+            [
+                'Xin chào ' . $name . '.',
+                'Mã xác minh đặt lại mật khẩu của bạn là: ' . $code,
+                'Mã có hiệu lực trong 10 phút và bạn có tối đa 5 lần nhập. Không chia sẻ mã này với bất kỳ ai.',
+            ],
+            null,
+            null,
+            ['type' => 'password_reset_otp', 'user_id' => $userId]
+        );
     }
 
     private function takeIntendedUrl(): ?string

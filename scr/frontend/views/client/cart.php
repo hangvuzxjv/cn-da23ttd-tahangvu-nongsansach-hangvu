@@ -10,18 +10,28 @@
     <div class="cart-layout">
         <div class="cart-items table-responsive">
             <table class="table align-middle">
-                <thead><tr><th>Sản phẩm</th><th>Đơn giá hiện tại</th><th class="cart-quantity-column">Số lượng</th><th class="text-end">Thành tiền</th><th></th></tr></thead>
+                <thead><tr><th>Sản phẩm</th><th>Giá và số lượng</th><th class="cart-quantity-column">Số lượng</th><th class="text-end">Thành tiền</th><th></th></tr></thead>
                 <tbody>
                 <?php foreach ($cart['items'] as $item): ?>
+                    <?php
+                    $saleUnit = trim((string) ($item['sale_unit'] ?? ''));
+                    $unitLabel = ProductUnitFormatter::shortLabel(
+                        $saleUnit !== '' ? $saleUnit : (string) $item['unit'],
+                        $saleUnit !== '' && $item['pack_size'] !== null ? (float) $item['pack_size'] : null,
+                        $saleUnit !== '' ? ($item['pack_size_unit'] ?? null) : null
+                    );
+                    $estimatedWeight = ProductUnitFormatter::approximateWeightLabel($unitLabel, (int) $item['quantity']);
+                    ?>
                     <tr>
                         <td>
                             <div class="d-flex align-items-center gap-3">
-                                <img src="<?= e(asset($item['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="" width="72" height="72" class="rounded object-fit-cover cart-product-image">
+                                <img src="<?= e(asset($item['image_url'] ?: '/public/images/no-image.svg')) ?>"<?= product_image_fallback_attributes() ?> alt="" width="72" height="72" class="rounded object-fit-cover cart-product-image">
                                 <div>
                                     <?php if ($item['product_status'] === 'active' && $item['deleted_at'] === null): ?>
-                                        <a class="fw-semibold link-dark" href="<?= e(url('/san-pham/' . $item['slug'])) ?>"><?= e($item['name']) ?></a>
-                                    <?php else: ?><strong><?= e($item['name']) ?></strong><?php endif; ?>
-                                    <div class="small text-secondary"><?= e($item['sku']) ?> · <?= e($item['unit']) ?></div>
+                                        <a class="fw-semibold link-dark" href="<?= e(url('/san-pham/' . $item['slug'])) ?>"><?= e($item['name']) ?></a> · <?= e($unitLabel) ?>
+                                    <?php else: ?><strong><?= e($item['name']) ?></strong> · <?= e($unitLabel) ?><?php endif; ?>
+                                    <div class="small text-secondary"><?= e($item['sku']) ?></div>
+                                    <?php if ($estimatedWeight !== null): ?><div class="small text-secondary"><?= e($estimatedWeight) ?></div><?php endif; ?>
                                     <?php if ($item['message']): ?><div class="small <?= $item['valid'] ? 'text-warning' : 'text-danger' ?>"><?= e($item['message']) ?></div><?php endif; ?>
                                 </div>
                             </div>
@@ -29,9 +39,9 @@
                         <td>
                             <?php if (!empty($item['is_flash_sale'])): ?>
                                 <span class="badge text-bg-danger">Flash Sale</span><br>
-                                <del class="small text-secondary"><?= number_format((int) $item['original_price'], 0, ',', '.') ?> ₫</del><br>
+                                <del class="small text-secondary"><?= e(ProductUnitFormatter::priceLabel((int) $item['original_price'], $unitLabel)) ?></del><br>
                             <?php endif; ?>
-                            <?= number_format($item['current_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?>
+                            <?= (int) $item['quantity'] ?> × <?= number_format($item['current_price'], 0, ',', '.') ?> ₫
                         </td>
                         <td>
                             <?php if ($item['valid']): ?>

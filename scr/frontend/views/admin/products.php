@@ -1,6 +1,9 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h2">Sản phẩm <span class="badge text-bg-secondary"><?= (int) $total ?></span></h1>
-    <?php if ($canManage): ?><a class="btn btn-success" href="<?= e(url('/admin/products/new')) ?>">Thêm sản phẩm</a><?php endif; ?>
+    <div class="d-flex flex-wrap gap-2">
+        <a class="btn btn-outline-secondary" href="<?= e(url('/admin/products/missing-images')) ?>">Sản phẩm thiếu ảnh</a>
+        <?php if ($canManage): ?><a class="btn btn-success" href="<?= e(url('/admin/products/new')) ?>">Thêm sản phẩm</a><?php endif; ?>
+    </div>
 </div>
 <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if (!empty($error)): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
@@ -15,7 +18,7 @@
     <thead><tr><th>Sản phẩm</th><th>SKU</th><th>Danh mục / Vùng</th><th>Giá</th><th>Tồn</th><th>Trạng thái</th><th></th></tr></thead>
     <tbody><?php foreach ($products as $product): ?>
         <tr>
-            <td><div class="d-flex gap-2 align-items-center"><img class="catalog-thumb" src="<?= e(asset($product['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="" loading="lazy"><span><?= e($product['name']) ?><?= (int) $product['is_featured'] ? ' ★' : '' ?></span></div></td>
+            <td><div class="d-flex gap-2 align-items-center"><img class="catalog-thumb" src="<?= e(asset($product['image_url'] ?: '/public/images/no-image.svg')) ?>"<?= product_image_fallback_attributes() ?> alt="" loading="lazy"><span><?= e($product['name']) ?><?= (int) $product['is_featured'] ? ' ★' : '' ?></span></div></td>
             <td><?= e($product['sku']) ?></td><td><?= e($product['category_name']) ?><div class="small text-secondary"><?= e($product['region_name']) ?></div></td>
             <td><?php if ($product['sale_price'] !== null): ?><del class="text-secondary"><?= number_format((float) $product['price'], 0, ',', '.') ?></del><br><strong class="text-danger"><?= number_format((float) $product['sale_price'], 0, ',', '.') ?></strong><?php else: ?><?= number_format((float) $product['price'], 0, ',', '.') ?><?php endif; ?></td>
             <td><?= (int) $product['total_stock'] ?></td><td><?= e(['draft' => 'Nháp', 'active' => 'Đang bán', 'inactive' => 'Ngừng bán'][$product['status']] ?? $product['status']) ?></td>

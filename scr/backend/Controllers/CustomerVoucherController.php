@@ -10,7 +10,7 @@ final class CustomerVoucherController extends Controller
         if ($user === null) {
             redirect('/login?return_to=' . rawurlencode('/voucher-cua-toi'));
         }
-        if ($user['role'] !== 'customer') {
+        if (($user['role'] ?? '') !== 'customer') {
             throw new HttpException(403, 'Chỉ khách hàng mới có ví voucher.');
         }
         $userId = (int) $user['id'];
@@ -55,7 +55,7 @@ final class CustomerVoucherController extends Controller
         if ($user === null) {
             redirect('/login?return_to=' . rawurlencode('/kho-voucher'));
         }
-        if ($user['role'] !== 'customer') {
+        if (($user['role'] ?? '') !== 'customer') {
             throw new HttpException(403, 'Chỉ khách hàng mới có thể lưu voucher.');
         }
         $voucherId = filter_var($id, FILTER_VALIDATE_INT);

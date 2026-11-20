@@ -23,6 +23,18 @@
         errorMessage.classList.add('d-none');
     };
 
+    const updateLineUnit = (line) => {
+        const product = line.querySelector('[data-receipt-field="product"]');
+        const unitLabel = product.selectedOptions[0]?.dataset.unitLabel || '';
+        const unitOutput = line.querySelector('[data-receipt-unit]');
+        const costLabel = line.querySelector('[data-receipt-cost-label]');
+        const note = line.querySelector('[data-receipt-note]');
+        unitOutput.textContent = unitLabel;
+        costLabel.textContent = unitLabel ? `Giá nhập / ${unitLabel}` : 'Giá nhập / đơn vị';
+        note.hidden = unitLabel === '';
+        note.textContent = unitLabel ? `Nhập theo số ${unitLabel} đã đóng gói sẵn.` : '';
+    };
+
     const updateLineOptions = (line) => {
         const product = line.querySelector('[data-receipt-field="product"]');
         const batch = line.querySelector('[data-receipt-field="batch"]');
@@ -46,6 +58,7 @@
         if (batch.selectedOptions[0] && batch.selectedOptions[0].disabled) {
             batch.value = '';
         }
+        updateLineUnit(line);
     };
 
     const allLines = () => Array.from(lines.querySelectorAll('[data-receipt-line]'));

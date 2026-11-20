@@ -68,12 +68,19 @@
         <?php endif; ?>
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered align-middle inventory-stocktake-table">
-                        <thead><tr><th>Sản phẩm</th><th>Mã lô</th><th>Tồn hệ thống</th><th>Số đếm thực tế</th><th>Chênh lệch</th></tr></thead>
+                        <thead><tr><th>Sản phẩm</th><th>Mã lô</th><th>Tồn hệ thống</th><th>Số đếm thực tế (theo đơn vị bán)</th><th>Chênh lệch</th></tr></thead>
                         <tbody>
                         <?php foreach ($items as $item): ?>
                             <?php
                             $countedQuantity = $item['counted_quantity'] === null ? null : (int) $item['counted_quantity'];
                             $difference = $countedQuantity === null ? null : $countedQuantity - (int) $item['system_quantity'];
+                            $saleUnit = trim((string) ($item['sale_unit'] ?? ''));
+                            $unitName = mb_strtolower($saleUnit !== '' ? $saleUnit : (string) $item['unit'], 'UTF-8');
+                            $unitLabel = ProductUnitFormatter::shortLabel(
+                                $saleUnit !== '' ? $saleUnit : (string) $item['unit'],
+                                $saleUnit !== '' && $item['pack_size'] !== null ? (float) $item['pack_size'] : null,
+                                $saleUnit !== '' ? ($item['pack_size_unit'] ?? null) : null
+                            );
                             $differenceClass = $difference === null || $difference === 0 ? '' : ($difference > 0 ? 'inventory-stocktake-difference--surplus' : 'inventory-stocktake-difference--shortage');
                             $differenceLabel = $difference === null ? '—'
                                 : ($difference > 0 ? '+' . $difference . ' · Dư' : ($difference < 0 ? $difference . ' · Thiếu' : '0'));
@@ -84,14 +91,17 @@
                                 data-saved-counted-quantity="<?= $countedQuantity === null ? '' : $countedQuantity ?>"
                                 data-product-name="<?= e($item['product_name']) ?>"
                                 data-batch-code="<?= e($item['batch_code']) ?>">
-                                <td><?= e($item['product_name']) ?> <small class="text-secondary"><?= e($item['sku']) ?></small></td>
+                                <td><?= e($item['product_name']) ?><small class="d-block text-secondary"><?= e($unitLabel) ?></small><small class="d-block text-secondary"><?= e($item['sku']) ?></small></td>
                                 <td><code><?= e($item['batch_code']) ?></code></td>
-                                <td><?= (int) $item['system_quantity'] ?></td>
+                                <td><?= (int) $item['system_quantity'] ?> <?= e($unitName) ?></td>
                                 <td>
                                     <?php if ($isDraft && $canManage): ?>
-                                        <input class="form-control form-control-sm" type="number" name="counted_quantity[<?= (int) $item['batch_id'] ?>]" min="0" step="1" value="<?= $countedQuantity === null ? '' : $countedQuantity ?>" aria-label="Số đếm thực tế: <?= e($item['product_name']) ?>, lô <?= e($item['batch_code']) ?>" data-stocktake-count data-system-quantity="<?= (int) $item['system_quantity'] ?>">
+                                        <div class="input-group input-group-sm">
+                                            <input class="form-control" type="number" name="counted_quantity[<?= (int) $item['batch_id'] ?>]" min="0" step="1" value="<?= $countedQuantity === null ? '' : $countedQuantity ?>" aria-label="Số đếm thực tế: <?= e($item['product_name']) ?>, lô <?= e($item['batch_code']) ?> (<?= e($unitName) ?>)" data-stocktake-count data-system-quantity="<?= (int) $item['system_quantity'] ?>">
+                                            <span class="input-group-text"><?= e($unitName) ?></span>
+                                        </div>
                                     <?php else: ?>
-                                        <?= $countedQuantity === null ? '—' : $countedQuantity ?>
+                                        <?= $countedQuantity === null ? '—' : $countedQuantity . ' ' . e($unitName) ?>
                                     <?php endif; ?>
                                 </td>
                                 <td><span class="<?= e($differenceClass) ?>" data-stocktake-difference><?= e($differenceLabel) ?></span></td>

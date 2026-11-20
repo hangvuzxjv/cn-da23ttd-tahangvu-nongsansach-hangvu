@@ -8,14 +8,17 @@
     <meta name="theme-color" content="#176b3a">
     <meta name="csrf-token" content="<?= e(Csrf::token()) ?>">
     <meta name="app-base-url" content="<?= e(url('/')) ?>">
-    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/favicon.svg')) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/public/images/logo.svg')) ?>">
     <link href="<?= e(asset('/css/vendor/bootstrap.min.css')) ?>" rel="stylesheet">
     <link href="<?= e(asset('/css/app.css')) ?>" rel="stylesheet">
 </head>
 <body class="client-site">
 <nav class="navbar navbar-expand-lg navbar-dark bg-success client-navbar">
     <div class="container">
-        <a class="navbar-brand" href="<?= e(url('/')) ?>">Nông Sản Sạch</a>
+        <a class="navbar-brand client-navbar__brand" href="<?= e(url('/')) ?>">
+            <img class="client-navbar__logo" src="<?= e(asset('/public/images/logo.svg')) ?>" alt="Nông Sản Sạch" width="36" height="36">
+            <span>Nông Sản Sạch</span>
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#clientNavigation" aria-controls="clientNavigation" aria-expanded="false" aria-label="Mở menu">
             <span class="navbar-toggler-icon"></span>
         </button>
@@ -23,7 +26,7 @@
         $navUser = Auth::user();
         $navCart = (new CartService())->summary($navUser ? (int) $navUser['id'] : null);
         $navCartCount = array_sum(array_map(static fn (array $item): int => (int) $item['quantity'], $navCart['items']));
-        $navAccountCounts = ['orders' => 0, 'vouchers' => 0, 'support' => 0];
+        $navAccountCounts = ['orders' => 0, 'vouchers' => 0];
         $navUserName = trim((string) ($navUser['name'] ?? ''));
         $navUserInitial = $navUserName !== ''
             ? mb_strtoupper(mb_substr($navUserName, 0, 1, 'UTF-8'), 'UTF-8')
@@ -43,16 +46,12 @@
                        AND (v.usage_limit IS NULL OR v.used_count < v.usage_limit)
                        AND (SELECT COUNT(*) FROM voucher_usages vu
                             WHERE vu.voucher_id = v.id AND vu.user_id = uv.user_id AND vu.status = 'used') < v.per_user_limit
-                    ) AS voucher_count,
-                    (SELECT COUNT(DISTINCT link_url) FROM notifications
-                     WHERE user_id = :support_user_id AND read_at IS NULL
-                       AND title = 'Phiếu hỗ trợ đã có phản hồi') AS support_count"
+                    ) AS voucher_count"
             );
             $navUserId = (int) $navUser['id'];
             $navAccountCountQuery->execute([
                 'orders_user_id' => $navUserId,
                 'voucher_user_id' => $navUserId,
-                'support_user_id' => $navUserId,
             ]);
             $navAccountCounts = array_map('intval', $navAccountCountQuery->fetch() ?: $navAccountCounts);
         }
@@ -62,6 +61,7 @@
                 <a class="nav-link" href="<?= e(url('/')) ?>">Trang chủ</a>
                 <a class="nav-link" href="<?= e(url('/san-pham')) ?>">Sản phẩm</a>
                 <a class="nav-link" href="<?= e(url('/flash-sale')) ?>">Flash Sale</a>
+                <a class="nav-link" href="<?= e(url('/kho-voucher')) ?>">Ưu đãi</a>
                 <a class="nav-link client-cart-link" href="<?= e(url('/gio-hang')) ?>">
                     <svg class="client-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2l2.2 11.1a2 2 0 0 0 2 1.6h8.5a2 2 0 0 0 1.9-1.4L22 8H6"></path><circle cx="10" cy="20" r="1"></circle><circle cx="18" cy="20" r="1"></circle></svg>
                     <span>Giỏ hàng</span><span class="badge bg-light text-success" id="miniCartCount"><?= $navCartCount ?></span>
@@ -123,9 +123,9 @@
                                     <span>Voucher của tôi</span>
                                     <?php if ($navAccountCounts['vouchers'] > 0): ?><span class="client-account-badge"><?= $navAccountCounts['vouchers'] ?></span><?php endif; ?>
                                 </a>
-                                <a class="client-account-item" href="<?= e(url('/kho-voucher')) ?>">
-                                    <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 5.1 5.6.8-4 3.9 1 5.5-5.1-2.7-5.1 2.7 1-5.5-4-3.9 5.6-.8L12 3Z"></path></svg>
-                                    <span>Kho voucher</span>
+                                <a class="client-account-item" href="<?= e(url('/tai-khoan/nhiem-vu')) ?>">
+                                    <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.8 5.7L20 11l-6.2 2.3L12 19l-1.8-5.7L4 11l6.2-2.3L12 3Z"></path><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"></path></svg>
+                                    <span>Nhiệm vụ nhận voucher</span>
                                 </a>
                             </section>
                             <section class="client-account-group" aria-labelledby="accountPersonalHeading">
@@ -145,15 +145,8 @@
                                     </a>
                                 <?php endif; ?>
                             </section>
-                            <section class="client-account-group" aria-labelledby="accountSupportHeading">
-                                <h2 class="client-account-group__heading" id="accountSupportHeading">Hỗ trợ</h2>
-                                <?php if (Auth::can('support.access')): ?>
-                                    <a class="client-account-item" href="<?= e(url('/ho-tro')) ?>">
-                                        <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v-2a8 8 0 0 1 16 0v2"></path><path d="M4 12H3v5h4v-5H4Zm16 0h1v5h-4v-5h3ZM17 19a5 5 0 0 1-5 2"></path></svg>
-                                        <span>Yêu cầu hỗ trợ</span>
-                                        <?php if ($navAccountCounts['support'] > 0): ?><span class="client-account-badge"><?= $navAccountCounts['support'] ?></span><?php endif; ?>
-                                    </a>
-                                <?php endif; ?>
+                            <section class="client-account-group" aria-labelledby="accountHelpHeading">
+                                <h2 class="client-account-group__heading" id="accountHelpHeading">Trợ giúp</h2>
                                 <a class="client-account-item" href="<?= e(url('/cau-hoi-thuong-gap')) ?>">
                                     <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.5 9a2.6 2.6 0 1 1 4.5 1.8c-1.1 1.1-2 1.3-2 3M12 17.5v.1"></path></svg>
                                     <span>Câu hỏi thường gặp</span>
@@ -177,17 +170,9 @@
                                     <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h18v3a3 3 0 0 0 0 6v7H3v-7a3 3 0 0 0 0-6Z"></path><path d="M13 8v1m0 3v1m0 3v1"></path></svg>
                                     <span>Voucher của tôi</span>
                                 </a>
-                                <a class="client-account-item" href="<?= e(url('/kho-voucher')) ?>">
-                                    <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 5.1 5.6.8-4 3.9 1 5.5-5.1-2.7-5.1 2.7 1-5.5-4-3.9 5.6-.8L12 3Z"></path></svg>
-                                    <span>Kho voucher</span>
-                                </a>
                             </section>
-                            <section class="client-account-group" aria-labelledby="guestSupportHeading">
-                                <h2 class="client-account-group__heading" id="guestSupportHeading">Hỗ trợ</h2>
-                                <a class="client-account-item" href="<?= e(url('/ho-tro')) ?>">
-                                    <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13v-2a8 8 0 0 1 16 0v2"></path><path d="M4 12H3v5h4v-5H4Zm16 0h1v5h-4v-5h3ZM17 19a5 5 0 0 1-5 2"></path></svg>
-                                    <span>Yêu cầu hỗ trợ</span>
-                                </a>
+                            <section class="client-account-group" aria-labelledby="guestHelpHeading">
+                                <h2 class="client-account-group__heading" id="guestHelpHeading">Trợ giúp</h2>
                                 <a class="client-account-item" href="<?= e(url('/cau-hoi-thuong-gap')) ?>">
                                     <svg class="client-account-item__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.5 9a2.6 2.6 0 1 1 4.5 1.8c-1.1 1.1-2 1.3-2 3M12 17.5v.1"></path></svg>
                                     <span>Câu hỏi thường gặp</span>
@@ -231,7 +216,10 @@ $footerPages = $footerPageQuery->fetchAll();
 <footer class="client-footer">
     <div class="container">
         <div class="row g-4 client-footer__columns">
-            <div class="col-12 col-sm-6 col-lg-3"><h2>Về cửa hàng</h2><p>Nông sản theo mùa, minh bạch nguồn gốc từ các vùng miền Việt Nam.</p></div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <h2><a class="client-footer__brand" href="<?= e(url('/')) ?>"><img src="<?= e(asset('/public/images/logo.svg')) ?>" alt="Nông Sản Sạch" width="26" height="26"><span>Về cửa hàng</span></a></h2>
+                <p>Nông sản theo mùa, minh bạch nguồn gốc từ các vùng miền Việt Nam.</p>
+            </div>
             <div class="col-12 col-sm-6 col-lg-3"><h2>Liên kết nhanh</h2><ul>
                 <li><a href="<?= e(url('/san-pham')) ?>">Sản phẩm</a></li>
                 <li><a href="<?= e(url('/flash-sale')) ?>">Flash Sale</a></li>
@@ -239,7 +227,7 @@ $footerPages = $footerPageQuery->fetchAll();
                 <li><a href="<?= e(url('/kho-voucher')) ?>">Kho voucher</a></li>
                 <li><a href="<?= e(url('/gio-hang')) ?>">Giỏ hàng</a></li>
                 <li><a href="<?= e(url('/cau-hoi-thuong-gap')) ?>">Câu hỏi thường gặp</a></li>
-                <li><a href="<?= e(url('/ho-tro')) ?>">Hỗ trợ</a></li>
+                <li><a href="<?= e(url('/lien-he')) ?>">Liên hệ cửa hàng</a></li>
                 <li><a href="<?= e(url('/sitemap.xml')) ?>">Sơ đồ trang</a></li>
             </ul></div>
             <div class="col-12 col-sm-6 col-lg-3"><h2>Chính sách</h2><ul>
@@ -263,6 +251,7 @@ $footerPages = $footerPageQuery->fetchAll();
 <?php if (!empty($loadFaqSearch)): ?><script src="<?= e(asset('/js/faq-search.js')) ?>" defer></script><?php endif; ?>
 <?php if (!empty($loadVoucherWallet)): ?><script src="<?= e(asset('/js/voucher-wallet.js')) ?>"></script><?php endif; ?>
 <?php if (!empty($loadProductSearch)): ?><script src="<?= e(asset('/js/product-search.js')) ?>" defer></script><?php endif; ?>
-<?= (new TawkChatService())->embedScript() ?>
+<?php if (!empty($loadVerificationOtp)): ?><script src="<?= e(asset('/js/verification-otp.js')) ?>" defer></script><?php endif; ?>
+<?php if ($navUser): ?><?= (new TawkChatService())->embedScript() ?><?php endif; ?>
 </body>
 </html>

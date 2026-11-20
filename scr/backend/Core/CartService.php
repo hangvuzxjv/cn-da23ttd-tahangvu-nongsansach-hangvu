@@ -19,10 +19,11 @@ final class CartService
         }
         $query = $this->database->prepare(
             'SELECT ci.id AS cart_item_id, ci.product_id, ci.quantity, ci.price_snapshot,
-                    p.name, p.slug, p.sku, p.unit, p.price, p.sale_price, p.category_id,
+                    p.name, p.slug, p.sku, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    p.price, p.sale_price, p.category_id,
                     p.status AS product_status, p.deleted_at,
                     COALESCE(NULLIF(p.sale_price, 0), p.price) AS current_price,
-                    COALESCE(pi.image_url, \'/img/product-placeholder.svg\') AS image_url
+                    COALESCE(pi.image_url, \'/public/images/no-image.svg\') AS image_url
              FROM cart_items ci
              JOIN products p ON p.id = ci.product_id
              LEFT JOIN (

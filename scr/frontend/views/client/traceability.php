@@ -9,7 +9,7 @@
 
 <section class="card shadow-sm mb-4">
     <div class="row g-0">
-        <div class="col-md-4"><img class="img-fluid rounded-start trace-product-image" src="<?= e(asset($batch['product_image'])) ?>" alt="<?= e($batch['product_name']) ?>"></div>
+        <div class="col-md-4"><img class="img-fluid rounded-start trace-product-image" src="<?= e(asset($batch['product_image'])) ?>"<?= product_image_fallback_attributes() ?> alt="<?= e($batch['product_name']) ?>"></div>
         <div class="col-md-8"><div class="card-body">
             <p class="text-success mb-1">TRUY XUẤT NGUỒN GỐC</p>
             <h1 class="h2"><?= e($batch['product_name']) ?></h1>

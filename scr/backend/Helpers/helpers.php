@@ -5,10 +5,95 @@ function e(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
+function app_utf8_length(string $value): int
+{
+    if (function_exists('mb_strlen')) {
+        return mb_strlen($value, 'UTF-8');
+    }
+
+    $count = preg_match_all('/./us', $value, $matches);
+    return $count === false ? strlen($value) : $count;
+}
+
+function app_utf8_substr(string $value, int $start, ?int $length = null): string
+{
+    if (function_exists('mb_substr')) {
+        return mb_substr($value, $start, $length, 'UTF-8');
+    }
+
+    $characters = preg_split('//u', $value, -1, PREG_SPLIT_NO_EMPTY);
+    if ($characters === false) {
+        return $length === null ? substr($value, $start) : substr($value, $start, $length);
+    }
+
+    return implode('', array_slice($characters, $start, $length));
+}
+
+function app_utf8_lower(string $value): string
+{
+    return function_exists('mb_strtolower')
+        ? mb_strtolower($value, 'UTF-8')
+        : strtolower($value);
+}
+
+function app_ascii_transliterate(string $value): string
+{
+    static $map = null;
+    if ($map === null) {
+        $characters = [
+            'a' => ['àáạảãâầấậẩẫăằắặẳẵ', 'ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴ'],
+            'e' => ['èéẹẻẽêềếệểễ', 'ÈÉẸẺẼÊỀẾỆỂỄ'],
+            'i' => ['ìíịỉĩ', 'ÌÍỊỈĨ'],
+            'o' => ['òóọỏõôồốộổỗơờớợởỡ', 'ÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠ'],
+            'u' => ['ùúụủũưừứựửữ', 'ÙÚỤỦŨƯỪỨỰỬỮ'],
+            'y' => ['ỳýỵỷỹ', 'ỲÝỴỶỸ'],
+            'd' => ['đ', 'Đ'],
+        ];
+        $map = [];
+        foreach ($characters as $asciiCharacter => [$lowercase, $uppercase]) {
+            foreach ([$lowercase, $uppercase] as $variants) {
+                foreach (preg_split('//u', $variants, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $character) {
+                    $map[$character] = $asciiCharacter;
+                }
+            }
+        }
+    }
+
+    $value = strtr($value, $map);
+    if (function_exists('iconv')) {
+        $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+        if ($ascii !== false) {
+            return $ascii;
+        }
+    }
+
+    $ascii = $value;
+    $ascii = preg_replace('/\p{Mn}+/u', '', $ascii);
+    return $ascii === null ? $value : $ascii;
+}
+
+function app_log_exception(string $context, Throwable $exception): void
+{
+    $sqlState = $exception instanceof PDOException
+        ? (string) ($exception->errorInfo[0] ?? $exception->getCode())
+        : '';
+    $entry = sprintf(
+        "[%s] %s: %s%s\n",
+        date(DATE_ATOM),
+        $context,
+        $exception->getMessage(),
+        $sqlState === '' ? '' : ' (SQLSTATE ' . $sqlState . ')'
+    );
+
+    if (!@error_log($entry, 3, BACKEND_PATH . '/storage/logs/app.log')) {
+        error_log(rtrim($entry));
+    }
+}
+
 function catalog_normalized_name(string $value): string
 {
-    $value = trim(mb_strtolower($value, 'UTF-8'));
-    $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+    $value = trim(app_utf8_lower($value));
+    $ascii = app_ascii_transliterate($value);
     return preg_replace('/[^a-z0-9]+/', '', strtolower($ascii ?: $value)) ?? '';
 }
 
@@ -100,6 +185,12 @@ function is_internal_redirect_path(string $path): bool
 function asset(string $path): string
 {
     return url($path);
+}
+
+function product_image_fallback_attributes(): string
+{
+    return ' data-fallback-src="' . e(asset('/public/images/no-image.svg'))
+        . '" onerror="this.onerror=null;this.src=this.dataset.fallbackSrc"';
 }
 
 function redirect(string $path): never

@@ -25,9 +25,14 @@
     <div class="col-lg-8">
         <div class="card mb-4"><div class="card-header"><h2 class="h5 mb-0">Sản phẩm</h2></div><div class="card-body">
             <?php foreach ($items as $item): ?><div class="d-flex justify-content-between gap-3 border-bottom py-2">
-                <div><?php if (!empty($item['flash_sale_item_id'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?><strong><?= e($item['product_name']) ?></strong> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?>
-                    <div class="small text-secondary"><?= number_format((float) $item['unit_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?></div>
-                    <?php if ($item['batch_code']): ?><div class="small"><a href="<?= e(url('/truy-xuat/' . $item['batch_code'])) ?>">Truy xuất lô <?= e($item['batch_code']) ?></a></div><?php endif; ?>
+                <div class="d-flex align-items-start gap-2">
+                    <img src="<?= e(asset($item['image_url'] ?: '/public/images/no-image.svg')) ?>"<?= product_image_fallback_attributes() ?> alt="<?= e($item['product_name']) ?>" width="56" height="56" class="rounded object-fit-cover flex-shrink-0">
+                    <div><?php if (!empty($item['flash_sale_item_id'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?><strong><?= e($item['product_name']) ?></strong> · <?= e($item['unit']) ?>
+                        <div class="small text-secondary"><?= (int) $item['quantity'] ?> × <?= number_format((float) $item['unit_price'], 0, ',', '.') ?> ₫</div>
+                        <?php $estimatedWeight = ProductUnitFormatter::approximateWeightLabel((string) $item['unit'], (int) $item['quantity']); ?>
+                        <?php if ($estimatedWeight !== null): ?><div class="small text-secondary"><?= e($estimatedWeight) ?></div><?php endif; ?>
+                        <?php if ($item['batch_code']): ?><div class="small"><a href="<?= e(url('/truy-xuat/' . $item['batch_code'])) ?>">Truy xuất lô <?= e($item['batch_code']) ?></a></div><?php endif; ?>
+                    </div>
                 </div><span><?= number_format((float) $item['line_total'], 0, ',', '.') ?> ₫</span>
             </div><?php endforeach; ?>
         </div></div>
@@ -68,9 +73,9 @@
         <div class="d-flex gap-2">
             <?php if ($order['status'] === 'shipping'): ?>
                 <form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/da-nhan-hang')) ?>" data-confirm="Xác nhận bạn đã nhận được đơn hàng này?"><?= csrf_field() ?><button class="btn btn-success" type="submit">Đã nhận hàng</button></form>
-                <a class="btn btn-outline-warning" href="<?= e(url('/ho-tro/tao?order_id=' . (int) $order['id'] . '&category=giao_hang')) ?>">Chưa nhận được hàng / có vấn đề</a>
+                <a class="btn btn-outline-warning" href="<?= e(url('/lien-he')) ?>">Liên hệ về giao hàng</a>
             <?php else: ?>
-                <a class="btn btn-outline-success" href="<?= e(url('/ho-tro/tao?order_id=' . (int) $order['id'] . ($order['status'] === 'delivery_failed' ? '&category=giao_hang' : ''))) ?>"><?= $order['status'] === 'delivery_failed' ? 'Tạo phiếu hỗ trợ về giao thất bại' : 'Cần hỗ trợ về đơn này' ?></a>
+                <a class="btn btn-outline-success" href="<?= e(url('/lien-he')) ?>"><?= $order['status'] === 'delivery_failed' ? 'Liên hệ về giao thất bại' : 'Liên hệ về đơn hàng' ?></a>
             <?php endif; ?>
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'bank_transfer'): ?><a class="btn btn-success" href="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan')) ?>">Mở thanh toán VietQR</a><?php endif; ?>
             <?php if ($order['status'] === 'pending' && $order['payment_status'] === 'pending' && ($order['payment']['method'] ?? '') === 'vnpay'): ?><form method="post" action="<?= e(url('/tai-khoan/don-hang/' . $order['id'] . '/thanh-toan/vnpay')) ?>"><?= csrf_field() ?><button class="btn btn-success">Thanh toán lại qua VNPay</button></form><?php endif; ?>

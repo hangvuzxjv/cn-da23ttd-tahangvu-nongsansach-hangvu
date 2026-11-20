@@ -31,8 +31,9 @@ final class PaymentRevenueService
 
     public static function revenueEventsSubquery(): string
     {
-        return '(SELECT payment.order_id, payment.method, payment.paid_at AS event_at,
-                       payment.amount AS amount, \'payment\' AS event_type, payment.refund_required
+        return '(SELECT payment.order_id, payment.method COLLATE utf8mb4_unicode_ci AS method,
+                       payment.paid_at AS event_at, payment.amount AS amount,
+                       _utf8mb4\'payment\' COLLATE utf8mb4_unicode_ci AS event_type, payment.refund_required
                 FROM payments payment
                 WHERE payment.status IN (\'paid\', \'refunded\')
                   AND payment.paid_at IS NOT NULL
@@ -40,19 +41,21 @@ final class PaymentRevenueService
                 UNION ALL
                 SELECT returned.order_id,
                        COALESCE((
-                           SELECT settled.method FROM payments settled
+                           SELECT settled.method COLLATE utf8mb4_unicode_ci FROM payments settled
                            WHERE settled.order_id = returned.order_id
                              AND settled.status IN (\'paid\', \'refunded\')
                            ORDER BY settled.paid_at DESC, settled.id DESC LIMIT 1
-                       ), \'cod\') AS method,
+                       ), _utf8mb4\'cod\' COLLATE utf8mb4_unicode_ci) COLLATE utf8mb4_unicode_ci AS method,
                        returned.refunded_at AS event_at,
-                       -returned.refund_amount AS amount, \'refund\' AS event_type, 0 AS refund_required
+                       -returned.refund_amount AS amount,
+                       _utf8mb4\'refund\' COLLATE utf8mb4_unicode_ci AS event_type, 0 AS refund_required
                 FROM order_returns returned
                 WHERE returned.status = \'refunded\' AND returned.refunded_at IS NOT NULL
                   AND returned.refund_amount > 0
                 UNION ALL
-                SELECT payment.order_id, payment.method, payment.refunded_at AS event_at,
-                       -payment.amount AS amount, \'refund\' AS event_type, 0 AS refund_required
+                SELECT payment.order_id, payment.method COLLATE utf8mb4_unicode_ci AS method,
+                       payment.refunded_at AS event_at, -payment.amount AS amount,
+                       _utf8mb4\'refund\' COLLATE utf8mb4_unicode_ci AS event_type, 0 AS refund_required
                 FROM payments payment
                 WHERE payment.status = \'refunded\' AND payment.refunded_at IS NOT NULL
                   AND NOT EXISTS (
@@ -63,14 +66,14 @@ final class PaymentRevenueService
 
     public static function productRevenueEventsSubquery(): string
     {
-        return '(SELECT item.product_id, item.product_name, item.flash_sale_item_id,
+        return '(SELECT item.product_id, item.product_name COLLATE utf8mb4_unicode_ci AS product_name, item.flash_sale_item_id,
                        payment.paid_at AS event_at, item.quantity AS quantity, item.line_total AS amount
                 FROM order_items item
                 JOIN payments payment ON payment.order_id = item.order_id
                 WHERE payment.status IN (\'paid\', \'refunded\') AND payment.paid_at IS NOT NULL
                   AND (payment.status = \'paid\' OR payment.refunded_at IS NOT NULL)
                 UNION ALL
-                SELECT item.product_id, item.product_name, item.flash_sale_item_id,
+                SELECT item.product_id, item.product_name COLLATE utf8mb4_unicode_ci AS product_name, item.flash_sale_item_id,
                        returned.refunded_at AS event_at, -returned_item.quantity AS quantity,
                        -(returned.refund_amount * (item.unit_price * returned_item.quantity
                            / NULLIF(return_total.merchandise_amount, 0))) AS amount
@@ -86,7 +89,7 @@ final class PaymentRevenueService
                   AND returned.refund_amount > 0
                   AND return_total.merchandise_amount > 0
                 UNION ALL
-                SELECT item.product_id, item.product_name, item.flash_sale_item_id,
+                SELECT item.product_id, item.product_name COLLATE utf8mb4_unicode_ci AS product_name, item.flash_sale_item_id,
                        payment.refunded_at AS event_at, -item.quantity AS quantity,
                        -(LEAST(payment.amount, order_total.merchandise_amount)
                            * (item.line_total / NULLIF(order_total.merchandise_amount, 0))) AS amount

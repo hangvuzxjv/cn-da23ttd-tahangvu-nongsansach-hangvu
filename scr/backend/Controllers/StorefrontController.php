@@ -15,26 +15,24 @@ final class StorefrontController extends Controller
                AND (ends_at IS NULL OR ends_at >= NOW())
              ORDER BY sort_order, id"
         )->fetchAll();
-        $regions = $database->query(
-            'SELECT id, name, slug, description FROM regions
-             WHERE level = 1 AND is_active = 1 ORDER BY id'
-        )->fetchAll();
-        $categories = $database->query(
-            'SELECT id, name, slug, description FROM categories
-             WHERE is_active = 1 AND parent_id IS NULL ORDER BY sort_order, name LIMIT 8'
-        )->fetchAll();
+        $regions = $this->homepageRegions($database);
+        $categories = $this->homepageCategories($database);
         $featured = $this->fetchProducts('p.is_featured = 1', [], 'p.created_at DESC', 8);
         $newest = $this->fetchProducts('1 = 1', [], 'p.created_at DESC', 8);
         $bestselling = $this->fetchProducts('1 = 1', [], 'COALESCE(sales.sold, 0) DESC, p.created_at DESC', 8);
         $userId = $this->currentUserId();
         $voucherWallet = new VoucherWalletService($database);
         $publicVouchers = $voucherWallet->publicVouchers($userId, 3);
-        $usableVoucherCount = $userId === null
-            ? 0
-            : count(array_filter(
-                $voucherWallet->walletForUser($userId),
-                static fn (array $voucher): bool => $voucher['wallet_status'] === 'available'
-            ));
+        $walletVouchers = $userId === null ? [] : $voucherWallet->walletForUser($userId);
+        $usableVoucherCount = count(array_filter(
+            $walletVouchers,
+            static fn (array $voucher): bool => $voucher['wallet_status'] === 'available'
+        ));
+        $welcomeVoucherAvailable = count(array_filter(
+            $walletVouchers,
+            static fn (array $voucher): bool =>
+                $voucher['code'] === 'CHAOMUNG' && $voucher['wallet_status'] === 'available'
+        )) > 0;
         $engagement = new CustomerEngagementService($database);
         $recentProducts = $this->recentlyViewedProducts();
         $flashService = new FlashSaleService($database);
@@ -66,6 +64,8 @@ final class StorefrontController extends Controller
             'recentProducts' => $recentProducts,
             'publicVouchers' => $publicVouchers,
             'usableVoucherCount' => $usableVoucherCount,
+            'showWelcomeOffer' => $userId === null || $welcomeVoucherAvailable,
+            'welcomeVoucherAvailable' => $welcomeVoucherAvailable,
             'loadProductSearch' => true,
         ]);
     }
@@ -117,8 +117,14 @@ final class StorefrontController extends Controller
         }
 
         $query = trim((string) $queryInput);
-        $query = mb_substr($query, 0, 100, 'UTF-8');
-        $batchCode = $query === '' ? null : $this->findExactBatchCode($query);
+        $query = app_utf8_substr($query, 0, 100);
+        try {
+            $batchCode = $query === '' ? null : $this->findExactBatchCode($query);
+        } catch (Throwable $exception) {
+            app_log_exception('Storefront search failed', $exception);
+            $this->renderSearchUnavailable();
+            return;
+        }
         if ($batchCode !== null) {
             redirect('/truy-xuat/' . rawurlencode($batchCode));
         }
@@ -137,43 +143,53 @@ final class StorefrontController extends Controller
             );
         }
 
-        $query = mb_substr(trim((string) $queryInput), 0, 100, 'UTF-8');
+        $query = app_utf8_substr(trim((string) $queryInput), 0, 100);
         $items = [];
-        if (mb_strlen($query, 'UTF-8') >= 2) {
-            $parameters = [];
-            $condition = $this->productSearchCondition($query, $parameters, 'suggest');
-            $statement = Database::connection()->prepare(
-                'SELECT p.name, p.slug, COALESCE(p.sale_price, p.price) AS price,
-                        COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url
-                 FROM products p
-                 JOIN categories c ON c.id = p.category_id AND c.is_active = 1
-                 JOIN regions r ON r.id = p.region_id AND r.is_active = 1
-                 LEFT JOIN (
-                     SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
-                     FROM product_images GROUP BY product_id
-                 ) images ON images.product_id = p.id
-                 WHERE p.status = \'active\' AND p.deleted_at IS NULL AND ' . $condition . '
-                 ORDER BY p.is_featured DESC, p.created_at DESC, p.id DESC LIMIT 6'
-            );
-            $statement->execute($parameters);
-            foreach ($statement->fetchAll() as $product) {
-                $items[] = [
-                    'type' => 'product',
-                    'name' => (string) $product['name'],
-                    'price' => (float) $product['price'],
-                    'image' => asset((string) $product['image_url']),
-                    'url' => url('/san-pham/' . rawurlencode((string) $product['slug'])),
-                ];
-            }
+        try {
+            if (app_utf8_length($query) >= 2) {
+                $parameters = [];
+                $condition = $this->productSearchCondition($query, $parameters, 'suggest');
+                $statement = Database::connection()->prepare(
+                    'SELECT p.name, p.slug, COALESCE(p.sale_price, p.price) AS price,
+                            COALESCE(images.image_url, \'/public/images/no-image.svg\') AS image_url
+                     FROM products p
+                     JOIN categories c ON c.id = p.category_id AND c.is_active = 1
+                     JOIN regions r ON r.id = p.region_id AND r.is_active = 1
+                     LEFT JOIN (
+                         SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
+                         FROM product_images GROUP BY product_id
+                     ) images ON images.product_id = p.id
+                     WHERE p.status = \'active\' AND p.deleted_at IS NULL AND ' . $condition . '
+                     ORDER BY p.is_featured DESC, p.created_at DESC, p.id DESC LIMIT 6'
+                );
+                $statement->execute($parameters);
+                foreach ($statement->fetchAll() as $product) {
+                    $items[] = [
+                        'type' => 'product',
+                        'name' => (string) $product['name'],
+                        'price' => (float) $product['price'],
+                        'image' => asset((string) $product['image_url']),
+                        'url' => url('/san-pham/' . rawurlencode((string) $product['slug'])),
+                    ];
+                }
 
-            $batchCode = $this->findExactBatchCode($query);
-            if ($batchCode !== null) {
-                $items[] = [
-                    'type' => 'batch',
-                    'label' => 'Truy xuất lô ' . $batchCode,
-                    'url' => url('/truy-xuat/' . rawurlencode($batchCode)),
-                ];
+                $batchCode = $this->findExactBatchCode($query);
+                if ($batchCode !== null) {
+                    $items[] = [
+                        'type' => 'batch',
+                        'label' => 'Truy xuất lô ' . $batchCode,
+                        'url' => url('/truy-xuat/' . rawurlencode($batchCode)),
+                    ];
+                }
             }
+        } catch (Throwable $exception) {
+            app_log_exception('Storefront search suggestions failed', $exception);
+            return Response::json(
+                false,
+                'Tìm kiếm tạm thời gặp sự cố, vui lòng thử lại',
+                [],
+                503
+            );
         }
 
         return new Response(
@@ -295,7 +311,7 @@ final class StorefrontController extends Controller
         $stock = (int) $product['actual_stock'];
         $this->view('client/product', [
             'title' => ($product['seo_title'] ?? null) ?: $product['name'],
-            'metaDescription' => ($product['seo_description'] ?? null) ?: ($product['short_description'] ?: mb_substr(strip_tags((string) $product['description']), 0, 155, 'UTF-8')),
+            'metaDescription' => ($product['seo_description'] ?? null) ?: ($product['short_description'] ?: app_utf8_substr(strip_tags((string) $product['description']), 0, 155)),
             'product' => $product,
             'flashSale' => $flashDeal,
             'flashSaleServerTime' => $flashService->serverTime(),
@@ -388,6 +404,16 @@ final class StorefrontController extends Controller
 
     private function listing(array $scope = [], string $scopeType = ''): void
     {
+        try {
+            $this->renderListing($scope, $scopeType);
+        } catch (Throwable $exception) {
+            app_log_exception('Storefront product listing search failed', $exception);
+            $this->renderSearchUnavailable();
+        }
+    }
+
+    private function renderListing(array $scope = [], string $scopeType = ''): void
+    {
         (new PaymentService())->expirePending();
         (new InventoryService())->expireReservations();
         $filterErrors = [];
@@ -420,8 +446,8 @@ final class StorefrontController extends Controller
             $filterErrors[] = 'Giá tối thiểu không thể lớn hơn giá tối đa.';
         }
         $validPriceRange = $minimum === null || $maximum === null || $minimum <= $maximum;
-        if (mb_strlen($query, 'UTF-8') > 100) {
-            $query = mb_substr($query, 0, 100, 'UTF-8');
+        if (app_utf8_length($query) > 100) {
+            $query = app_utf8_substr($query, 0, 100);
             $filterErrors[] = 'Từ khóa tìm kiếm đã được giới hạn ở 100 ký tự.';
         }
         $sortInput = $_GET['sort'] ?? 'newest';
@@ -484,10 +510,11 @@ final class StorefrontController extends Controller
             default => 'p.created_at DESC, p.id DESC',
         };
         $statement = Database::connection()->prepare(
-            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock, p.short_description,
+            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    p.min_stock, p.short_description,
                     r.name AS region_name,
                     COALESCE(stock.quantity, 0) AS actual_stock,
-                    COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url,
+                    COALESCE(images.image_url, \'/public/images/no-image.svg\') AS image_url,
                     COALESCE(review_summary.average_rating, 0) AS average_rating,
                     COALESCE(review_summary.review_count, 0) AS review_count,
                     COALESCE(sales.sold, 0) AS sold_quantity
@@ -535,7 +562,7 @@ final class StorefrontController extends Controller
         }
         $this->view('client/shop', [
             'title' => $title,
-            'metaDescription' => mb_substr(strip_tags($description), 0, 160, 'UTF-8'),
+            'metaDescription' => app_utf8_substr(strip_tags($description), 0, 160),
             'description' => $description,
             'products' => $statement->fetchAll(),
             'categories' => $categories,
@@ -562,9 +589,10 @@ final class StorefrontController extends Controller
     private function fetchProducts(string $extraCondition, array $parameters, string $order, int $limit): array
     {
         $statement = Database::connection()->prepare(
-            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock, p.short_description,
+            'SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    p.min_stock, p.short_description,
                     COALESCE(stock.quantity, 0) AS actual_stock,
-                    COALESCE(images.image_url, \'/img/product-placeholder.svg\') AS image_url,
+                    COALESCE(images.image_url, \'/public/images/no-image.svg\') AS image_url,
                     COALESCE(review_summary.average_rating, 0) AS average_rating,
                     COALESCE(review_summary.review_count, 0) AS review_count,
                     r.name AS region_name
@@ -597,6 +625,210 @@ final class StorefrontController extends Controller
         return $statement->fetchAll();
     }
 
+    private function homepageCategories(PDO $database): array
+    {
+        $statement = $database->prepare(
+            "SELECT c.id, c.parent_id, c.name, c.slug, c.description, c.image_path, c.sort_order,
+                    COUNT(DISTINCT p.id) AS product_count,
+                    (
+                        SELECT image_product.id
+                        FROM products image_product
+                        JOIN product_images category_image ON category_image.product_id = image_product.id
+                        WHERE image_product.category_id = c.id
+                          AND image_product.status = 'active' AND image_product.deleted_at IS NULL
+                          AND EXISTS (
+                              SELECT 1 FROM regions image_region
+                              WHERE image_region.id = image_product.region_id AND image_region.is_active = 1
+                          )
+                        ORDER BY image_product.id, category_image.is_primary DESC,
+                                 category_image.sort_order, category_image.id
+                        LIMIT 1
+                    ) AS thumbnail_product_id,
+                    (
+                        SELECT category_image.image_url
+                        FROM products image_product
+                        JOIN product_images category_image ON category_image.product_id = image_product.id
+                        WHERE image_product.category_id = c.id
+                          AND image_product.status = 'active' AND image_product.deleted_at IS NULL
+                          AND EXISTS (
+                              SELECT 1 FROM regions image_region
+                              WHERE image_region.id = image_product.region_id AND image_region.is_active = 1
+                          )
+                        ORDER BY image_product.id, category_image.is_primary DESC,
+                                 category_image.sort_order, category_image.id
+                        LIMIT 1
+                    ) AS thumbnail_url
+             FROM categories c
+             LEFT JOIN products p
+               ON p.category_id = c.id AND p.status = 'active' AND p.deleted_at IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM regions active_region
+                  WHERE active_region.id = p.region_id AND active_region.is_active = 1
+              )
+             WHERE c.is_active = 1
+             GROUP BY c.id, c.parent_id, c.name, c.slug, c.description, c.image_path, c.sort_order
+             ORDER BY c.sort_order, c.name"
+        );
+        $statement->execute();
+        $categoryRows = $statement->fetchAll();
+
+        $categoryById = [];
+        foreach ($categoryRows as $category) {
+            $category['product_count'] = 0;
+            $category['thumbnail_product_id'] = null;
+            $category['thumbnail_url'] = null;
+            $categoryById[(int) $category['id']] = $category;
+        }
+
+        foreach ($categoryRows as $category) {
+            $rootId = (int) $category['id'];
+            $visited = [];
+            while ($categoryById[$rootId]['parent_id'] !== null) {
+                if (isset($visited[$rootId])) {
+                    $rootId = 0;
+                    break;
+                }
+                $visited[$rootId] = true;
+                $parentId = (int) $categoryById[$rootId]['parent_id'];
+                if (!isset($categoryById[$parentId])) {
+                    $rootId = 0;
+                    break;
+                }
+                $rootId = $parentId;
+            }
+
+            if ($rootId === 0 || !isset($categoryById[$rootId]) || $categoryById[$rootId]['parent_id'] !== null) {
+                continue;
+            }
+
+            $categoryById[$rootId]['product_count'] += (int) $category['product_count'];
+            if ($category['thumbnail_product_id'] !== null) {
+                $thumbnailProductId = (int) $category['thumbnail_product_id'];
+                $currentThumbnailId = $categoryById[$rootId]['thumbnail_product_id'];
+                if ($currentThumbnailId === null || $thumbnailProductId < (int) $currentThumbnailId) {
+                    $categoryById[$rootId]['thumbnail_product_id'] = $thumbnailProductId;
+                    $categoryById[$rootId]['thumbnail_url'] = $category['thumbnail_url'];
+                }
+            }
+        }
+
+        foreach ($categoryById as &$category) {
+            if ($category['parent_id'] === null
+                && ImageUploadService::existsStored((string) ($category['image_path'] ?? ''), 'categories')) {
+                $category['thumbnail_url'] = $category['image_path'];
+            }
+        }
+        unset($category);
+
+        $categories = array_values(array_filter(
+            $categoryById,
+            static fn (array $category): bool => $category['parent_id'] === null
+        ));
+        return array_slice($categories, 0, 8);
+    }
+
+    private function homepageRegions(PDO $database): array
+    {
+        $statement = $database->prepare(
+            'SELECT home_region.id AS region_id, home_region.name AS region_name,
+                    home_region.slug AS region_slug, home_region.description AS region_description,
+                    home_region.image_path AS region_image_path,
+                    p.id AS product_id, p.name AS product_name, p.created_at,
+                    COALESCE(stock.quantity, 0) AS available_stock,
+                    COALESCE(sales.sold, 0) AS sold_quantity,
+                    images.image_url, active_farm.id AS farm_id
+             FROM regions home_region
+             LEFT JOIN (
+                 SELECT id AS region_id, id AS root_id
+                 FROM regions WHERE level = 1 AND is_active = 1
+                 UNION ALL
+                 SELECT id AS region_id, parent_id AS root_id
+                 FROM regions WHERE level = 2 AND is_active = 1
+             ) region_scope ON region_scope.root_id = home_region.id
+             LEFT JOIN products p
+               ON p.region_id = region_scope.region_id
+              AND p.status = \'active\' AND p.deleted_at IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM categories active_category
+                  WHERE active_category.id = p.category_id AND active_category.is_active = 1
+              )
+             LEFT JOIN ' . $this->availableStockSubquery() . ' stock ON stock.product_id = p.id
+             LEFT JOIN (
+                 SELECT oi.product_id, SUM(oi.quantity) AS sold
+                 FROM order_items oi JOIN orders o ON o.id = oi.order_id
+                 WHERE o.status NOT IN (\'cancelled\', \'refunded\') AND oi.product_id IS NOT NULL
+                 GROUP BY oi.product_id
+             ) sales ON sales.product_id = p.id
+             LEFT JOIN (
+                 SELECT product_id,
+                        SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
+                 FROM product_images GROUP BY product_id
+             ) images ON images.product_id = p.id
+             LEFT JOIN farms active_farm
+               ON active_farm.id = p.farm_id AND active_farm.status = \'active\'
+             WHERE home_region.level = 1 AND home_region.is_active = 1
+             ORDER BY home_region.id, COALESCE(sales.sold, 0) DESC, p.created_at DESC, p.id DESC'
+        );
+        $statement->execute();
+        $regionRows = $statement->fetchAll();
+
+        $regions = [];
+        foreach ($regionRows as $row) {
+            $regionId = (int) $row['region_id'];
+            if (!isset($regions[$regionId])) {
+                $regions[$regionId] = [
+                    'name' => $row['region_name'],
+                    'slug' => $row['region_slug'],
+                    'description' => $row['region_description'],
+                    'image_path' => ImageUploadService::existsStored(
+                        (string) ($row['region_image_path'] ?? ''),
+                        'regions'
+                    ) ? $row['region_image_path'] : null,
+                    'product_count' => 0,
+                    'farm_count' => 0,
+                    'images' => [],
+                    'highlight_products' => [],
+                    '_product_ids' => [],
+                    '_farm_ids' => [],
+                ];
+            }
+
+            if ($row['product_id'] === null) {
+                continue;
+            }
+
+            $productId = (int) $row['product_id'];
+            if (isset($regions[$regionId]['_product_ids'][$productId])) {
+                continue;
+            }
+            $regions[$regionId]['_product_ids'][$productId] = true;
+            $regions[$regionId]['product_count']++;
+
+            if ($row['farm_id'] !== null) {
+                $regions[$regionId]['_farm_ids'][(int) $row['farm_id']] = true;
+            }
+            if ($row['image_url'] !== null && count($regions[$regionId]['images']) < 3) {
+                $regions[$regionId]['images'][] = [
+                    'name' => $row['product_name'],
+                    'image_url' => $row['image_url'],
+                ];
+            }
+            if ((int) $row['available_stock'] > 0 && count($regions[$regionId]['highlight_products']) < 3) {
+                $regions[$regionId]['highlight_products'][] = [
+                    'name' => $row['product_name'],
+                ];
+            }
+        }
+
+        foreach ($regions as &$region) {
+            $region['farm_count'] = count($region['_farm_ids']);
+            unset($region['_farm_ids'], $region['_product_ids']);
+        }
+        unset($region);
+
+        return array_values($regions);
+    }
+
     private function productSearchCondition(string $query, array &$parameters, string $prefix): string
     {
         $normalized = str_replace(['đ', 'Đ'], 'd', $query);
@@ -611,7 +843,12 @@ final class StorefrontController extends Controller
         foreach ($fields as $key => $field) {
             $parameter = $prefix . '_' . $key;
             $parameters[$parameter] = '%' . $escaped . '%';
-            $conditions[] = "REPLACE(REPLACE($field, 'đ', 'd'), 'Đ', 'd') COLLATE utf8mb4_unicode_ci LIKE :$parameter ESCAPE '='";
+            $conditions[] = "REPLACE(REPLACE(
+                $field COLLATE utf8mb4_unicode_ci,
+                _utf8mb4'đ' COLLATE utf8mb4_unicode_ci,
+                _utf8mb4'd' COLLATE utf8mb4_unicode_ci
+            ), _utf8mb4'Đ' COLLATE utf8mb4_unicode_ci, _utf8mb4'd' COLLATE utf8mb4_unicode_ci)
+                COLLATE utf8mb4_unicode_ci LIKE :$parameter COLLATE utf8mb4_unicode_ci ESCAPE '='";
         }
 
         return '(' . implode(' OR ', $conditions) . ')';
@@ -626,13 +863,48 @@ final class StorefrontController extends Controller
 
         $statement = Database::connection()->prepare(
             "SELECT batch_code FROM product_batches
-             WHERE LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(batch_code, ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(11), ''), CHAR(12), ''), CHAR(13), ''), CONVERT(0xC2A0 USING utf8mb4), ''))
-                   COLLATE utf8mb4_unicode_ci = :batch_code COLLATE utf8mb4_unicode_ci
+             WHERE LOWER(
+                 REPLACE(
+                     REPLACE(
+                         REPLACE(
+                             REPLACE(
+                                 REPLACE(
+                                     REPLACE(
+                                         REPLACE(
+                                             batch_code COLLATE utf8mb4_unicode_ci,
+                                             _utf8mb4' ' COLLATE utf8mb4_unicode_ci,
+                                             _utf8mb4'' COLLATE utf8mb4_unicode_ci
+                                         ),
+                                         CONVERT(CHAR(9) USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                                         _utf8mb4'' COLLATE utf8mb4_unicode_ci
+                                     ),
+                                     CONVERT(CHAR(10) USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                                     _utf8mb4'' COLLATE utf8mb4_unicode_ci
+                                 ),
+                                 CONVERT(CHAR(11) USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                                 _utf8mb4'' COLLATE utf8mb4_unicode_ci
+                             ),
+                             CONVERT(CHAR(12) USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                             _utf8mb4'' COLLATE utf8mb4_unicode_ci
+                         ),
+                         CONVERT(CHAR(13) USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                         _utf8mb4'' COLLATE utf8mb4_unicode_ci
+                     ),
+                     CONVERT(0xC2A0 USING utf8mb4) COLLATE utf8mb4_unicode_ci,
+                     _utf8mb4'' COLLATE utf8mb4_unicode_ci
+                 ) COLLATE utf8mb4_unicode_ci
+             ) COLLATE utf8mb4_unicode_ci = :batch_code COLLATE utf8mb4_unicode_ci
              LIMIT 2"
         );
-        $statement->execute(['batch_code' => mb_strtolower($normalized, 'UTF-8')]);
+        $statement->execute(['batch_code' => app_utf8_lower($normalized)]);
         $matches = $statement->fetchAll(PDO::FETCH_COLUMN);
         return count($matches) === 1 ? (string) $matches[0] : null;
+    }
+
+    private function renderSearchUnavailable(): void
+    {
+        http_response_code(503);
+        $this->view('errors/search-unavailable', [], 'error');
     }
 
     private function recordRecentlyViewed(int $productId): void

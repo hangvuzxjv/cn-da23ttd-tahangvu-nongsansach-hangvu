@@ -11,7 +11,7 @@ final class InventoryAdminController extends Controller
         $database = Database::connection();
         $warningDays = $this->expiryWarningDays();
         $underStock = $database->query(
-            'SELECT id, name, sku, total_stock, min_stock
+            'SELECT id, name, sku, unit, sale_unit, pack_size, pack_size_unit, total_stock, min_stock
              FROM products WHERE deleted_at IS NULL AND total_stock < min_stock
              ORDER BY total_stock, name LIMIT 100'
         )->fetchAll();
@@ -29,7 +29,8 @@ final class InventoryAdminController extends Controller
             'SELECT COALESCE(SUM(quantity_remaining * average_unit_cost), 0) FROM product_batches'
         )->fetchColumn();
         $recent = $database->query(
-            'SELECT m.*, p.name AS product_name, b.batch_code, u.name AS performed_by_name
+            'SELECT m.*, p.name AS product_name, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    b.batch_code, u.name AS performed_by_name
              FROM inventory_movements m
              JOIN products p ON p.id = m.product_id
              LEFT JOIN product_batches b ON b.id = m.batch_id
@@ -54,7 +55,10 @@ final class InventoryAdminController extends Controller
         $filter = (string) ($_GET['filter'] ?? '');
         $query = trim((string) ($_GET['q'] ?? ''));
         (new PaymentService())->expirePending();
-        (new InventoryService())->expireReservations();
+        $inventory = new InventoryService();
+        $inventory->expireReservations();
+        $inventory->expireBatches();
+        $inventory->reconcileTotals();
         $total = $this->stockRowsCount($filter, $query);
         $pages = max(1, (int) ceil($total / self::ADMIN_LIST_PAGE_SIZE));
         $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
@@ -138,7 +142,8 @@ final class InventoryAdminController extends Controller
         $perPage = 30;
         $pages = max(1, (int) ceil($total / $perPage));
         $page = min($page, $pages);
-        $sql = 'SELECT m.*, p.name AS product_name, p.sku, b.batch_code, u.name AS performed_by_name,
+        $sql = 'SELECT m.*, p.name AS product_name, p.sku, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    b.batch_code, u.name AS performed_by_name,
                     (SELECT COALESCE(SUM(prior.quantity), 0)
                      FROM inventory_movements prior
                      WHERE prior.batch_id = m.batch_id
@@ -189,16 +194,38 @@ final class InventoryAdminController extends Controller
         $receiptQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
         $receiptQuery->execute();
         $receipts = $receiptQuery->fetchAll();
+        $receiptItems = [];
+        if ($receipts !== []) {
+            $receiptIds = array_map('intval', array_column($receipts, 'id'));
+            $placeholders = implode(',', array_fill(0, count($receiptIds), '?'));
+            $itemQuery = $database->prepare(
+                'SELECT i.receipt_id, i.quantity, p.name AS product_name, p.unit, p.sale_unit,
+                        p.pack_size, p.pack_size_unit
+                 FROM warehouse_receipt_items i
+                 JOIN product_batches b ON b.id = i.batch_id
+                 JOIN products p ON p.id = b.product_id
+                 WHERE i.receipt_id IN (' . $placeholders . ')
+                 ORDER BY i.receipt_id, i.id'
+            );
+            $itemQuery->execute($receiptIds);
+            foreach ($itemQuery->fetchAll() as $item) {
+                $receiptItems[(int) $item['receipt_id']][] = $item;
+            }
+        }
         $this->adminView('admin/inventory-receipts', [
             'title' => 'Nhập hàng',
             'receipts' => $receipts,
+            'receiptItems' => $receiptItems,
             'page' => $page,
             'pages' => $pages,
             'paginationUrl' => '/admin/inventory/receipts',
             'paginationQuery' => [],
             'paginationLabel' => 'phiếu nhập kho',
             'farms' => $database->query('SELECT id, name FROM farms WHERE status = \'active\' ORDER BY name')->fetchAll(),
-            'products' => $database->query('SELECT id, name, sku, farm_id FROM products WHERE deleted_at IS NULL ORDER BY name')->fetchAll(),
+            'products' => $database->query(
+                'SELECT id, name, sku, farm_id, unit, sale_unit, pack_size, pack_size_unit
+                 FROM products WHERE deleted_at IS NULL ORDER BY name'
+            )->fetchAll(),
             'batches' => $database->query(
                 'SELECT id, product_id, batch_code FROM product_batches WHERE status <> \'ended\' ORDER BY id DESC LIMIT 500'
             )->fetchAll(),
@@ -328,11 +355,13 @@ final class InventoryAdminController extends Controller
                 $database->rollBack();
             }
             flash('error', $exception->getMessage());
-        } catch (Throwable $exception) {
+        } catch (PDOException $exception) {
             if ($database->inTransaction()) {
                 $database->rollBack();
             }
-            throw $exception;
+            flash('error', str_contains((string) $exception->getCode(), '23000')
+                ? 'Mã phiếu nhập vừa bị trùng. Vui lòng tải lại trang và tạo lại phiếu.'
+                : 'Không thể lưu phiếu nhập. Vui lòng thử lại.');
         } catch (Throwable $exception) {
             if ($database->inTransaction()) {
                 $database->rollBack();
@@ -371,7 +400,7 @@ final class InventoryAdminController extends Controller
         $action = (string) ($_POST['action'] ?? '');
         $reasonCode = (string) ($_POST['reason_code'] ?? '');
         $notes = trim((string) ($_POST['notes'] ?? ''));
-        $reasons = ['damage' => 'Hư hỏng', 'expired' => 'Hết hạn', 'loss' => 'Mất mát', 'sample' => 'Hàng mẫu', 'other' => 'Khác'];
+        $reasons = ['damage' => 'Hư hỏng', 'expired' => 'Hết hạn', 'loss' => 'Mất mát', 'sample' => 'Hàng trải nghiệm', 'other' => 'Khác'];
         if (!$batchId || $quantity === false || $quantity < 1 || !in_array($action, ['issue', 'adjust'], true)
             || !isset($reasons[$reasonCode]) || ($reasonCode === 'other' && $notes === '')) {
             flash('error', 'Dữ liệu xuất/điều chỉnh hoặc lý do không hợp lệ.');
@@ -425,7 +454,8 @@ final class InventoryAdminController extends Controller
         $items = [];
         if ($selectedId) {
             $query = $database->prepare(
-                'SELECT i.*, b.batch_code, p.name AS product_name, p.sku
+                'SELECT i.*, b.batch_code, p.name AS product_name, p.sku,
+                        p.sale_unit, p.pack_size, p.pack_size_unit
                  FROM stocktake_items i JOIN product_batches b ON b.id = i.batch_id
                  JOIN products p ON p.id = b.product_id WHERE i.stocktake_id = :id ORDER BY p.name, b.expires_at'
             );
@@ -621,7 +651,8 @@ final class InventoryAdminController extends Controller
     {
         [$conditions, $parameters] = $this->stockConditions($filter, $search);
         $sql = 'SELECT b.id AS batch_id, b.batch_code, b.expires_at, b.status, b.quantity_remaining,
-                       b.average_unit_cost, p.id AS product_id, p.name AS product_name, p.sku, p.total_stock, p.min_stock,
+                       b.average_unit_cost, p.id AS product_id, p.name AS product_name, p.sku,
+                       p.unit, p.sale_unit, p.pack_size, p.pack_size_unit, p.total_stock, p.min_stock,
                        COALESCE(r.quantity, 0) AS reserved_quantity,
                        GREATEST(0, b.quantity_remaining - COALESCE(r.quantity, 0)) AS available_quantity
                 FROM product_batches b
@@ -633,7 +664,7 @@ final class InventoryAdminController extends Controller
                     GROUP BY batch_id
                 ) r ON r.batch_id = b.id'
                 . ($conditions ? ' WHERE ' . implode(' AND ', $conditions) : '')
-                . ' ORDER BY b.expires_at IS NULL, b.expires_at, p.name, b.id';
+                . ' ORDER BY b.created_at DESC, b.id DESC';
         if ($limit !== null) {
             $sql .= ' LIMIT :limit OFFSET :offset';
         }
@@ -727,7 +758,34 @@ final class InventoryAdminController extends Controller
         )->execute(['key' => $sequenceKey]);
         $query = $database->prepare('SELECT next_value FROM document_sequences WHERE sequence_key = :key FOR UPDATE');
         $query->execute(['key' => $sequenceKey]);
-        $number = (int) $query->fetchColumn();
+        $nextValue = (int) $query->fetchColumn();
+
+        $existingMax = 0;
+        if (str_starts_with($sequenceKey, 'receipt:')) {
+            $existingQuery = $database->prepare(
+                'SELECT COALESCE(MAX(CAST(SUBSTRING(receipt_no, CHAR_LENGTH(:prefix_for_length) + 1) AS UNSIGNED)), 0)
+                 FROM warehouse_receipts
+                 WHERE LEFT(receipt_no, CHAR_LENGTH(:prefix_for_value)) = :prefix'
+            );
+        } elseif (str_starts_with($sequenceKey, 'stocktake:')) {
+            $existingQuery = $database->prepare(
+                'SELECT COALESCE(MAX(CAST(SUBSTRING(stocktake_no, CHAR_LENGTH(:prefix_for_length) + 1) AS UNSIGNED)), 0)
+                 FROM stocktakes
+                 WHERE LEFT(stocktake_no, CHAR_LENGTH(:prefix_for_value)) = :prefix'
+            );
+        } else {
+            $existingQuery = null;
+        }
+        if ($existingQuery !== null) {
+            $existingQuery->execute([
+                'prefix' => $prefix,
+                'prefix_for_length' => $prefix,
+                'prefix_for_value' => $prefix,
+            ]);
+            $existingMax = (int) $existingQuery->fetchColumn();
+        }
+
+        $number = max($nextValue, $existingMax + 1);
         if ($number < 1) {
             throw new InventoryException('Không tạo được số chứng từ.');
         }

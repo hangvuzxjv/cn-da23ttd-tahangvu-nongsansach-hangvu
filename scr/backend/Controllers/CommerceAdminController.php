@@ -663,6 +663,27 @@ final class CommerceAdminController extends Controller
         ]);
     }
 
+    public function voucherMissionSettings(): void
+    {
+        $this->adminView('admin/voucher-missions', [
+            'title' => 'Thưởng nhiệm vụ voucher',
+            'settings' => (new CustomerMissionService())->settings(),
+            'success' => flash('success'),
+            'error' => flash('error'),
+        ]);
+    }
+
+    public function saveVoucherMissionSettings(): void
+    {
+        try {
+            (new CustomerMissionService())->saveSettings($_POST, (int) Auth::user()['id']);
+            flash('success', 'Đã lưu mức thưởng nhiệm vụ voucher.');
+        } catch (InvalidArgumentException $exception) {
+            flash('error', $exception->getMessage());
+        }
+        redirect('/admin/vouchers/missions');
+    }
+
     public function createVoucher(): void
     {
         $this->renderVoucherEditor(null);
@@ -930,26 +951,35 @@ final class CommerceAdminController extends Controller
     public function shipping(): void
     {
         $database = Database::connection();
-        $total = (int) $database->query('SELECT COUNT(*) FROM shipping_fees')->fetchColumn();
+        $total = (int) $database->query(
+            'SELECT COUNT(*) FROM shipping_fees sf
+             JOIN regions r ON r.id = sf.region_id
+             WHERE r.level = 2 AND r.is_active = 1'
+        )->fetchColumn();
         $perPage = 20;
         $pages = max(1, (int) ceil($total / $perPage));
         $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
         $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
         $feeQuery = $database->prepare(
             'SELECT sf.*, r.name AS region_name FROM shipping_fees sf JOIN regions r ON r.id = sf.region_id
-             ORDER BY r.level, r.name LIMIT :limit OFFSET :offset'
+             WHERE r.level = 2 AND r.is_active = 1
+             ORDER BY r.name LIMIT :limit OFFSET :offset'
         );
         $feeQuery->bindValue(':limit', $perPage, PDO::PARAM_INT);
         $feeQuery->bindValue(':offset', ($page - 1) * $perPage, PDO::PARAM_INT);
         $feeQuery->execute();
         $fees = $feeQuery->fetchAll();
         $regions = $database->query('SELECT id, name, level FROM regions WHERE is_active = 1 AND level IN (1, 2) ORDER BY level, name')->fetchAll();
-        $minimum = $database->query("SELECT setting_value FROM settings WHERE setting_key = 'free_shipping_minimum'")->fetchColumn();
+        $settings = $database->query(
+            "SELECT setting_key, setting_value FROM settings
+             WHERE setting_key IN ('free_shipping_minimum', 'shipping_default_fee')"
+        )->fetchAll(PDO::FETCH_KEY_PAIR);
         $this->adminView('admin/shipping', [
             'title' => 'Phí vận chuyển',
             'fees' => $fees,
             'regions' => $regions,
-            'freeMinimum' => $minimum === false ? '500000' : $minimum,
+            'freeMinimum' => $settings['free_shipping_minimum'] ?? '500000',
+            'defaultShippingFee' => $settings['shipping_default_fee'] ?? '35000',
             'page' => $page,
             'pages' => $pages,
             'paginationUrl' => '/admin/shipping',
@@ -958,6 +988,151 @@ final class CommerceAdminController extends Controller
             'success' => flash('success'),
             'error' => flash('error'),
         ]);
+    }
+
+    public function saveShippingDefaults(): void
+    {
+        $defaultFee = filter_var($_POST['default_shipping_fee'] ?? null, FILTER_VALIDATE_INT);
+        $freeMinimum = filter_var($_POST['free_shipping_minimum'] ?? null, FILTER_VALIDATE_INT);
+        if ($defaultFee === false || $defaultFee < 0 || $freeMinimum === false || $freeMinimum < 1) {
+            flash('error', 'Phí mặc định phải từ 0 trở lên và ngưỡng miễn phí phải lớn hơn 0.');
+            redirect('/admin/shipping');
+        }
+
+        $database = Database::connection();
+        $database->beginTransaction();
+        try {
+            $setting = $database->prepare(
+                'INSERT INTO settings (setting_key, setting_value, description)
+                 VALUES (:setting_key, :setting_value, :description)
+                 ON DUPLICATE KEY UPDATE setting_value = :updated_value'
+            );
+            $setting->execute([
+                'setting_key' => 'shipping_default_fee',
+                'setting_value' => (string) $defaultFee,
+                'description' => 'Phí vận chuyển mặc định khi tỉnh chưa có cấu hình riêng',
+                'updated_value' => (string) $defaultFee,
+            ]);
+            $setting->execute([
+                'setting_key' => 'free_shipping_minimum',
+                'setting_value' => (string) $freeMinimum,
+                'description' => 'Giá trị đơn tối thiểu để miễn phí vận chuyển',
+                'updated_value' => (string) $freeMinimum,
+            ]);
+            AuditLog::record(
+                (int) Auth::user()['id'],
+                'shipping_defaults_saved',
+                'shipping_fee',
+                null,
+                'default_fee=' . $defaultFee . ';free_minimum=' . $freeMinimum
+            );
+            $database->commit();
+            flash('success', 'Đã lưu phí mặc định và ngưỡng miễn phí vận chuyển.');
+        } catch (Throwable $exception) {
+            if ($database->inTransaction()) {
+                $database->rollBack();
+            }
+            throw $exception;
+        }
+        redirect('/admin/shipping');
+    }
+
+    public function bulkSaveShipping(): void
+    {
+        $fee = filter_var($_POST['fee'] ?? null, FILTER_VALIDATE_INT);
+        $minimum = ($_POST['free_shipping_minimum'] ?? '') === ''
+            ? null
+            : filter_var($_POST['free_shipping_minimum'], FILTER_VALIDATE_INT);
+        $parentInput = trim((string) ($_POST['parent_region_id'] ?? ''));
+        $parentRegionId = $parentInput === '' ? 0 : filter_var($parentInput, FILTER_VALIDATE_INT);
+        $selectedInput = $_POST['region_ids'] ?? [];
+        if ($fee === false || $fee < 0 || ($minimum !== null && ($minimum === false || $minimum < 1))
+            || $parentRegionId === false || !is_array($selectedInput)) {
+            flash('error', 'Mức phí hoặc danh sách tỉnh/thành không hợp lệ.');
+            redirect('/admin/shipping');
+        }
+
+        $selectedIds = [];
+        foreach ($selectedInput as $selectedId) {
+            $validatedId = filter_var($selectedId, FILTER_VALIDATE_INT);
+            if ($validatedId === false || $validatedId < 1) {
+                flash('error', 'Danh sách tỉnh/thành không hợp lệ.');
+                redirect('/admin/shipping');
+            }
+            $selectedIds[] = (int) $validatedId;
+        }
+        $selectedIds = array_values(array_unique($selectedIds));
+        $database = Database::connection();
+        $targetIds = [];
+        if ($parentRegionId > 0) {
+            $parentQuery = $database->prepare(
+                'SELECT id FROM regions WHERE id = :id AND level = 1 AND is_active = 1'
+            );
+            $parentQuery->execute(['id' => $parentRegionId]);
+            if ($parentQuery->fetchColumn() === false) {
+                flash('error', 'Miền được chọn không hợp lệ.');
+                redirect('/admin/shipping');
+            }
+            $children = $database->prepare(
+                'SELECT id FROM regions WHERE parent_id = :parent_id AND level = 2 AND is_active = 1'
+            );
+            $children->execute(['parent_id' => $parentRegionId]);
+            $targetIds = array_map('intval', $children->fetchAll(PDO::FETCH_COLUMN));
+        }
+        if ($selectedIds !== []) {
+            $placeholders = implode(',', array_fill(0, count($selectedIds), '?'));
+            $selectedQuery = $database->prepare(
+                'SELECT id FROM regions WHERE level = 2 AND is_active = 1 AND id IN (' . $placeholders . ')'
+            );
+            $selectedQuery->execute($selectedIds);
+            $validSelectedIds = array_map('intval', $selectedQuery->fetchAll(PDO::FETCH_COLUMN));
+            if (count($validSelectedIds) !== count($selectedIds)) {
+                flash('error', 'Một hoặc nhiều tỉnh/thành đã chọn không còn khả dụng.');
+                redirect('/admin/shipping');
+            }
+            $targetIds = array_merge($targetIds, $validSelectedIds);
+        }
+        $targetIds = array_values(array_unique($targetIds));
+        if ($targetIds === []) {
+            flash('error', 'Hãy chọn một miền hoặc ít nhất một tỉnh/thành.');
+            redirect('/admin/shipping');
+        }
+
+        $database->beginTransaction();
+        try {
+            $upsert = $database->prepare(
+                'INSERT INTO shipping_fees (region_id, fee, free_shipping_minimum, is_active)
+                 VALUES (:region_id, :fee, :minimum, :active)
+                 ON DUPLICATE KEY UPDATE fee = :updated_fee,
+                    free_shipping_minimum = :updated_minimum, is_active = :updated_active'
+            );
+            foreach ($targetIds as $targetId) {
+                $upsert->execute([
+                    'region_id' => $targetId,
+                    'fee' => $fee,
+                    'minimum' => $minimum,
+                    'active' => isset($_POST['is_active']) ? 1 : 0,
+                    'updated_fee' => $fee,
+                    'updated_minimum' => $minimum,
+                    'updated_active' => isset($_POST['is_active']) ? 1 : 0,
+                ]);
+            }
+            AuditLog::record(
+                (int) Auth::user()['id'],
+                'shipping_fees_bulk_saved',
+                'shipping_fee',
+                null,
+                'count=' . count($targetIds) . ';fee=' . $fee
+            );
+            $database->commit();
+            flash('success', 'Đã áp dụng phí vận chuyển cho ' . count($targetIds) . ' tỉnh/thành.');
+        } catch (Throwable $exception) {
+            if ($database->inTransaction()) {
+                $database->rollBack();
+            }
+            throw $exception;
+        }
+        redirect('/admin/shipping');
     }
 
     public function saveShipping(?string $id = null): void

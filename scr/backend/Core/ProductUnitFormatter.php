@@ -54,6 +54,23 @@ final class ProductUnitFormatter
         return '≈ ' . number_format((float) $price / $baseSize, 0, ',', '.') . ' ₫/' . $baseUnit;
     }
 
+    public static function approximateWeightLabel(string $unitLabel, int $quantity): ?string
+    {
+        if ($quantity < 1
+            || !preg_match('/\A.+\s+(\d+(?:,\d+)?)\s*(g|kg)\z/ui', trim($unitLabel), $matches)) {
+            return null;
+        }
+
+        $size = (float) str_replace(',', '.', $matches[1]);
+        $grams = $size * (strtolower($matches[2]) === 'kg' ? 1000 : 1) * $quantity;
+        if ($grams <= 0) {
+            return null;
+        }
+
+        $formatted = rtrim(rtrim(number_format($grams, 2, ',', '.'), '0'), ',');
+        return '≈ ' . $formatted . 'g';
+    }
+
     private static function formatSize(float $size): string
     {
         return rtrim(rtrim(number_format($size, 2, ',', '.'), '0'), ',');

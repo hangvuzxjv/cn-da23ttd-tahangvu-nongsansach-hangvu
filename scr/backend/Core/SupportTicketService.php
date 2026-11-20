@@ -194,10 +194,7 @@ final class SupportTicketService
             )->execute(['ticket_id' => $ticketId]);
 
             $notifications = new NotificationService($this->database);
-            $notifications->notifySupportTicketReply(
-                (int) $ticket['user_id'],
-                $ticketId
-            );
+            $notifications->notifySupportTicketReply((int) $ticket['user_id']);
             AuditLog::record(
                 $adminId,
                 'support_ticket_replied',

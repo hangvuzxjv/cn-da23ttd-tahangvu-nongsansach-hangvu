@@ -46,7 +46,20 @@
                             <label class="form-label">Sản phẩm
                                 <select class="form-select" name="product_id[]" data-receipt-field="product">
                                     <option value="">Chọn sản phẩm</option>
-                                    <?php foreach ($products as $product): ?><option value="<?= (int) $product['id'] ?>" data-farm-id="<?= (int) $product['farm_id'] ?>"><?= e($product['name']) ?> (<?= e($product['sku']) ?>)</option><?php endforeach; ?>
+                                    <?php foreach ($products as $product): ?>
+                                        <?php
+                                        $saleUnit = trim((string) ($product['sale_unit'] ?? ''));
+                                        $unitLabel = ProductUnitFormatter::shortLabel(
+                                            $saleUnit !== '' ? $saleUnit : (string) $product['unit'],
+                                            $saleUnit !== '' && $product['pack_size'] !== null ? (float) $product['pack_size'] : null,
+                                            $saleUnit !== '' ? ($product['pack_size_unit'] ?? null) : null
+                                        );
+                                        ?>
+                                        <option value="<?= (int) $product['id'] ?>" data-farm-id="<?= (int) $product['farm_id'] ?>"
+                                                data-unit-label="<?= e(mb_strtolower($unitLabel, 'UTF-8')) ?>">
+                                            <?= e($product['name']) ?> (<?= e($unitLabel) ?>) · <?= e($product['sku']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
                             </label>
                             <label class="form-label">Lô có sẵn (nếu cần)
@@ -56,9 +69,12 @@
                                 </select>
                             </label>
                             <label class="form-label">Số lượng
-                                <input class="form-control" type="number" name="quantity[]" min="1" step="1" data-receipt-field="quantity">
+                                <span class="input-group">
+                                    <input class="form-control" type="number" name="quantity[]" min="1" step="1" data-receipt-field="quantity">
+                                    <span class="input-group-text" data-receipt-unit></span>
+                                </span>
                             </label>
-                            <label class="form-label">Giá nhập/đơn vị
+                            <label class="form-label"><span data-receipt-cost-label>Giá nhập / đơn vị</span>
                                 <input class="form-control" type="number" name="unit_cost[]" min="0" step="0.01" value="0" data-receipt-field="cost">
                             </label>
                             <label class="form-label">Ngày thu hoạch
@@ -71,6 +87,7 @@
                                 <input class="form-control" type="date" name="expires_at[]" data-receipt-field="expires">
                             </label>
                         </div>
+                        <p class="form-text mb-0" data-receipt-note hidden></p>
                     </div>
                 </div>
                 <template data-receipt-line-template>
@@ -83,7 +100,20 @@
                             <label class="form-label">Sản phẩm
                                 <select class="form-select" name="product_id[]" data-receipt-field="product">
                                     <option value="">Chọn sản phẩm</option>
-                                    <?php foreach ($products as $product): ?><option value="<?= (int) $product['id'] ?>" data-farm-id="<?= (int) $product['farm_id'] ?>"><?= e($product['name']) ?> (<?= e($product['sku']) ?>)</option><?php endforeach; ?>
+                                    <?php foreach ($products as $product): ?>
+                                        <?php
+                                        $saleUnit = trim((string) ($product['sale_unit'] ?? ''));
+                                        $unitLabel = ProductUnitFormatter::shortLabel(
+                                            $saleUnit !== '' ? $saleUnit : (string) $product['unit'],
+                                            $saleUnit !== '' && $product['pack_size'] !== null ? (float) $product['pack_size'] : null,
+                                            $saleUnit !== '' ? ($product['pack_size_unit'] ?? null) : null
+                                        );
+                                        ?>
+                                        <option value="<?= (int) $product['id'] ?>" data-farm-id="<?= (int) $product['farm_id'] ?>"
+                                                data-unit-label="<?= e(mb_strtolower($unitLabel, 'UTF-8')) ?>">
+                                            <?= e($product['name']) ?> (<?= e($unitLabel) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
                                 </select>
                             </label>
                             <label class="form-label">Lô có sẵn (nếu cần)
@@ -93,9 +123,12 @@
                                 </select>
                             </label>
                             <label class="form-label">Số lượng
-                                <input class="form-control" type="number" name="quantity[]" min="1" step="1" data-receipt-field="quantity">
+                                <span class="input-group">
+                                    <input class="form-control" type="number" name="quantity[]" min="1" step="1" data-receipt-field="quantity">
+                                    <span class="input-group-text" data-receipt-unit></span>
+                                </span>
                             </label>
-                            <label class="form-label">Giá nhập/đơn vị
+                            <label class="form-label"><span data-receipt-cost-label>Giá nhập / đơn vị</span>
                                 <input class="form-control" type="number" name="unit_cost[]" min="0" step="0.01" value="0" data-receipt-field="cost">
                             </label>
                             <label class="form-label">Ngày thu hoạch
@@ -108,6 +141,7 @@
                                 <input class="form-control" type="date" name="expires_at[]" data-receipt-field="expires">
                             </label>
                         </div>
+                        <p class="form-text mb-0" data-receipt-note hidden></p>
                     </div>
                 </template>
             </section>
@@ -122,7 +156,27 @@
     <thead><tr><th>Mã phiếu</th><th>Nhà cung cấp</th><th>Ngày</th><th>Số dòng</th><th>Trạng thái</th><th>Người xác nhận</th><th>Thao tác</th></tr></thead><tbody>
     <?php foreach ($receipts as $receipt): ?><tr>
         <td><strong><?= e($receipt['receipt_no']) ?></strong></td><td><?= e($receipt['farm_name'] ?? $receipt['supplier_name']) ?></td>
-        <td><?= e($receipt['received_at']) ?></td><td><?= (int) $receipt['item_count'] ?></td><td><?= e(InventoryLabels::status($receipt['status'])) ?></td>
+        <td><?= e($receipt['received_at']) ?></td><td>
+            <?= (int) $receipt['item_count'] ?>
+            <?php if (!empty($receiptItems[(int) $receipt['id']])): ?>
+                <details class="small">
+                    <summary>Chi tiết</summary>
+                    <ul class="mb-0 ps-3">
+                        <?php foreach ($receiptItems[(int) $receipt['id']] as $receiptItem): ?>
+                            <?php
+                            $saleUnit = trim((string) ($receiptItem['sale_unit'] ?? ''));
+                            $unitLabel = ProductUnitFormatter::shortLabel(
+                                $saleUnit !== '' ? $saleUnit : (string) $receiptItem['unit'],
+                                $saleUnit !== '' && $receiptItem['pack_size'] !== null ? (float) $receiptItem['pack_size'] : null,
+                                $saleUnit !== '' ? ($receiptItem['pack_size_unit'] ?? null) : null
+                            );
+                            ?>
+                            <li><?= e($receiptItem['product_name']) ?>: <?= (int) $receiptItem['quantity'] ?> <?= e(mb_strtolower($unitLabel, 'UTF-8')) ?></li>
+                        <?php endforeach; ?>
+                    </ul>
+                </details>
+            <?php endif; ?>
+        </td><td><?= e(InventoryLabels::status($receipt['status'])) ?></td>
         <td><?= e($receipt['receiver_name'] ?? '—') ?></td><td>
             <?php if ($canManage && $receipt['status'] === 'draft'): ?>
                 <form class="d-inline" method="post" action="<?= e(url('/admin/inventory/receipts/' . $receipt['id'] . '/confirm')) ?>" onsubmit="return confirm('Xác nhận phiếu này và cộng tồn theo lô?')"><?= csrf_field() ?><button class="btn btn-sm btn-success">Xác nhận nhập kho</button></form>

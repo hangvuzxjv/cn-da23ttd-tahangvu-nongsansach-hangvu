@@ -398,7 +398,8 @@ final class CodRiskService
     private function blockedIdentitiesQuery(int $days, int $threshold): string
     {
         $cutoff = '\'1000-01-01 00:00:00\'';
-        $user = "SELECT 'user' AS type, CONVERT(CAST(df.user_id AS CHAR) USING utf8mb4) AS value,
+        $user = "SELECT _utf8mb4'user' COLLATE utf8mb4_unicode_ci AS type,
+                        CONVERT(CAST(df.user_id AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS value,
                         COUNT(*) AS failure_count, MAX(df.created_at) AS last_failure_at,
                         CAST(SUBSTRING_INDEX(GROUP_CONCAT(df.id ORDER BY df.created_at DESC, df.id DESC), ',', 1) AS UNSIGNED) AS latest_id
                  FROM delivery_failures df
@@ -406,9 +407,11 @@ final class CodRiskService
                    AND df.created_at >= DATE_SUB(NOW(), INTERVAL {$days} DAY)
                    AND df.created_at > COALESCE(
                        (SELECT MAX(w.created_at) FROM cod_waivers w
-                        WHERE w.type = 'user' AND CAST(w.value AS UNSIGNED) = df.user_id), {$cutoff})
+                        WHERE w.type COLLATE utf8mb4_unicode_ci = _utf8mb4'user' COLLATE utf8mb4_unicode_ci
+                          AND CAST(w.value AS UNSIGNED) = df.user_id), {$cutoff})
                  GROUP BY df.user_id HAVING COUNT(*) >= {$threshold}";
-        $phone = "SELECT 'phone' AS type, CONVERT(df.phone_norm USING utf8mb4) AS value,
+        $phone = "SELECT _utf8mb4'phone' COLLATE utf8mb4_unicode_ci AS type,
+                         CONVERT(df.phone_norm USING utf8mb4) COLLATE utf8mb4_unicode_ci AS value,
                          COUNT(*) AS failure_count, MAX(df.created_at) AS last_failure_at,
                          CAST(SUBSTRING_INDEX(GROUP_CONCAT(df.id ORDER BY df.created_at DESC, df.id DESC), ',', 1) AS UNSIGNED) AS latest_id
                   FROM delivery_failures df
@@ -416,9 +419,11 @@ final class CodRiskService
                     AND df.created_at >= DATE_SUB(NOW(), INTERVAL {$days} DAY)
                     AND df.created_at > COALESCE(
                         (SELECT MAX(w.created_at) FROM cod_waivers w
-                         WHERE w.type = 'phone' AND w.value = df.phone_norm), {$cutoff})
+                         WHERE w.type COLLATE utf8mb4_unicode_ci = _utf8mb4'phone' COLLATE utf8mb4_unicode_ci
+                           AND w.value COLLATE utf8mb4_unicode_ci = df.phone_norm COLLATE utf8mb4_unicode_ci), {$cutoff})
                   GROUP BY df.phone_norm HAVING COUNT(*) >= {$threshold}";
-        $address = "SELECT 'address' AS type, CONVERT(df.address_key USING utf8mb4) AS value,
+        $address = "SELECT _utf8mb4'address' COLLATE utf8mb4_unicode_ci AS type,
+                           CONVERT(df.address_key USING utf8mb4) COLLATE utf8mb4_unicode_ci AS value,
                            COUNT(*) AS failure_count, MAX(df.created_at) AS last_failure_at,
                            CAST(SUBSTRING_INDEX(GROUP_CONCAT(df.id ORDER BY df.created_at DESC, df.id DESC), ',', 1) AS UNSIGNED) AS latest_id
                     FROM delivery_failures df
@@ -426,7 +431,8 @@ final class CodRiskService
                       AND df.created_at >= DATE_SUB(NOW(), INTERVAL {$days} DAY)
                       AND df.created_at > COALESCE(
                           (SELECT MAX(w.created_at) FROM cod_waivers w
-                           WHERE w.type = 'address' AND w.value = df.address_key), {$cutoff})
+                           WHERE w.type COLLATE utf8mb4_unicode_ci = _utf8mb4'address' COLLATE utf8mb4_unicode_ci
+                             AND w.value COLLATE utf8mb4_unicode_ci = df.address_key COLLATE utf8mb4_unicode_ci), {$cutoff})
                     GROUP BY df.address_key HAVING COUNT(*) >= {$threshold}";
         return $user . ' UNION ALL ' . $phone . ' UNION ALL ' . $address;
     }

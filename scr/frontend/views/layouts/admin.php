@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#176b3a">
     <meta name="csrf-token" content="<?= e(Csrf::token()) ?>">
     <meta name="app-base-url" content="<?= e(url('/')) ?>">
-    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/favicon.svg')) ?>">
+    <link rel="icon" type="image/svg+xml" href="<?= e(asset('/public/images/logo.svg')) ?>">
     <link href="<?= e(asset('/css/vendor/bootstrap.min.css')) ?>" rel="stylesheet">
     <link href="<?= e(asset('/css/app.css')) ?>" rel="stylesheet">
 </head>
@@ -29,9 +29,7 @@ $adminAvatarInitial = $adminHeaderName !== '' ? mb_strtoupper(mb_substr($adminHe
             <span aria-hidden="true">☰</span>
         </button>
         <a class="admin-topbar__brand" href="<?= e(url('/admin')) ?>">
-            <svg class="admin-topbar__leaf" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M20.5 3.5C12 3.5 5.2 5.6 4 11.4c-.7 3.2 1.6 5.6 4.5 5.6 5.4 0 9.9-5.3 12-13.5ZM3.5 21c2.5-5.2 6.4-8.8 12-11.2" />
-            </svg>
+            <img class="admin-topbar__leaf" src="<?= e(asset('/public/images/logo.svg')) ?>" alt="" width="24" height="24">
             <span class="admin-topbar__brand-name">Nông Sản Sạch<span class="admin-topbar__brand-divider"> · </span><span class="admin-topbar__brand-section">Quản trị</span></span>
         </a>
         <div class="admin-global-search" role="search" data-admin-search>

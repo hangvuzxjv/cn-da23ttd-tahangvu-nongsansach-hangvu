@@ -178,6 +178,21 @@ $serverNow = new DateTimeImmutable($serverTime, $timezone);
                         $disabledText = (int) $item['remaining'] < 1 ? 'Đã hết suất'
                             : ((int) $item['user_remaining'] < 1 ? 'Bạn đã đạt giới hạn mua'
                                 : ((int) $item['available_stock'] < 1 ? 'Hết tồn kho' : 'Chưa thể mua'));
+                        $saleUnit = trim((string) ($item['sale_unit'] ?? ''));
+                        $saleUnitLabel = ProductUnitFormatter::shortLabel(
+                            $saleUnit !== '' ? $saleUnit : (string) $item['unit'],
+                            $saleUnit !== '' && $item['pack_size'] !== null ? (float) $item['pack_size'] : null,
+                            $saleUnit !== '' ? ($item['pack_size_unit'] ?? null) : null
+                        );
+                        $referencePrice = $saleUnit !== ''
+                            ? ProductUnitFormatter::referencePriceLabel(
+                                $item['sale_price'],
+                                $saleUnit,
+                                $item['pack_size'] !== null ? (float) $item['pack_size'] : null,
+                                $item['pack_size_unit'] ?? null
+                            )
+                            : null;
+                        $salePriceParts = explode(' / ', ProductUnitFormatter::priceLabel((float) $item['sale_price'], $saleUnitLabel), 2);
                         ?>
                         <div class="flash-sale-product-item<?= $upcoming ? ' flash-sale-product-item--preview' : '' ?>"
                              data-flash-item="<?= (int) $item['flash_sale_item_id'] ?>"
@@ -197,7 +212,7 @@ $serverNow = new DateTimeImmutable($serverTime, $timezone);
                                 <a class="catalog-card-image" href="<?= e(url('/san-pham/' . $item['product_slug'])) ?>">
                                     <?php if ($discountPercent > 0): ?><span class="flash-sale-discount-badge">-<?= $discountPercent ?>%</span><?php endif; ?>
                                     <?php if ($ended): ?><span class="flash-sale-ended-badge">Đã kết thúc</span><?php endif; ?>
-                                    <img class="card-img-top" src="<?= e(asset($item['image_url'] ?: '/img/product-placeholder.svg')) ?>" alt="<?= e($item['product_name']) ?>" loading="lazy">
+                                    <img class="card-img-top" src="<?= e(asset($item['image_url'] ?: '/public/images/no-image.svg')) ?>"<?= product_image_fallback_attributes() ?> alt="<?= e($item['product_name']) ?>" loading="lazy">
                                 </a>
                                 <div class="card-body d-flex flex-column">
                                     <h3 class="h6 product-card__title flash-sale-product-name"><a class="link-dark text-decoration-none" href="<?= e(url('/san-pham/' . $item['product_slug'])) ?>"><?= e($item['product_name']) ?></a></h3>
@@ -207,10 +222,11 @@ $serverNow = new DateTimeImmutable($serverTime, $timezone);
                                     </div>
                                     <div class="flash-sale-price-block">
                                         <div class="flash-sale-price-line">
-                                            <span class="flash-sale-price"><?= number_format((float) $item['sale_price'], 0, ',', '.') ?> ₫</span>
-                                            <span class="flash-sale-unit">/ <?= e($item['unit']) ?></span>
+                                            <span class="flash-sale-price"><?= e($salePriceParts[0]) ?></span>
+                                            <span class="flash-sale-unit">/ <?= e($salePriceParts[1]) ?></span>
                                         </div>
-                                        <del class="flash-sale-original-price"><?= number_format((float) $item['normal_price'], 0, ',', '.') ?> ₫</del>
+                                        <del class="flash-sale-original-price"><?= e(ProductUnitFormatter::priceLabel((float) $item['normal_price'], $saleUnitLabel)) ?></del>
+                                        <?php if ($referencePrice !== null): ?><div class="small text-secondary"><?= e($referencePrice) ?></div><?php endif; ?>
                                         <?php if ($savingAmount >= 1000): ?><div class="flash-sale-saving">Tiết kiệm <?= number_format($savingAmount, 0, ',', '.') ?> ₫</div><?php endif; ?>
                                     </div>
                                     <div class="flash-sale-stock-row">
@@ -218,7 +234,7 @@ $serverNow = new DateTimeImmutable($serverTime, $timezone);
                                         <span class="flash-sale-stock-status" data-flash-sale-status data-status="<?= e($saleStatusKey) ?>"<?= $saleStatusKey === '' ? ' hidden' : '' ?>><?= e($saleStatusLabel) ?></span>
                                     </div>
                                     <div class="progress flash-sale-progress mt-1 mb-3" role="progressbar" aria-label="Tiến độ Flash Sale" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?= $soldPercent ?>">
-                                        <div class="progress-bar flash-sale-progress__bar flash-sale-progress--<?= e($progressTone) ?>" data-sold-progress data-progress="<?= $soldPercent ?>" style="width: <?= $soldPercent ?>%"></div>
+                                        <div class="progress-bar flash-sale-progress__bar flash-sale-progress--<?= e($progressTone) ?>" data-sold-progress data-progress="<?= $soldPercent ?>"></div>
                                     </div>
                                     <div class="mt-auto" data-flash-action>
                                         <?php if ($upcoming): ?>

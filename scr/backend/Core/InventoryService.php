@@ -617,6 +617,7 @@ final class InventoryService
             $statement->execute();
             $count = $statement->rowCount();
             if ($count > 0) {
+                $this->reconcileTotalsWithinTransaction();
                 AuditLog::record(
                     Auth::user() ? (int) Auth::user()['id'] : null,
                     'expired_batches_ended',
@@ -627,6 +628,13 @@ final class InventoryService
                 );
             }
             return $count;
+        });
+    }
+
+    public function reconcileTotals(): void
+    {
+        $this->transaction(function (): void {
+            $this->reconcileTotalsWithinTransaction();
         });
     }
 
@@ -806,9 +814,25 @@ final class InventoryService
     {
         $this->database->prepare(
             'UPDATE products SET total_stock = (
-                SELECT COALESCE(SUM(quantity_remaining), 0) FROM product_batches WHERE product_id = :batch_product_id
+                SELECT COALESCE(SUM(quantity_remaining), 0)
+                FROM product_batches
+                WHERE product_id = :batch_product_id
+                  AND status = \'selling\'
+                  AND inspection_result <> \'failed\'
+                  AND quantity_remaining > 0
+                  AND (expires_at IS NULL OR expires_at >= CURDATE())
              ) WHERE id = :product_id'
         )->execute(['batch_product_id' => $productId, 'product_id' => $productId]);
+    }
+
+    private function reconcileTotalsWithinTransaction(): void
+    {
+        $productIds = $this->database->query(
+            'SELECT id FROM products WHERE deleted_at IS NULL'
+        )->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($productIds as $productId) {
+            $this->syncProductTotal((int) $productId);
+        }
     }
 
     private function transaction(callable $callback): mixed

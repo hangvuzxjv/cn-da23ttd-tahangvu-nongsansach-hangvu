@@ -38,7 +38,7 @@ final class TraceabilityController extends Controller
     {
         $statement = Database::connection()->prepare(
             "SELECT b.*, p.id AS product_id, p.name AS product_name, p.slug AS product_slug,
-                    COALESCE(images.image_url, '/img/product-placeholder.svg') AS product_image,
+                    COALESCE(images.image_url, '/public/images/no-image.svg') AS product_image,
                     f.id AS farm_id, f.name AS farm_name, f.address AS farm_address, f.contact_name,
                     f.phone AS farm_phone, f.certifications, f.certification_number,
                     f.certification_expires_at, f.latitude, f.longitude, f.image_url AS farm_image,
@@ -53,7 +53,7 @@ final class TraceabilityController extends Controller
                  SELECT product_id, SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), ',', 1) AS image_url
                  FROM product_images GROUP BY product_id
              ) images ON images.product_id = p.id
-             WHERE b.batch_code = :batch_code
+             WHERE b.batch_code COLLATE utf8mb4_unicode_ci = :batch_code COLLATE utf8mb4_unicode_ci
              LIMIT 1"
         );
         $statement->execute(['batch_code' => $batchCode]);

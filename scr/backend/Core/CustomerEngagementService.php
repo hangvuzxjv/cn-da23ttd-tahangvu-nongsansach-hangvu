@@ -205,11 +205,12 @@ final class CustomerEngagementService
     public function wishlistProducts(int $userId): array
     {
         $statement = $this->database->prepare(
-            "SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.min_stock,
+            "SELECT p.id, p.name, p.slug, p.price, p.sale_price, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    p.min_stock,
                     p.short_description,
                     COALESCE(NULLIF(p.sale_price, 0), p.price) AS current_price,
                     COALESCE(stock.quantity, 0) AS actual_stock,
-                    COALESCE(images.image_url, '/img/product-placeholder.svg') AS image_url,
+                    COALESCE(images.image_url, '/public/images/no-image.svg') AS image_url,
                     COALESCE(reviews.average_rating, 0) AS average_rating,
                     COALESCE(reviews.review_count, 0) AS review_count
              FROM wishlists w
@@ -311,6 +312,9 @@ final class CustomerEngagementService
             $this->database->prepare(
                 'UPDATE reviews SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id'
             )->execute(['status' => $status, 'id' => $reviewId]);
+            if ($status === 'published' && $review['status'] !== 'published') {
+                (new CustomerMissionService($this->database))->rewardApprovedReview($reviewId);
+            }
             AuditLog::record(
                 $actorId,
                 'review_status_changed',

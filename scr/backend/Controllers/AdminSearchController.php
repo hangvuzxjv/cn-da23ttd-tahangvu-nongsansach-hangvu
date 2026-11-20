@@ -6,13 +6,28 @@ final class AdminSearchController extends Controller
 {
     public function index(): Response
     {
+        try {
+            return $this->search();
+        } catch (Throwable $exception) {
+            app_log_exception('Admin quick search failed', $exception);
+            return Response::json(
+                false,
+                'Tìm kiếm tạm thời gặp sự cố, vui lòng thử lại',
+                [],
+                503
+            );
+        }
+    }
+
+    private function search(): Response
+    {
         $query = $_GET['q'] ?? '';
         if (!is_string($query)) {
             return Response::json(false, 'Từ khóa tìm kiếm không hợp lệ.', [], 422);
         }
 
         $query = trim($query);
-        $length = mb_strlen($query, 'UTF-8');
+        $length = app_utf8_length($query);
         if ($length < 2) {
             return Response::json(true, 'Nhập ít nhất 2 ký tự để tìm kiếm.', ['groups' => []]);
         }
@@ -126,8 +141,12 @@ final class AdminSearchController extends Controller
 
     private function likeCondition(string $field, string $parameter): string
     {
-        return "REPLACE(REPLACE($field, 'đ', 'd'), 'Đ', 'd') COLLATE utf8mb4_unicode_ci"
-            . " LIKE :$parameter ESCAPE '='";
+        return "REPLACE(REPLACE(
+                    $field COLLATE utf8mb4_unicode_ci,
+                    _utf8mb4'đ' COLLATE utf8mb4_unicode_ci,
+                    _utf8mb4'd' COLLATE utf8mb4_unicode_ci
+                ), _utf8mb4'Đ' COLLATE utf8mb4_unicode_ci, _utf8mb4'd' COLLATE utf8mb4_unicode_ci)
+                COLLATE utf8mb4_unicode_ci LIKE :$parameter COLLATE utf8mb4_unicode_ci ESCAPE '='";
     }
 
     private function likeValue(string $query): string

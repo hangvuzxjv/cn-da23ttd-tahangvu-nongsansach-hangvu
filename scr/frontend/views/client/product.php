@@ -1,14 +1,6 @@
 <nav aria-label="breadcrumb"><ol class="breadcrumb"><?php foreach ($breadcrumbs as $crumb): ?><li class="breadcrumb-item"><?php if ($crumb['url']): ?><a href="<?= e(url($crumb['url'])) ?>"><?= e($crumb['name']) ?></a><?php else: ?><?= e($crumb['name']) ?><?php endif; ?></li><?php endforeach; ?></ol></nav>
 <?php
-$fallbackImages = [
-    'rau-an-la' => '/img/products/_fallback/rau-an-la.svg',
-    'rau-cu-qua' => '/img/products/_fallback/rau-cu-qua.svg',
-    'cu-than-cu' => '/img/products/_fallback/cu-than-cu.svg',
-    'trai-cay-demo' => '/img/products/_fallback/trai-cay-demo.svg',
-    'gao-ngu-coc-demo' => '/img/products/_fallback/gao-ngu-coc-demo.svg',
-    'nam-hat-cong-nghiep' => '/img/products/_fallback/nam-hat-cong-nghiep.svg',
-];
-$defaultImage = $fallbackImages[$product['category_slug'] ?? ''] ?? '/img/product-placeholder.svg';
+$defaultImage = '/public/images/no-image.svg';
 $mainImage = $images[0] ?? ['image_url' => $defaultImage, 'alt_text' => $product['name']];
 $certificateParts = [];
 foreach ([$product['certifications'] ?? '', $product['farm_certifications'] ?? ''] as $certificate) {
@@ -25,12 +17,44 @@ $priceVnd = (int) PricingService::moneyToVnd((string) $product['price']);
 $saleVnd = $product['sale_price'] !== null ? (int) PricingService::moneyToVnd((string) $product['sale_price']) : 0;
 $discountPercent = ($saleVnd > 0 && $priceVnd > $saleVnd) ? (int) round(($priceVnd - $saleVnd) * 100 / $priceVnd) : 0;
 $stockClass = $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'Sắp hết hàng' ? 'is-low' : '');
+$saleUnit = trim((string) ($product['sale_unit'] ?? ''));
+$unitName = $saleUnit !== '' ? $saleUnit : (string) $product['unit'];
+$unitLabel = ProductUnitFormatter::shortLabel(
+    $unitName,
+    $saleUnit !== '' && $product['pack_size'] !== null ? (float) $product['pack_size'] : null,
+    $saleUnit !== '' ? ($product['pack_size_unit'] ?? null) : null
+);
+$quantityUnitName = mb_strtolower($unitName, 'UTF-8');
+$packSize = $saleUnit !== '' && $product['pack_size'] !== null ? (float) $product['pack_size'] : null;
+$packSizeUnit = $saleUnit !== '' ? ($product['pack_size_unit'] ?? null) : null;
+$packSizeLabel = $packSize !== null && $packSizeUnit !== null
+    ? trim(ProductUnitFormatter::shortLabel('', $packSize, (string) $packSizeUnit))
+    : '';
+$regularPrice = $product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0
+    ? $product['sale_price']
+    : $product['price'];
+$quantityHelp = $packSizeLabel !== ''
+    ? 'Mua theo số ' . $quantityUnitName . ', mỗi ' . $quantityUnitName . ' khoảng ' . $packSizeLabel
+    : 'Mua theo số ' . $quantityUnitName . '.';
+$weightPerUnitGrams = $packSize !== null && in_array($packSizeUnit, ['g', 'kg'], true)
+    ? $packSize * ($packSizeUnit === 'kg' ? 1000 : 1)
+    : null;
+$referencePrice = ProductUnitFormatter::referencePriceLabel(
+    $flashSale ? $flashSale['sale_price'] : $regularPrice,
+    $unitName,
+    $packSize,
+    $packSizeUnit
+);
+$regularPriceParts = explode(' / ', ProductUnitFormatter::priceLabel((float) $regularPrice, $unitLabel), 2);
+$flashSalePriceParts = $flashSale
+    ? explode(' / ', ProductUnitFormatter::priceLabel((float) $flashSale['sale_price'], $unitLabel), 2)
+    : [];
 ?>
 <div class="product-detail-layout mb-5">
     <div class="product-detail-gallery">
         <div class="product-detail-media">
-            <div class="product-detail-image-frame"><img id="productMainImage" class="product-detail-image" src="<?= e(asset($mainImage['image_url'] ?: $defaultImage)) ?>" alt="<?= e($mainImage['alt_text'] ?: $product['name']) ?>"></div>
-            <?php if (count($images) > 1): ?><div class="product-gallery"><?php foreach ($images as $image): ?><button class="btn p-0 border product-gallery-thumb" type="button" aria-label="Xem ảnh <?= e($image['alt_text'] ?: $product['name']) ?>" data-image="<?= e(asset($image['image_url'])) ?>" data-alt="<?= e($image['alt_text'] ?: $product['name']) ?>"><img src="<?= e(asset($image['image_url'])) ?>" alt="" loading="lazy"></button><?php endforeach; ?></div><?php endif; ?>
+            <div class="product-detail-image-frame"><img id="productMainImage" class="product-detail-image" src="<?= e(asset($mainImage['image_url'] ?: $defaultImage)) ?>"<?= product_image_fallback_attributes() ?> alt="<?= e($mainImage['alt_text'] ?: $product['name']) ?>"></div>
+            <?php if (count($images) > 1): ?><div class="product-gallery"><?php foreach ($images as $image): ?><button class="btn p-0 border product-gallery-thumb" type="button" aria-label="Xem ảnh <?= e($image['alt_text'] ?: $product['name']) ?>" data-image="<?= e(asset($image['image_url'])) ?>" data-alt="<?= e($image['alt_text'] ?: $product['name']) ?>"><img src="<?= e(asset($image['image_url'])) ?>"<?= product_image_fallback_attributes() ?> alt="" loading="lazy"></button><?php endforeach; ?></div><?php endif; ?>
         </div>
     </div>
     <div class="product-detail-info">
@@ -38,7 +62,6 @@ $stockClass = $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'S
         <h1 class="product-detail-title"><?= e($product['name']) ?></h1>
         <?php if ((int) $reviewSummary['review_count'] > 0): ?><a class="product-detail-rating" href="#reviews" aria-label="Điểm trung bình <?= number_format($reviewAverage, 1) ?> trên 5 sao, <?= (int) $reviewSummary['review_count'] ?> đánh giá"><span class="product-detail-stars" aria-hidden="true"><?= str_repeat('★', $reviewStarCount) . str_repeat('☆', 5 - $reviewStarCount) ?></span><span><?= number_format($reviewAverage, 1) ?> · <?= (int) $reviewSummary['review_count'] ?> đánh giá</span></a><?php endif; ?>
         <p class="product-detail-summary text-secondary"><?= e($product['short_description']) ?></p>
-        <?php $regularPrice = $product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0 ? $product['sale_price'] : $product['price']; ?>
         <?php if ($flashSale): ?>
             <?php
             $flashSaleEnd = new DateTimeImmutable($flashSale['ends_at'], new DateTimeZone('Asia/Ho_Chi_Minh'));
@@ -52,8 +75,9 @@ $stockClass = $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'S
                 </div>
                 <div class="mt-2" data-flash-item="<?= (int) $flashSale['flash_sale_item_id'] ?>"
                      data-quota="<?= (int) $flashSale['quota'] ?>" data-sold="<?= (int) $flashSale['sold_quantity'] ?>">
-                    <del class="text-secondary"><?= number_format((float) $regularPrice, 0, ',', '.') ?> ₫</del>
-                    <div class="h3 text-danger mb-1"><?= number_format((float) $flashSale['sale_price'], 0, ',', '.') ?> ₫ <span class="fs-6 text-secondary">/ <?= e($product['unit']) ?></span></div>
+                    <del class="text-secondary"><?= e(ProductUnitFormatter::priceLabel((float) $regularPrice, $unitLabel)) ?></del>
+                     <div class="h3 text-danger mb-1"><?= e($flashSalePriceParts[0]) ?> <span class="fs-6 text-secondary">/ <?= e($flashSalePriceParts[1]) ?></span></div>
+                    <?php if ($referencePrice !== null): ?><div class="small text-secondary mb-2"><?= e($referencePrice) ?></div><?php endif; ?>
                     <div class="small text-secondary">Còn <span data-remaining><?= number_format((int) $flashSale['remaining']) ?></span>/<?= (int) $flashSale['quota'] ?> suất Flash Sale</div>
                     <div class="small text-danger" data-flash-poll-message role="status" aria-live="polite"></div>
                     <div class="mt-3" data-flash-action>
@@ -66,14 +90,16 @@ $stockClass = $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'S
                         <?php elseif (!$flashSaleLoggedIn): ?>
                             <a class="btn btn-danger btn-lg" href="<?= e($flashLoginUrl) ?>">Đăng nhập để mua Flash Sale</a>
                         <?php else: ?>
-                            <form data-cart-add="<?= e(url('/gio-hang/them')) ?>" data-login-url="<?= e($flashLoginUrl) ?>">
+                            <form data-cart-add="<?= e(url('/gio-hang/them')) ?>" data-login-url="<?= e($flashLoginUrl) ?>"<?= $weightPerUnitGrams !== null ? ' data-estimated-weight-form' : '' ?>>
                                 <?= csrf_field() ?>
                                 <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+                                <label class="form-label small mb-1" for="productFlashQuantity">Số lượng (<?= e($quantityUnitName) ?>)</label>
                                 <div class="input-group product-buy-controls">
-                                    <input class="form-control" type="number" name="quantity" data-max-buy="<?= (int) $flashSale['max_buy_quantity'] ?>" value="1" min="1" max="<?= (int) $flashSale['max_buy_quantity'] ?>" aria-label="Số lượng sản phẩm">
-                                    <span class="input-group-text"><?= e($product['unit']) ?></span>
+                                    <input class="form-control" id="productFlashQuantity" type="number" name="quantity" data-max-buy="<?= (int) $flashSale['max_buy_quantity'] ?>" value="1" min="1" max="<?= (int) $flashSale['max_buy_quantity'] ?>" aria-label="Số lượng sản phẩm"<?= $weightPerUnitGrams !== null ? ' data-estimate-weight-grams="' . e((string) $weightPerUnitGrams) . '"' : '' ?>>
+                                    <span class="input-group-text"><?= e($quantityUnitName) ?></span>
                                     <button class="btn btn-danger" type="submit">Thêm Flash Sale vào giỏ</button>
                                 </div>
+                                <div class="small text-secondary mt-1"><?= e($quantityHelp) ?><?php if ($weightPerUnitGrams !== null): ?> · <span data-estimated-total-weight>Tổng khoảng <?= e(substr((string) ProductUnitFormatter::approximateWeightLabel($unitLabel, 1), 4)) ?></span><?php endif; ?></div>
                                 <div data-cart-message aria-live="polite"></div>
                             </form>
                         <?php endif; ?>
@@ -83,11 +109,13 @@ $stockClass = $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'S
             <p class="product-detail-stock <?= $stockClass ?>"><?= e($stockStatus) ?><?php if ($stockStatus !== 'Còn hàng'): ?> · <?= (int) $product['actual_stock'] ?> <?= e($product['unit']) ?><?php endif; ?></p>
         <?php else: ?>
             <div class="product-detail-pricebox">
-                <div class="product-detail-price"><?php if ($product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0): ?><del><?= number_format((float) $product['price'], 0, ',', '.') ?> ₫</del><?php endif; ?><strong><?= number_format((float) $regularPrice, 0, ',', '.') ?> ₫</strong><span>/ <?= e($product['unit']) ?></span><?php if ($discountPercent > 0): ?><span class="product-detail-discount">-<?= $discountPercent ?>%</span><?php endif; ?></div>
+                <div class="product-detail-price"><?php if ($product['sale_price'] !== null && PricingService::moneyToVnd((string) $product['sale_price']) > 0): ?><del><?= e(ProductUnitFormatter::priceLabel((float) $product['price'], $unitLabel)) ?></del><?php endif; ?><strong><?= e($regularPriceParts[0]) ?></strong><span>/ <?= e($regularPriceParts[1]) ?></span><?php if ($discountPercent > 0): ?><span class="product-detail-discount">-<?= $discountPercent ?>%</span><?php endif; ?></div>
+                <?php if ($referencePrice !== null): ?><div class="small text-secondary w-100"><?= e($referencePrice) ?></div><?php endif; ?>
                 <p class="product-detail-stock <?= $stockClass ?>"><?= e($stockStatus) ?><?php if ($stockStatus !== 'Còn hàng'): ?> · <?= (int) $product['actual_stock'] ?> <?= e($product['unit']) ?><?php endif; ?></p>
             </div>
         <?php endif; ?>
         <dl class="product-detail-specs">
+            <dt>Quy cách</dt><dd><span class="badge text-bg-light border"><?= e($unitLabel) ?></span></dd>
             <dt>Vùng miền</dt><dd><a href="<?= e(url('/vung-mien/' . $product['region_slug'])) ?>"><?= e($product['parent_region_name'] ? $product['parent_region_name'] . ' · ' : '') ?><?= e($product['region_name']) ?></a></dd>
             <dt>Nông trại</dt><dd><?= e($product['farm_name']) ?></dd>
             <?php if ($certificateParts): ?><dt>Chứng nhận</dt><dd><?= e(implode(' · ', $certificateParts)) ?></dd><?php endif; ?>
@@ -95,14 +123,16 @@ $stockClass = $stockStatus === 'Hết hàng' ? 'is-empty' : ($stockStatus === 'S
         </dl>
         <div class="product-detail-actions">
             <?php if (!$flashSale && (int) $product['actual_stock'] > 0): ?>
-                <form class="product-detail-buy" data-cart-add="<?= e(url('/gio-hang/them')) ?>">
+                <form class="product-detail-buy" data-cart-add="<?= e(url('/gio-hang/them')) ?>"<?= $weightPerUnitGrams !== null ? ' data-estimated-weight-form' : '' ?>>
                     <?= csrf_field() ?>
                     <input type="hidden" name="product_id" value="<?= (int) $product['id'] ?>">
+                    <label class="form-label small mb-1" for="productQuantity">Số lượng (<?= e($quantityUnitName) ?>)</label>
                     <div class="input-group product-buy-controls">
-                        <input class="form-control" type="number" name="quantity" value="1" min="1" max="<?= (int) $product['actual_stock'] ?>" aria-label="Số lượng sản phẩm">
-                        <span class="input-group-text"><?= e($product['unit']) ?></span>
+                        <input class="form-control" id="productQuantity" type="number" name="quantity" value="1" min="1" max="<?= (int) $product['actual_stock'] ?>" aria-label="Số lượng sản phẩm"<?= $weightPerUnitGrams !== null ? ' data-estimate-weight-grams="' . e((string) $weightPerUnitGrams) . '"' : '' ?>>
+                        <span class="input-group-text"><?= e($quantityUnitName) ?></span>
                         <button class="btn btn-success" type="submit">Thêm vào giỏ</button>
                     </div>
+                    <div class="small text-secondary mt-1"><?= e($quantityHelp) ?><?php if ($weightPerUnitGrams !== null): ?> · <span data-estimated-total-weight>Tổng khoảng <?= e(substr((string) ProductUnitFormatter::approximateWeightLabel($unitLabel, 1), 4)) ?></span><?php endif; ?></div>
                     <div data-cart-message aria-live="polite"></div>
                 </form>
             <?php elseif (!$flashSale): ?>

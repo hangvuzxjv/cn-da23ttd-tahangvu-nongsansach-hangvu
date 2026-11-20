@@ -883,6 +883,9 @@ final class OrderService
                     $orderId
                 );
             }
+            if ($nextStatus === 'completed') {
+                (new CustomerMissionService($this->database))->rewardDeliveredOrderSafely($orderId);
+            }
             (new NotificationService($this->database))->sendOrderStatusEmail(
                 (int) $order['user_id'],
                 $orderId,

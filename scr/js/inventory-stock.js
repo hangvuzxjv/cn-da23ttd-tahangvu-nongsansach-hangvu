@@ -10,6 +10,7 @@
     const direction = form.querySelector('[data-stock-adjustment-direction]');
     const batchId = form.querySelector('[data-stock-adjustment-batch-id]');
     const batchLabel = form.querySelector('[data-stock-adjustment-batch]');
+    const unitLabel = form.querySelector('[data-stock-adjustment-unit]');
     const reason = form.querySelector('[data-stock-adjustment-reason]');
     const notes = form.querySelector('[data-stock-adjustment-notes]');
 
@@ -35,6 +36,7 @@
         updateNotesRequirement();
         batchId.value = trigger.dataset.batchId;
         batchLabel.textContent = `${trigger.dataset.productName} · ${trigger.dataset.batchCode}`;
+        unitLabel.textContent = trigger.dataset.unitName || 'đơn vị';
     });
 
     updateMovement();

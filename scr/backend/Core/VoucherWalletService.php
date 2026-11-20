@@ -279,7 +279,11 @@ final class VoucherWalletService
 
     public function grantWelcomeSafely(int $userId): void
     {
-        $this->grantAutomaticallySafely($userId, 'welcome', 'welcome');
+        try {
+            $this->grantWelcome($userId);
+        } catch (Throwable $exception) {
+            error_log('Welcome voucher grant failed (user=' . $userId . '): ' . $exception->getMessage());
+        }
     }
 
     public function grantFirstDeliveredOrderSafely(int $userId, int $orderId): void
@@ -450,6 +454,86 @@ final class VoucherWalletService
                         'voucher',
                         (int) $voucher['id'],
                         'user_id=' . $userId . '; source=' . $source,
+                        $this->database
+                    );
+                }
+            }
+            $this->database->commit();
+        } catch (Throwable $exception) {
+            if ($this->database->inTransaction()) {
+                $this->database->rollBack();
+            }
+            throw $exception;
+        }
+    }
+
+    private function grantWelcome(int $userId): void
+    {
+        $this->database->beginTransaction();
+        try {
+            $userQuery = $this->database->prepare(
+                "SELECT id FROM users
+                 WHERE id = :id AND role = 'customer' AND status = 'active'
+                   AND email_verified_at IS NOT NULL
+                 FOR UPDATE"
+            );
+            $userQuery->execute(['id' => $userId]);
+            if ($userQuery->fetchColumn() === false) {
+                $this->database->commit();
+                return;
+            }
+
+            $this->database->exec(
+                "INSERT INTO vouchers
+                    (code, description, discount_type, discount_value, minimum_order, maximum_discount,
+                     usage_limit, per_user_limit, starts_at, ends_at, status, audience, auto_rule, valid_days_after_grant)
+                 VALUES
+                    ('CHAOMUNG', 'Giảm 10% tối đa 50.000 đồng cho đơn từ 100.000 đồng.',
+                     'percent', 10, 100000, 50000, NULL, 1, CURRENT_TIMESTAMP,
+                     DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 30 DAY), 'active', 'targeted', 'welcome', 30)
+                 ON DUPLICATE KEY UPDATE
+                    description = VALUES(description),
+                    discount_type = VALUES(discount_type),
+                    discount_value = VALUES(discount_value),
+                    minimum_order = VALUES(minimum_order),
+                    maximum_discount = VALUES(maximum_discount),
+                    usage_limit = NULL,
+                    per_user_limit = 1,
+                    starts_at = CURRENT_TIMESTAMP,
+                    ends_at = GREATEST(ends_at, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 30 DAY)),
+                    status = 'active',
+                    audience = 'targeted',
+                    auto_rule = 'welcome',
+                    valid_days_after_grant = 30"
+            );
+            $voucherQuery = $this->database->prepare(
+                'SELECT * FROM vouchers WHERE code = :code FOR UPDATE'
+            );
+            $voucherQuery->execute(['code' => 'CHAOMUNG']);
+            $voucher = $voucherQuery->fetch();
+            if (!$voucher) {
+                throw new RuntimeException('Welcome voucher CHAOMUNG could not be created.');
+            }
+
+            $this->database->prepare(
+                "UPDATE vouchers SET auto_rule = 'none'
+                 WHERE code = 'WELCOME30' AND audience = 'targeted' AND auto_rule = 'welcome'"
+            )->execute();
+            $welcomeQuery = $this->database->query(
+                "SELECT * FROM vouchers
+                 WHERE audience = 'targeted' AND auto_rule = 'welcome' AND status = 'active'
+                   AND starts_at <= CURRENT_TIMESTAMP AND ends_at >= CURRENT_TIMESTAMP
+                   AND (usage_limit IS NULL OR used_count < usage_limit)
+                 ORDER BY id FOR UPDATE"
+            );
+            foreach ($welcomeQuery->fetchAll() as $welcomeVoucher) {
+                if ($this->grantOne($userId, $welcomeVoucher, 'welcome')) {
+                    AuditLog::record(
+                        null,
+                        'voucher_auto_granted',
+                        'voucher',
+                        (int) $welcomeVoucher['id'],
+                        'user_id=' . $userId . '; source=welcome',
                         $this->database
                     );
                 }

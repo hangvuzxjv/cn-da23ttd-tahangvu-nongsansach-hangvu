@@ -9,7 +9,14 @@ final class CatalogAdminController extends Controller
     public function regions(): void
     {
         $database = Database::connection();
-        $total = (int) $database->query('SELECT COUNT(*) FROM regions')->fetchColumn();
+        $total = (int) $database->query(
+            'SELECT COUNT(*) FROM regions AS region
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM region_aliases AS alias
+                 WHERE alias.legacy_region_id = region.id
+                   AND alias.region_id <> alias.legacy_region_id
+             )'
+        )->fetchColumn();
         $pages = max(1, (int) ceil($total / self::ADMIN_LIST_PAGE_SIZE));
         $requestedPage = filter_var($_GET['page'] ?? 1, FILTER_VALIDATE_INT);
         $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
@@ -18,9 +25,14 @@ final class CatalogAdminController extends Controller
                     COUNT(DISTINCT p.id) AS product_count,
                     COUNT(DISTINCT f.id) AS farm_count
              FROM regions r
-             LEFT JOIN regions child ON child.parent_id = r.id
+             LEFT JOIN regions child ON child.parent_id = r.id AND child.is_active = 1
              LEFT JOIN products p ON p.region_id = r.id
              LEFT JOIN farms f ON f.region_id = r.id
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM region_aliases AS alias
+                 WHERE alias.legacy_region_id = r.id
+                   AND alias.region_id <> alias.legacy_region_id
+             )
              GROUP BY r.id ORDER BY r.level, r.parent_id, r.name
              LIMIT :limit OFFSET :offset'
         );
@@ -31,7 +43,15 @@ final class CatalogAdminController extends Controller
         $this->view('admin/regions', [
             'title' => 'Vùng miền',
             'regions' => $regions,
-            'regionOptions' => $database->query('SELECT id, name, level, parent_id FROM regions ORDER BY level, parent_id, name')->fetchAll(),
+            'regionOptions' => $database->query(
+                'SELECT region.id, region.name, region.level, region.parent_id FROM regions AS region
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM region_aliases AS alias
+                     WHERE alias.legacy_region_id = region.id
+                       AND alias.region_id <> alias.legacy_region_id
+                 )
+                 ORDER BY region.level, region.parent_id, region.name'
+            )->fetchAll(),
             'page' => $page,
             'pages' => $pages,
             'paginationUrl' => '/admin/regions',
@@ -40,6 +60,35 @@ final class CatalogAdminController extends Controller
             'canManage' => Auth::can('regions.manage'),
             'menu' => $this->menu(),
             'errors' => form_errors(),
+            'success' => flash('success'),
+            'error' => flash('error'),
+        ], 'admin');
+    }
+
+    public function productsMissingImages(): void
+    {
+        $statement = Database::connection()->prepare(
+            'SELECT p.id, p.name, p.sku, p.status, images.image_url
+             FROM products p
+             LEFT JOIN (
+                 SELECT product_id,
+                        SUBSTRING_INDEX(GROUP_CONCAT(image_url ORDER BY is_primary DESC, sort_order, id), \',\', 1) AS image_url
+                 FROM product_images GROUP BY product_id
+             ) images ON images.product_id = p.id
+             WHERE p.deleted_at IS NULL
+             ORDER BY p.name, p.id'
+        );
+        $statement->execute();
+        $products = array_values(array_filter(
+            $statement->fetchAll(),
+            fn (array $product): bool => !$this->imageFileExists((string) ($product['image_url'] ?? ''))
+        ));
+        $this->view('admin/products-missing-images', [
+            'title' => 'Sản phẩm thiếu ảnh',
+            'products' => $products,
+            'total' => count($products),
+            'canManage' => Auth::can('products.manage'),
+            'menu' => $this->menu(),
             'success' => flash('success'),
             'error' => flash('error'),
         ], 'admin');
@@ -68,20 +117,27 @@ final class CatalogAdminController extends Controller
             }
             $level = 2;
         }
-        $this->writeRegion(
-            'INSERT INTO regions (parent_id, name, level, slug, description, is_active)
-             VALUES (:parent_id, :name, :level, :slug, :description, :is_active)',
-            [
-                'parent_id' => $parentId ?: null,
-                'name' => $name,
-                'level' => $level,
-                'slug' => $slug,
-                'description' => $description,
-                'is_active' => $active,
-            ],
-            null,
-            'region_created'
-        );
+        $storedImage = $this->storeCoverImage('regions', '/admin/regions');
+        try {
+            $this->writeRegion(
+                'INSERT INTO regions (parent_id, name, level, slug, description, image_path, is_active)
+                 VALUES (:parent_id, :name, :level, :slug, :description, :image_path, :is_active)',
+                [
+                    'parent_id' => $parentId ?: null,
+                    'name' => $name,
+                    'level' => $level,
+                    'slug' => $slug,
+                    'description' => $description,
+                    'image_path' => $storedImage['url'] ?? null,
+                    'is_active' => $active,
+                ],
+                null,
+                'region_created'
+            );
+        } catch (Throwable $exception) {
+            $this->discardNewImage($storedImage, 'regions');
+            throw $exception;
+        }
         flash('success', 'Đã thêm vùng miền.');
         redirect('/admin/regions');
     }
@@ -111,18 +167,37 @@ final class CatalogAdminController extends Controller
                 $this->fail('/admin/regions', ['parent_id' => 'Tỉnh/vùng phải thuộc một miền cấp 1.']);
             }
         }
+        $storedImage = $this->storeCoverImage('regions', '/admin/regions');
+        $imagePath = $storedImage['url'] ?? (
+            $this->postChecked('remove_image') ? null : ($current['image_path'] ?? null)
+        );
         $statement = Database::connection()->prepare(
             'UPDATE regions SET parent_id = :parent_id, name = :name, slug = :slug,
-                description = :description, is_active = :is_active WHERE id = :id'
+                description = :description, image_path = :image_path, is_active = :is_active WHERE id = :id'
         );
-        $this->writeStatement($statement, [
-            'parent_id' => (int) $current['level'] === 1 ? null : $parentId,
-            'name' => $name,
-            'slug' => $slug,
-            'description' => $description,
-            'is_active' => $this->postChecked('is_active') ? 1 : 0,
-            'id' => $regionId,
-        ], 'region_updated', 'region', $regionId);
+        try {
+            $this->writeStatement($statement, [
+                'parent_id' => (int) $current['level'] === 1 ? null : $parentId,
+                'name' => $name,
+                'slug' => $slug,
+                'description' => $description,
+                'image_path' => $imagePath,
+                'is_active' => $this->postChecked('is_active') ? 1 : 0,
+                'id' => $regionId,
+            ], 'region_updated', 'region', $regionId);
+        } catch (Throwable $exception) {
+            $this->discardNewImage($storedImage, 'regions');
+            throw $exception;
+        }
+        if ($imagePath !== ($current['image_path'] ?? null)) {
+            try {
+                ImageUploadService::deleteStored((string) ($current['image_path'] ?? ''), 'regions');
+            } catch (RuntimeException $exception) {
+                error_log('Không thể xóa ảnh vùng miền cũ: ' . $exception->getMessage());
+                flash('error', 'Vùng miền đã lưu nhưng không thể xóa ảnh cũ.');
+                redirect('/admin/regions');
+            }
+        }
         flash('success', 'Đã cập nhật vùng miền.');
         redirect('/admin/regions');
     }
@@ -133,14 +208,20 @@ final class CatalogAdminController extends Controller
         $region = $this->findRow('regions', $regionId);
         $counts = [];
         foreach ([
-            'tỉnh/vùng trực thuộc' => ['SELECT COUNT(*) FROM regions WHERE parent_id = :id', []],
-            'sản phẩm' => ['SELECT COUNT(*) FROM products WHERE region_id = :id', []],
-            'nông trại' => ['SELECT COUNT(*) FROM farms WHERE region_id = :id', []],
-            'địa chỉ khách hàng' => ['SELECT COUNT(*) FROM addresses WHERE region_id = :id', []],
-            'mức phí vận chuyển' => ['SELECT COUNT(*) FROM shipping_fees WHERE region_id = :id', []],
-        ] as $label => [$sql]) {
+            'tỉnh/vùng trực thuộc' => ['SELECT COUNT(*) FROM regions WHERE parent_id = :id', ['id' => $regionId]],
+            'sản phẩm' => ['SELECT COUNT(*) FROM products WHERE region_id = :id', ['id' => $regionId]],
+            'nông trại' => ['SELECT COUNT(*) FROM farms WHERE region_id = :id', ['id' => $regionId]],
+            'địa chỉ khách hàng' => ['SELECT COUNT(*) FROM addresses WHERE region_id = :id', ['id' => $regionId]],
+            'mức phí vận chuyển' => ['SELECT COUNT(*) FROM shipping_fees WHERE region_id = :id', ['id' => $regionId]],
+            'ánh xạ tỉnh/thành cũ' => [
+                'SELECT COUNT(*) FROM region_aliases
+                 WHERE (legacy_region_id = :legacy_id AND region_id <> legacy_region_id)
+                    OR (region_id = :current_id AND legacy_region_id <> region_id)',
+                ['legacy_id' => $regionId, 'current_id' => $regionId],
+            ],
+        ] as $label => [$sql, $parameters]) {
             $statement = Database::connection()->prepare($sql);
-            $statement->execute(['id' => $regionId]);
+            $statement->execute($parameters);
             $count = (int) $statement->fetchColumn();
             if ($count > 0) {
                 $counts[] = $count . ' ' . $label;
@@ -152,6 +233,13 @@ final class CatalogAdminController extends Controller
         }
         $statement = Database::connection()->prepare('DELETE FROM regions WHERE id = :id');
         $this->writeStatement($statement, ['id' => $regionId], 'region_deleted', 'region', $regionId, $region['name']);
+        try {
+            ImageUploadService::deleteStored((string) ($region['image_path'] ?? ''), 'regions');
+        } catch (RuntimeException $exception) {
+            error_log('Không thể xóa ảnh vùng miền đã xóa: ' . $exception->getMessage());
+            flash('error', 'Đã xóa vùng miền nhưng không thể xóa ảnh cũ.');
+            redirect('/admin/regions');
+        }
         flash('success', 'Đã xóa vùng miền.');
         redirect('/admin/regions');
     }
@@ -208,18 +296,25 @@ final class CatalogAdminController extends Controller
         if ($parentId > 0) {
             $this->findRow('categories', $parentId);
         }
+        $storedImage = $this->storeCoverImage('categories', '/admin/categories');
         $statement = Database::connection()->prepare(
-            'INSERT INTO categories (parent_id, name, slug, description, sort_order, is_active)
-             VALUES (:parent_id, :name, :slug, :description, :sort_order, :is_active)'
+            'INSERT INTO categories (parent_id, name, slug, description, image_path, sort_order, is_active)
+             VALUES (:parent_id, :name, :slug, :description, :image_path, :sort_order, :is_active)'
         );
-        $this->writeStatement($statement, [
-            'parent_id' => $parentId ?: null,
-            'name' => $name,
-            'slug' => $slug,
-            'description' => $this->postText('description'),
-            'sort_order' => $this->sortOrder(),
-            'is_active' => $this->postChecked('is_active') ? 1 : 0,
-        ], 'category_created', 'category');
+        try {
+            $this->writeStatement($statement, [
+                'parent_id' => $parentId ?: null,
+                'name' => $name,
+                'slug' => $slug,
+                'description' => $this->postText('description'),
+                'image_path' => $storedImage['url'] ?? null,
+                'sort_order' => $this->sortOrder(),
+                'is_active' => $this->postChecked('is_active') ? 1 : 0,
+            ], 'category_created', 'category');
+        } catch (Throwable $exception) {
+            $this->discardNewImage($storedImage, 'categories');
+            throw $exception;
+        }
         flash('success', 'Đã thêm danh mục.');
         redirect('/admin/categories');
     }
@@ -227,7 +322,7 @@ final class CatalogAdminController extends Controller
     public function updateCategory(string $id): void
     {
         $categoryId = (int) $id;
-        $this->findRow('categories', $categoryId);
+        $current = $this->findRow('categories', $categoryId);
         $name = $this->postText('name');
         $parentId = $this->postId('parent_id');
         $slug = $this->uniqueSlug('categories', $this->postText('slug') ?: $name, $categoryId);
@@ -255,19 +350,39 @@ final class CatalogAdminController extends Controller
                 $ancestorId = (int) ($ancestor['parent_id'] ?? 0);
             }
         }
+        $storedImage = $this->storeCoverImage('categories', '/admin/categories');
+        $imagePath = $storedImage['url'] ?? (
+            $this->postChecked('remove_image') ? null : ($current['image_path'] ?? null)
+        );
         $statement = Database::connection()->prepare(
             'UPDATE categories SET parent_id = :parent_id, name = :name, slug = :slug,
-                description = :description, sort_order = :sort_order, is_active = :is_active WHERE id = :id'
+                description = :description, image_path = :image_path,
+                sort_order = :sort_order, is_active = :is_active WHERE id = :id'
         );
-        $this->writeStatement($statement, [
-            'parent_id' => $parentId ?: null,
-            'name' => $name,
-            'slug' => $slug,
-            'description' => $this->postText('description'),
-            'sort_order' => $this->sortOrder(),
-            'is_active' => $this->postChecked('is_active') ? 1 : 0,
-            'id' => $categoryId,
-        ], 'category_updated', 'category', $categoryId);
+        try {
+            $this->writeStatement($statement, [
+                'parent_id' => $parentId ?: null,
+                'name' => $name,
+                'slug' => $slug,
+                'description' => $this->postText('description'),
+                'image_path' => $imagePath,
+                'sort_order' => $this->sortOrder(),
+                'is_active' => $this->postChecked('is_active') ? 1 : 0,
+                'id' => $categoryId,
+            ], 'category_updated', 'category', $categoryId);
+        } catch (Throwable $exception) {
+            $this->discardNewImage($storedImage, 'categories');
+            throw $exception;
+        }
+        if ($imagePath !== ($current['image_path'] ?? null)) {
+            try {
+                ImageUploadService::deleteStored((string) ($current['image_path'] ?? ''), 'categories');
+            } catch (RuntimeException $exception) {
+                error_log('Không thể xóa ảnh danh mục cũ: ' . $exception->getMessage());
+                flash('error', 'Danh mục đã lưu nhưng không thể xóa ảnh cũ.');
+                redirect('/admin/categories');
+            }
+        }
         flash('success', 'Đã cập nhật danh mục.');
         redirect('/admin/categories');
     }
@@ -291,6 +406,13 @@ final class CatalogAdminController extends Controller
         }
         $statement = Database::connection()->prepare('DELETE FROM categories WHERE id = :id');
         $this->writeStatement($statement, ['id' => $categoryId], 'category_deleted', 'category', $categoryId, $category['name']);
+        try {
+            ImageUploadService::deleteStored((string) ($category['image_path'] ?? ''), 'categories');
+        } catch (RuntimeException $exception) {
+            error_log('Không thể xóa ảnh danh mục đã xóa: ' . $exception->getMessage());
+            flash('error', 'Đã xóa danh mục nhưng không thể xóa ảnh cũ.');
+            redirect('/admin/categories');
+        }
         flash('success', 'Đã xóa danh mục.');
         redirect('/admin/categories');
     }
@@ -309,9 +431,24 @@ final class CatalogAdminController extends Controller
         $where = ['p.deleted_at IS NULL'];
         $params = [];
         if ($query !== '') {
-            $where[] = '(p.name LIKE :name_query OR p.sku LIKE :sku_query)';
-            $params['name_query'] = '%' . $query . '%';
-            $params['sku_query'] = '%' . $query . '%';
+            $where[] = "(
+                REPLACE(REPLACE(
+                    p.name COLLATE utf8mb4_unicode_ci,
+                    _utf8mb4'đ' COLLATE utf8mb4_unicode_ci,
+                    _utf8mb4'd' COLLATE utf8mb4_unicode_ci
+                ), _utf8mb4'Đ' COLLATE utf8mb4_unicode_ci, _utf8mb4'd' COLLATE utf8mb4_unicode_ci)
+                    COLLATE utf8mb4_unicode_ci LIKE :name_query COLLATE utf8mb4_unicode_ci ESCAPE '='
+                OR REPLACE(REPLACE(
+                    p.sku COLLATE utf8mb4_unicode_ci,
+                    _utf8mb4'đ' COLLATE utf8mb4_unicode_ci,
+                    _utf8mb4'd' COLLATE utf8mb4_unicode_ci
+                ), _utf8mb4'Đ' COLLATE utf8mb4_unicode_ci, _utf8mb4'd' COLLATE utf8mb4_unicode_ci)
+                    COLLATE utf8mb4_unicode_ci LIKE :sku_query COLLATE utf8mb4_unicode_ci ESCAPE '='
+            )";
+            $normalized = str_replace(['đ', 'Đ'], 'd', $query);
+            $escaped = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $normalized);
+            $params['name_query'] = '%' . $escaped . '%';
+            $params['sku_query'] = '%' . $escaped . '%';
         }
         if ($categoryId > 0) {
             $where[] = 'p.category_id = :category_id';
@@ -398,6 +535,16 @@ final class CatalogAdminController extends Controller
         $database = Database::connection();
         $database->beginTransaction();
         try {
+            $productLock = $database->prepare(
+                'SELECT id FROM products WHERE id = :id AND deleted_at IS NULL FOR UPDATE'
+            );
+            $productLock->execute(['id' => $productId]);
+            if (!$productLock->fetchColumn()) {
+                throw new RuntimeException('Không tìm thấy sản phẩm để xóa.');
+            }
+            $imageQuery = $database->prepare('SELECT image_url FROM product_images WHERE product_id = :product_id');
+            $imageQuery->execute(['product_id' => $productId]);
+            $imageUrls = $imageQuery->fetchAll(PDO::FETCH_COLUMN);
             $database->prepare('UPDATE products SET deleted_at = NOW(), status = \'inactive\' WHERE id = :id')
                 ->execute(['id' => $productId]);
             AuditLog::record((int) Auth::user()['id'], 'product_soft_deleted', 'product', $productId, $product['name']);
@@ -407,6 +554,18 @@ final class CatalogAdminController extends Controller
                 $database->rollBack();
             }
             throw $exception;
+        }
+        $fileCleanupFailures = 0;
+        foreach ($imageUrls as $imageUrl) {
+            try {
+                $this->removeStoredImage((string) $imageUrl);
+            } catch (RuntimeException $exception) {
+                $fileCleanupFailures++;
+                error_log('Không thể xóa ảnh sản phẩm sau khi ẩn sản phẩm: ' . $exception->getMessage());
+            }
+        }
+        if ($fileCleanupFailures > 0) {
+            throw new RuntimeException('Sản phẩm đã được ẩn nhưng không thể xóa ' . $fileCleanupFailures . ' tệp ảnh.');
         }
         flash('success', 'Đã ẩn sản phẩm khỏi cửa hàng (xóa mềm; dữ liệu đơn hàng/lô được giữ nguyên).');
         redirect('/admin/products');
@@ -523,6 +682,11 @@ final class CatalogAdminController extends Controller
         ];
         $input['slug'] = $input['slug'] !== '' ? CatalogSlug::from($input['slug']) : CatalogSlug::from($input['name']);
         $errors = [];
+        $primaryNewIndexRaw = $_POST['primary_new_image'] ?? '';
+        if (!is_scalar($primaryNewIndexRaw)
+            || ((string) $primaryNewIndexRaw !== '' && !preg_match('/\A[0-7]\z/', (string) $primaryNewIndexRaw))) {
+            $errors['images'] = 'Lựa chọn ảnh đại diện không hợp lệ.';
+        }
         if ($input['name'] === '' || mb_strlen($input['name'], 'UTF-8') > 200) {
             $errors['name'] = 'Tên sản phẩm bắt buộc, tối đa 200 ký tự.';
         }
@@ -621,16 +785,59 @@ final class CatalogAdminController extends Controller
             redirect($productId === null ? '/admin/products/new' : '/admin/products/' . $productId . '/edit');
         }
 
+        $imageCount = 0;
+        if ($productId !== null) {
+            $imageCountQuery = Database::connection()->prepare(
+                'SELECT COUNT(*) FROM product_images WHERE product_id = :product_id'
+            );
+            $imageCountQuery->execute(['product_id' => $productId]);
+            $imageCount = (int) $imageCountQuery->fetchColumn();
+        }
         try {
-            $newFiles = $this->storeUploadedFiles();
+            $newFiles = $this->storeUploadedFiles($imageCount);
         } catch (RuntimeException $exception) {
             remember_form_data($input);
             flash('error', $exception->getMessage());
             redirect($productId === null ? '/admin/products/new' : '/admin/products/' . $productId . '/edit');
         }
+        $primaryNewIndex = null;
+        if ($newFiles !== [] && (string) $primaryNewIndexRaw !== '') {
+            $primaryNewIndex = (int) $primaryNewIndexRaw;
+            if ($primaryNewIndex >= count($newFiles)) {
+                $this->removeUploadedFiles($newFiles);
+                remember_form_data($input);
+                flash('error', 'Vui lòng chọn ảnh đại diện trong danh sách ảnh mới.');
+                redirect($productId === null ? '/admin/products/new' : '/admin/products/' . $productId . '/edit');
+            }
+        }
         $database = Database::connection();
         $database->beginTransaction();
         try {
+            if ($productId !== null) {
+                $productLock = $database->prepare(
+                    'SELECT id FROM products WHERE id = :id AND deleted_at IS NULL FOR UPDATE'
+                );
+                $productLock->execute(['id' => $productId]);
+                if (!$productLock->fetchColumn()) {
+                    throw new RuntimeException('Không tìm thấy sản phẩm để lưu ảnh.');
+                }
+            }
+            $currentImageCount = 0;
+            if ($productId !== null) {
+                $currentImageCountQuery = $database->prepare(
+                    'SELECT COUNT(*) FROM product_images WHERE product_id = :product_id'
+                );
+                $currentImageCountQuery->execute(['product_id' => $productId]);
+                $currentImageCount = (int) $currentImageCountQuery->fetchColumn();
+            }
+            if ($newFiles !== [] && $currentImageCount + count($newFiles) > 8) {
+                $database->rollBack();
+                $this->removeUploadedFiles($newFiles);
+                remember_form_data($input);
+                flash('error', 'Mỗi sản phẩm được lưu tối đa 8 ảnh. Hãy xóa bớt ảnh trước khi tải thêm.');
+                redirect($productId === null ? '/admin/products/new' : '/admin/products/' . $productId . '/edit');
+            }
+            $hasPrimaryImage = $productId !== null && $this->hasUsablePrimaryImage($productId);
             $values = [
                 'category_id' => $input['category_id'],
                 'region_id' => $input['region_id'],
@@ -690,6 +897,10 @@ final class CatalogAdminController extends Controller
                 $statement->execute($values);
                 $action = 'product_updated';
             }
+            if ($primaryNewIndex !== null) {
+                $database->prepare('UPDATE product_images SET is_primary = 0 WHERE product_id = :product_id')
+                    ->execute(['product_id' => $productId]);
+            }
             foreach ($newFiles as $index => $file) {
                 $database->prepare(
                     'INSERT INTO product_images (product_id, image_url, alt_text, sort_order, is_primary)
@@ -699,7 +910,9 @@ final class CatalogAdminController extends Controller
                     'image_url' => $file['url'],
                     'alt_text' => $input['name'],
                     'sort_order' => $index + 100,
-                    'is_primary' => $index === 0 && !$this->hasPrimaryImage($productId) ? 1 : 0,
+                    'is_primary' => $primaryNewIndex !== null
+                        ? (int) ($index === $primaryNewIndex)
+                        : (int) ($index === 0 && !$hasPrimaryImage),
                 ]);
             }
             AuditLog::record((int) Auth::user()['id'], $action, 'product', $productId, $input['sku']);
@@ -708,11 +921,7 @@ final class CatalogAdminController extends Controller
             if ($database->inTransaction()) {
                 $database->rollBack();
             }
-            foreach ($newFiles as $file) {
-                if (is_file($file['path']) && !unlink($file['path'])) {
-                    error_log('Không thể dọn ảnh tải lên sau lỗi lưu sản phẩm: ' . $file['path']);
-                }
-            }
+            $this->removeUploadedFiles($newFiles);
             if ($exception instanceof PDOException && $exception->getCode() === '23000') {
                 remember_form_data($input);
                 flash('error', 'Slug hoặc SKU đã được sản phẩm khác sử dụng.');
@@ -727,6 +936,15 @@ final class CatalogAdminController extends Controller
     private function productForm(?int $productId): void
     {
         $product = $productId === null ? null : $this->findProduct($productId);
+        $images = $product ? $this->productImages($productId) : [];
+        $hasStoredPrimaryImage = count(array_filter(
+            $images,
+            static fn (array $image): bool => (int) $image['is_primary'] === 1
+        )) > 0;
+        $primaryImage = $hasStoredPrimaryImage
+            ? array_values(array_filter($images, static fn (array $image): bool => (int) $image['is_primary'] === 1))[0]
+            : ($images[0] ?? null);
+        $hasPrimaryImage = $primaryImage !== null && $this->imageFileExists((string) $primaryImage['image_url']);
         $statement = Database::connection()->query(
             'SELECT id, parent_id, name FROM categories WHERE is_active = 1 ORDER BY parent_id, sort_order, name'
         );
@@ -737,7 +955,9 @@ final class CatalogAdminController extends Controller
             'categories' => $categories,
             'regions' => Database::connection()->query('SELECT id, name FROM regions WHERE level = 2 AND is_active = 1 ORDER BY name')->fetchAll(),
             'farms' => Database::connection()->query('SELECT id, name, region_id FROM farms WHERE status = \'active\' ORDER BY name')->fetchAll(),
-            'images' => $product ? $this->productImages($productId) : [],
+            'images' => $images,
+            'hasPrimaryImage' => $hasPrimaryImage,
+            'hasStoredPrimaryImage' => $hasStoredPrimaryImage,
             'errors' => form_errors(),
             'success' => flash('success'),
             'error' => flash('error'),
@@ -745,106 +965,55 @@ final class CatalogAdminController extends Controller
         ], 'admin');
     }
 
-    private function storeUploadedFiles(): array
+    private function storeUploadedFiles(int $existingCount = 0): array
     {
-        if (!isset($_FILES['images']) || !is_array($_FILES['images']['name'] ?? null)) {
+        if (!isset($_FILES['images'])) {
             return [];
         }
         $files = $_FILES['images'];
-        $stored = [];
-        $allowed = [
-            'image/jpeg' => ['jpg', 'imagecreatefromjpeg'],
-            'image/png' => ['png', 'imagecreatefrompng'],
-            'image/webp' => ['webp', 'imagecreatefromwebp'],
-        ];
-        $directory = ROOT_PATH . '/uploads/products';
-        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
-            throw new RuntimeException('Không thể tạo thư mục tải ảnh sản phẩm.');
+        if (!is_array($files) || !is_array($files['name'] ?? null)) {
+            throw new RuntimeException('Danh sách ảnh tải lên không hợp lệ.');
         }
-        foreach ($files['name'] as $index => $originalName) {
+        foreach (['tmp_name', 'error', 'size'] as $field) {
+            if (!is_array($files[$field] ?? null) || count($files[$field]) !== count($files['name'])) {
+                throw new RuntimeException('Danh sách ảnh tải lên không hợp lệ.');
+            }
+        }
+        $uploadCount = 0;
+        foreach ($files['error'] as $error) {
+            if ((int) $error !== UPLOAD_ERR_NO_FILE) {
+                $uploadCount++;
+            }
+        }
+        if ($existingCount + $uploadCount > 8) {
+            throw new RuntimeException('Mỗi sản phẩm được lưu tối đa 8 ảnh. Hãy xóa bớt ảnh trước khi tải thêm.');
+        }
+        if ($uploadCount === 0) {
+            return [];
+        }
+        $stored = [];
+        foreach (array_keys($files['name']) as $index) {
             $error = (int) ($files['error'][$index] ?? UPLOAD_ERR_NO_FILE);
             if ($error === UPLOAD_ERR_NO_FILE) {
                 continue;
             }
-            if ($error !== UPLOAD_ERR_OK) {
-                $this->removeUploadedFiles($stored);
-                throw new RuntimeException('Tải ảnh "' . basename((string) $originalName) . '" thất bại (mã ' . $error . ').');
-            }
-            $temporary = (string) $files['tmp_name'][$index];
-            $size = (int) $files['size'][$index];
-            if ($size <= 0 || $size > 2 * 1024 * 1024) {
-                $this->removeUploadedFiles($stored);
-                throw new RuntimeException('Mỗi ảnh phải có dung lượng tối đa 2 MB.');
-            }
-            $finfo = new finfo(FILEINFO_MIME_TYPE);
-            $mime = $finfo->file($temporary);
-            if (!isset($allowed[$mime])) {
-                $this->removeUploadedFiles($stored);
-                throw new RuntimeException('Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP.');
-            }
-            $imageInfo = getimagesize($temporary);
-            if ($imageInfo === false || ($imageInfo['mime'] ?? '') !== $mime) {
-                $this->removeUploadedFiles($stored);
-                throw new RuntimeException('Tệp tải lên không phải ảnh hợp lệ.');
-            }
-            $filename = bin2hex(random_bytes(20)) . '.' . $allowed[$mime][0];
-            $path = $directory . '/' . $filename;
-            if (!move_uploaded_file($temporary, $path)) {
-                $this->removeUploadedFiles($stored);
-                throw new RuntimeException('Không thể lưu ảnh tải lên.');
-            }
             try {
-                $this->resizeImage($path, $mime, $allowed[$mime][1]);
+                $storedFile = ImageUploadService::store([
+                    'name' => $files['name'][$index] ?? '',
+                    'type' => $files['type'][$index] ?? '',
+                    'tmp_name' => $files['tmp_name'][$index] ?? '',
+                    'error' => $error,
+                    'size' => $files['size'][$index] ?? 0,
+                ], 'products');
             } catch (Throwable $exception) {
-                @unlink($path);
                 $this->removeUploadedFiles($stored);
                 throw $exception;
             }
-            $stored[] = ['path' => $path, 'url' => '/uploads/products/' . $filename];
+            if ($storedFile !== null) {
+                $stored[] = $storedFile;
+            }
         }
         return $stored;
-    }
-
-    private function resizeImage(string $path, string $mime, string $decoder): void
-    {
-        if (!extension_loaded('gd') || !function_exists($decoder)) {
-            return;
-        }
-        $source = $decoder($path);
-        if ($source === false) {
-            throw new RuntimeException('Không thể giải mã ảnh để xử lý.');
-        }
-        try {
-            $width = imagesx($source);
-            $height = imagesy($source);
-            $longest = max($width, $height);
-            if ($longest <= 1000) {
-                return;
-            }
-            $scale = 1000 / $longest;
-            $newWidth = max(1, (int) round($width * $scale));
-            $newHeight = max(1, (int) round($height * $scale));
-            $target = imagecreatetruecolor($newWidth, $newHeight);
-            if ($mime === 'image/png' || $mime === 'image/webp') {
-                imagealphablending($target, false);
-                imagesavealpha($target, true);
-                $transparent = imagecolorallocatealpha($target, 0, 0, 0, 127);
-                imagefill($target, 0, 0, $transparent);
-            }
-            imagecopyresampled($target, $source, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
-            $saved = match ($mime) {
-                'image/jpeg' => imagejpeg($target, $path, 88),
-                'image/png' => imagepng($target, $path, 7),
-                'image/webp' => imagewebp($target, $path, 88),
-                default => false,
-            };
-            imagedestroy($target);
-            if (!$saved) {
-                throw new RuntimeException('Không thể thu nhỏ hoặc lưu ảnh.');
-            }
-        } finally {
-            imagedestroy($source);
-        }
     }
 
     private function productImages(int $productId): array
@@ -858,13 +1027,15 @@ final class CatalogAdminController extends Controller
         return $statement->fetchAll();
     }
 
-    private function hasPrimaryImage(int $productId): bool
+    private function hasUsablePrimaryImage(int $productId): bool
     {
         $statement = Database::connection()->prepare(
-            'SELECT COUNT(*) FROM product_images WHERE product_id = :product_id AND is_primary = 1'
+            'SELECT image_url FROM product_images WHERE product_id = :product_id
+             ORDER BY is_primary DESC, sort_order, id LIMIT 1'
         );
         $statement->execute(['product_id' => $productId]);
-        return (int) $statement->fetchColumn() > 0;
+        $imageUrl = $statement->fetchColumn();
+        return $imageUrl !== false && $this->imageFileExists((string) $imageUrl);
     }
 
     private function findProduct(int $id): array
@@ -899,21 +1070,62 @@ final class CatalogAdminController extends Controller
 
     private function removeStoredImage(string $url): void
     {
-        if (!str_starts_with($url, '/uploads/products/')) {
-            return;
+        ImageUploadService::deleteStored($url, 'products');
+    }
+
+    private function imageFileExists(string $imageUrl): bool
+    {
+        $parts = parse_url($imageUrl);
+        if ($parts === false || isset($parts['scheme']) || isset($parts['host'])) {
+            return false;
         }
-        $path = ROOT_PATH . $url;
-        if (is_file($path) && !unlink($path)) {
-            throw new RuntimeException('Không thể xóa tệp ảnh khỏi ổ đĩa: ' . basename($path));
+        $imagePath = $parts['path'] ?? null;
+        if (!is_string($imagePath) || !str_starts_with($imagePath, '/')) {
+            return false;
         }
+        $allowedDirectories = ['/uploads/products', '/img', '/public/images'];
+        foreach ($allowedDirectories as $allowedDirectory) {
+            if (!str_starts_with($imagePath, $allowedDirectory . '/')) {
+                continue;
+            }
+            $directory = realpath(ROOT_PATH . str_replace('/', DIRECTORY_SEPARATOR, $allowedDirectory));
+            $path = realpath(ROOT_PATH . str_replace('/', DIRECTORY_SEPARATOR, $imagePath));
+            $directoryPrefix = $directory === false ? '' : rtrim($directory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+            return $path !== false && $directoryPrefix !== ''
+                && str_starts_with($path, $directoryPrefix) && is_file($path);
+        }
+        return false;
     }
 
     private function removeUploadedFiles(array $files): void
     {
         foreach ($files as $file) {
-            if (is_file($file['path']) && !unlink($file['path'])) {
-                error_log('Không thể dọn ảnh tải lên sau lỗi: ' . $file['path']);
+            try {
+                ImageUploadService::deleteStored((string) ($file['url'] ?? ''), 'products');
+            } catch (Throwable $exception) {
+                error_log('Không thể dọn ảnh tải lên sau lỗi: ' . $exception->getMessage());
             }
+        }
+    }
+
+    private function discardNewImage(?array $image, string $directoryName): void
+    {
+        if ($image === null) {
+            return;
+        }
+        try {
+            ImageUploadService::deleteStored((string) ($image['url'] ?? ''), $directoryName);
+        } catch (Throwable $exception) {
+            error_log('Không thể dọn ảnh mới sau lỗi lưu dữ liệu: ' . $exception->getMessage());
+        }
+    }
+
+    private function storeCoverImage(string $directoryName, string $route): ?array
+    {
+        try {
+            return ImageUploadService::store($_FILES['image'] ?? null, $directoryName);
+        } catch (RuntimeException $exception) {
+            $this->fail($route, ['image' => $exception->getMessage()]);
         }
     }
 
@@ -1081,6 +1293,7 @@ final class CatalogAdminController extends Controller
             ['permission' => 'regions.view', 'label' => 'Vùng miền', 'url' => '/admin/regions'],
             ['permission' => 'categories.view', 'label' => 'Danh mục', 'url' => '/admin/categories'],
             ['permission' => 'products.view', 'label' => 'Sản phẩm', 'url' => '/admin/products'],
+            ['permission' => 'products.view', 'label' => 'Sản phẩm thiếu ảnh', 'url' => '/admin/products/missing-images'],
             ['permission' => 'orders.view', 'label' => 'Đơn hàng', 'url' => '/admin/orders'],
             ['permission' => 'vouchers.view', 'label' => 'Voucher', 'url' => '/admin/vouchers'],
             ['permission' => 'reviews.view', 'label' => 'Đánh giá', 'url' => '/admin/reviews'],

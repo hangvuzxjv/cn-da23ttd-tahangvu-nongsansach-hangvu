@@ -206,8 +206,9 @@ final class TraceAdminController extends Controller
         $page = min(max(1, $requestedPage === false ? 1 : $requestedPage), $pages);
         $batchQuery = $database->prepare(
             'SELECT b.id, b.batch_code, b.harvested_at, b.packed_at, b.expires_at,
-                    b.quantity_received, b.quantity_remaining, b.inspection_result, b.status,
-                    p.name AS product_name, f.name AS farm_name,
+                    b.quantity_received, b.quantity_remaining, b.average_unit_cost, b.inspection_result, b.status,
+                    p.name AS product_name, p.sku, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    f.name AS farm_name,
                     (SELECT COUNT(*) FROM trace_scans s WHERE s.batch_id = b.id) AS scan_count
              FROM product_batches b JOIN products p ON p.id = b.product_id
              LEFT JOIN farms f ON f.id = b.farm_id ORDER BY b.created_at DESC, b.id DESC
@@ -318,7 +319,8 @@ final class TraceAdminController extends Controller
     {
         $database = Database::connection();
         $query = $database->prepare(
-            'SELECT b.*, p.name AS product_name, p.sku, p.region_id, f.name AS farm_name
+            'SELECT b.*, p.name AS product_name, p.sku, p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
+                    p.region_id, f.name AS farm_name
              FROM product_batches b JOIN products p ON p.id = b.product_id LEFT JOIN farms f ON f.id = b.farm_id
              WHERE b.id = :id'
         );
@@ -650,7 +652,7 @@ final class TraceAdminController extends Controller
             }
             throw $exception;
         }
-        flash('success', 'Đã tạo 6 bước truy xuất mẫu.');
+        flash('success', 'Đã tạo 6 sự kiện truy xuất.');
         redirect('/admin/batches/' . $batchId);
     }
 
@@ -751,9 +753,13 @@ final class TraceAdminController extends Controller
             return [];
         }
         $file = $_FILES[$field];
-        if ((int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || (int) ($file['size'] ?? 0) <= 0
-            || (int) $file['size'] > 2 * 1024 * 1024) {
-            throw new RuntimeException('Ảnh phải tải thành công và có dung lượng tối đa 2 MB.');
+        $uploadError = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($uploadError === UPLOAD_ERR_INI_SIZE || $uploadError === UPLOAD_ERR_FORM_SIZE) {
+            throw new RuntimeException('Ảnh vượt giới hạn tải lên của máy chủ. Vui lòng giảm dung lượng hoặc liên hệ quản trị viên.');
+        }
+        if ($uploadError !== UPLOAD_ERR_OK || (int) ($file['size'] ?? 0) <= 0
+            || (int) $file['size'] > 8 * 1024 * 1024) {
+            throw new RuntimeException('Ảnh phải tải thành công và có dung lượng tối đa 8 MB.');
         }
         $temporary = (string) $file['tmp_name'];
         $mime = (new finfo(FILEINFO_MIME_TYPE))->file($temporary);
@@ -800,24 +806,32 @@ final class TraceAdminController extends Controller
         try {
             $width = imagesx($image);
             $height = imagesy($image);
-            if (max($width, $height) <= 1000) {
+            if (max($width, $height) <= 2560) {
                 return;
             }
-            $ratio = 1000 / max($width, $height);
+            $ratio = 2560 / max($width, $height);
             $target = imagecreatetruecolor((int) round($width * $ratio), (int) round($height * $ratio));
+            if ($target === false) {
+                throw new RuntimeException('Không đủ bộ nhớ để thu nhỏ ảnh truy xuất.');
+            }
             if ($mime === 'image/png' || $mime === 'image/webp') {
                 imagealphablending($target, false);
                 imagesavealpha($target, true);
             }
-            imagecopyresampled($target, $image, 0, 0, 0, 0, imagesx($target), imagesy($target), $width, $height);
-            if ($mime === 'image/jpeg') {
-                imagejpeg($target, $path, 88);
-            } elseif ($mime === 'image/png') {
-                imagepng($target, $path, 6);
-            } else {
-                imagewebp($target, $path, 88);
+            try {
+                imagecopyresampled($target, $image, 0, 0, 0, 0, imagesx($target), imagesy($target), $width, $height);
+                $saved = match ($mime) {
+                    'image/jpeg' => imagejpeg($target, $path, 92),
+                    'image/png' => imagepng($target, $path, 6),
+                    'image/webp' => imagewebp($target, $path, 92),
+                    default => false,
+                };
+                if (!$saved) {
+                    throw new RuntimeException('Không thể lưu ảnh truy xuất đã thu nhỏ.');
+                }
+            } finally {
+                imagedestroy($target);
             }
-            imagedestroy($target);
         } finally {
             imagedestroy($image);
         }

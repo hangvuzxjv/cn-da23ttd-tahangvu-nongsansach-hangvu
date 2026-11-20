@@ -339,23 +339,23 @@ final class NotificationService
         ]);
     }
 
-    public function notifySupportTicketReply(int $userId, int $ticketId): void
+    public function notifySupportTicketReply(int $userId): void
     {
         $this->database->prepare(
             'INSERT INTO notifications (user_id, title, message, link_url)
              VALUES (:user_id, :title, :message, :link)'
         )->execute([
             'user_id' => $userId,
-            'title' => 'Phiếu hỗ trợ đã có phản hồi',
-            'message' => 'Phiếu hỗ trợ #' . $ticketId . ' đã có phản hồi từ Nông Sản Sạch.',
-            'link' => '/ho-tro/' . $ticketId,
+            'title' => 'Cửa hàng đã phản hồi yêu cầu hỗ trợ',
+            'message' => 'Cửa hàng đã phản hồi yêu cầu hỗ trợ của bạn. Vui lòng liên hệ cửa hàng nếu cần trao đổi thêm.',
+            'link' => '/lien-he',
         ]);
     }
 
     public function notifyCodRiskOnce(int $userId): void
     {
         $title = 'Các đơn tiếp theo cần thanh toán trước';
-        $message = 'Do các đơn trước không nhận hàng, các đơn tiếp theo cần thanh toán trước (VietQR/VNPay). Cần hỗ trợ, vui lòng tạo phiếu hỗ trợ.';
+        $message = 'Do các đơn trước không nhận hàng, các đơn tiếp theo cần thanh toán trước (VietQR/VNPay). Cần hỗ trợ, vui lòng liên hệ cửa hàng.';
         $existing = $this->database->prepare(
             'SELECT id FROM notifications
              WHERE user_id = :user_id AND title = :title AND message = :message LIMIT 1'
@@ -366,7 +366,7 @@ final class NotificationService
         }
         $this->database->prepare(
             'INSERT INTO notifications (user_id, title, message, link_url)
-             VALUES (:user_id, :title, :message, \'/ho-tro\')'
+             VALUES (:user_id, :title, :message, \'/lien-he\')'
         )->execute(['user_id' => $userId, 'title' => $title, 'message' => $message]);
     }
 
@@ -412,14 +412,14 @@ final class NotificationService
 
             $result = (new MailService($this->database))->sendTemplate(
                 (string) $user['email'],
-                'Phiếu hỗ trợ #' . $ticketId . ' đã có phản hồi',
+                'Cửa hàng đã phản hồi yêu cầu hỗ trợ',
                 'Phiếu hỗ trợ đã có phản hồi',
                 [
                     'Xin chào ' . $user['name'] . '.',
-                    'Phiếu hỗ trợ #' . $ticketId . ' đã có phản hồi từ Nông Sản Sạch.',
+                    'Cửa hàng đã phản hồi yêu cầu hỗ trợ của bạn. Vui lòng liên hệ cửa hàng nếu cần trao đổi thêm.',
                 ],
-                'Xem phiếu hỗ trợ',
-                absolute_url('/ho-tro/' . $ticketId),
+                'Liên hệ cửa hàng',
+                absolute_url('/lien-he'),
                 ['type' => 'support_ticket_reply', 'ticket_id' => $ticketId]
             );
             if (!$result['accepted']) {
@@ -504,7 +504,11 @@ final class NotificationService
             "INSERT IGNORE INTO notifications
                 (user_id, title, message, link_url, source_type, source_id)
              SELECT DISTINCT w.user_id, 'Flash Sale đang diễn ra',
-                    CONCAT('Flash Sale ', fs.name, ' đang có sản phẩm bạn yêu thích.'),
+                    CONCAT(
+                        _utf8mb4'Flash Sale ' COLLATE utf8mb4_unicode_ci,
+                        fs.name COLLATE utf8mb4_unicode_ci,
+                        _utf8mb4' đang có sản phẩm bạn yêu thích.' COLLATE utf8mb4_unicode_ci
+                    ),
                     '/flash-sale', 'flash_sale', fs.id
              FROM wishlists w
              JOIN flash_sale_items fsi ON fsi.product_id = w.product_id

@@ -8,13 +8,19 @@
 <?php if ($canManage): ?>
     <div class="collapse mb-4" id="newRegion"><div class="card"><div class="card-body">
         <h2 class="h5">Thêm miền hoặc tỉnh/vùng</h2>
-        <form class="row g-2" method="post" action="<?= e(url('/admin/regions')) ?>">
+        <form class="row g-2" method="post" enctype="multipart/form-data" action="<?= e(url('/admin/regions')) ?>">
             <?= csrf_field() ?>
             <div class="col-md-3"><label class="form-label">Tên</label><input class="form-control" name="name" required></div>
             <div class="col-md-3"><label class="form-label">Miền cha (để trống để tạo miền)</label><select class="form-select" name="parent_id"><option value="">Miền cấp 1</option><?php foreach ($regionOptions as $item): if ((int) $item['level'] === 1): ?><option value="<?= (int) $item['id'] ?>"><?= e($item['name']) ?></option><?php endif; endforeach; ?></select></div>
             <div class="col-md-3"><label class="form-label">Slug (để trống tự tạo)</label><input class="form-control" name="slug"></div>
             <div class="col-md-3"><label class="form-label">Mô tả</label><input class="form-control" name="description"></div>
             <div class="col-12 form-check ms-2"><input class="form-check-input" id="new_region_active" name="is_active" type="checkbox" checked><label class="form-check-label" for="new_region_active">Hiển thị</label></div>
+            <div class="col-12">
+                <label class="form-label">Ảnh đại diện</label>
+                <input class="form-control" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" data-image-preview>
+                <img class="catalog-preview mt-2" data-image-preview-target alt="Xem trước ảnh vùng miền" hidden>
+                <small class="form-text text-secondary">Để trống thì hệ thống tự lấy ảnh sản phẩm.</small>
+            </div>
             <div class="col-12"><button class="btn btn-success" type="submit">Lưu vùng miền</button></div>
         </form>
     </div></div></div>
@@ -34,7 +40,7 @@
                 <?php if ($canManage): ?>
                     <td>
                         <details><summary class="btn btn-sm btn-outline-primary">Sửa</summary>
-                            <form class="border rounded p-2 mt-2" method="post" action="<?= e(url('/admin/regions/' . $region['id'] . '/update')) ?>">
+                            <form class="border rounded p-2 mt-2" method="post" enctype="multipart/form-data" action="<?= e(url('/admin/regions/' . $region['id'] . '/update')) ?>">
                                 <?= csrf_field() ?>
                                 <label class="form-label">Tên</label><input class="form-control mb-2" name="name" value="<?= e($region['name']) ?>" required>
                                 <?php if ((int) $region['level'] === 2): ?>
@@ -42,6 +48,17 @@
                                 <?php else: ?><input type="hidden" name="parent_id" value="0"><?php endif; ?>
                                 <label class="form-label">Slug</label><input class="form-control mb-2" name="slug" value="<?= e($region['slug']) ?>">
                                 <label class="form-label">Mô tả</label><textarea class="form-control mb-2" name="description"><?= e($region['description']) ?></textarea>
+                                <div class="mb-2">
+                                    <label class="form-label">Ảnh đại diện</label>
+                                    <?php if (!empty($region['image_path'])): ?><img class="catalog-thumb d-block mb-2" src="<?= e(asset($region['image_path'])) ?>" alt="<?= e('Ảnh đại diện vùng miền ' . $region['name']) ?>" data-image-current><?php endif; ?>
+                                    <input class="form-control" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" data-image-preview>
+                                    <img class="catalog-preview mt-2" data-image-preview-target alt="Xem trước ảnh vùng miền" hidden>
+                                    <?php if (!empty($region['image_path'])): ?>
+                                        <input type="checkbox" class="d-none" name="remove_image" value="1" data-image-clear>
+                                        <button class="btn btn-sm btn-outline-danger mt-2" type="button" data-image-clear-button aria-pressed="false">Xóa ảnh hiện tại</button>
+                                    <?php endif; ?>
+                                    <small class="form-text text-secondary d-block">Để trống thì hệ thống tự lấy ảnh sản phẩm.</small>
+                                </div>
                                 <div class="form-check mb-2"><input class="form-check-input" id="region_active_<?= (int) $region['id'] ?>" name="is_active" type="checkbox" <?= (int) $region['is_active'] === 1 ? 'checked' : '' ?>><label class="form-check-label" for="region_active_<?= (int) $region['id'] ?>">Hiển thị</label></div>
                                 <button class="btn btn-sm btn-success" type="submit">Lưu</button>
                             </form>
@@ -57,3 +74,4 @@
     </table>
 </div>
 <?php include FRONTEND_PATH . '/views/admin/_pagination.php'; ?>
+<script src="<?= e(asset('/js/admin-image-preview.js')) ?>" defer></script>

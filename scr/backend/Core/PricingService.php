@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 final class PricingService
 {
+    private const DEFAULT_SHIPPING_FEE = 35000;
+    private const DEFAULT_FREE_SHIPPING_MINIMUM = 500000;
+
     public function __construct(private ?PDO $database = null)
     {
         $this->database ??= Database::connection();
@@ -231,36 +234,48 @@ final class PricingService
 
     private function shippingQuote(int $regionId, int $subtotal): array
     {
-        $regionQuery = $this->database->prepare('SELECT id, parent_id FROM regions WHERE id = :id AND level = 2 AND is_active = 1');
+        $regionQuery = $this->database->prepare(
+            'SELECT current_region.id, current_region.parent_id
+             FROM regions AS requested_region
+             LEFT JOIN region_aliases AS alias ON alias.legacy_region_id = requested_region.id
+             JOIN regions AS current_region
+               ON current_region.id = COALESCE(alias.region_id, requested_region.id)
+             WHERE requested_region.id = :id AND requested_region.level = 2
+               AND (requested_region.is_active = 1 OR alias.region_id IS NOT NULL)
+               AND current_region.level = 2 AND current_region.is_active = 1'
+        );
         $regionQuery->execute(['id' => $regionId]);
         $region = $regionQuery->fetch();
         if (!$region) {
             throw new PricingException('Không tìm thấy tỉnh/vùng nhận hàng.');
         }
+        $pricingRegionId = (int) $region['id'];
         $feeQuery = $this->database->prepare(
             'SELECT fee, free_shipping_minimum FROM shipping_fees
              WHERE is_active = 1 AND region_id IN (:region_id, :parent_id)
              ORDER BY region_id = :exact_region DESC LIMIT 1'
         );
         $feeQuery->execute([
-            'region_id' => $regionId,
+            'region_id' => $pricingRegionId,
             'parent_id' => (int) ($region['parent_id'] ?? 0),
-            'exact_region' => $regionId,
+            'exact_region' => $pricingRegionId,
         ]);
         $fee = $feeQuery->fetch();
-        if (!$fee) {
-            throw new PricingException('Chưa cấu hình phí vận chuyển cho tỉnh/thành nhận hàng.');
-        }
-        $settings = $this->database->query(
-            "SELECT setting_value FROM settings WHERE setting_key = 'free_shipping_minimum'"
-        )->fetchColumn();
+
+        $settingsQuery = $this->database->query(
+            "SELECT setting_key, setting_value FROM settings
+             WHERE setting_key IN ('shipping_default_fee', 'free_shipping_minimum')"
+        );
+        $settings = $settingsQuery->fetchAll(PDO::FETCH_KEY_PAIR);
         $minimum = $fee && $fee['free_shipping_minimum'] !== null
             ? self::moneyToVnd((string) $fee['free_shipping_minimum'])
-            : max(0, (int) $settings);
-        $amount = $fee ? self::moneyToVnd((string) $fee['fee']) : 0;
+            : max(0, (int) ($settings['free_shipping_minimum'] ?? self::DEFAULT_FREE_SHIPPING_MINIMUM));
+        $amount = $fee
+            ? self::moneyToVnd((string) $fee['fee'])
+            : self::moneyToVnd((string) ($settings['shipping_default_fee'] ?? self::DEFAULT_SHIPPING_FEE));
         if ($minimum > 0 && $subtotal >= $minimum) {
             $amount = 0;
         }
-        return ['fee' => $amount, 'minimum' => $minimum, 'region_id' => $regionId];
+        return ['fee' => $amount, 'minimum' => $minimum, 'region_id' => $pricingRegionId];
     }
 }

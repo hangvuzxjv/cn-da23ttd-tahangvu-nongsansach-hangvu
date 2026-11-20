@@ -1,5 +1,5 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
-    <div><h1 class="h2 mb-1">Quản lý banner</h1><p class="text-secondary mb-0">Ảnh tối đa 2MB, định dạng JPG, PNG, WebP hoặc SVG.</p></div>
+    <div><h1 class="h2 mb-1">Banner trang chủ</h1><p class="text-secondary mb-0">Ảnh tối đa 8 MB, định dạng JPG, JPEG, PNG hoặc WebP.</p></div>
     <?php if ($editBanner): ?><a class="btn btn-outline-secondary" href="<?= e(url('/admin/content/banners')) ?>">Thêm banner mới</a><?php endif; ?>
 </div>
 <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
@@ -12,7 +12,17 @@
             <?= csrf_field() ?>
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label" for="banner-title">Tiêu đề</label><input class="form-control" id="banner-title" name="title" maxlength="180" required value="<?= e($editBanner['title'] ?? '') ?>"></div>
-                <div class="col-md-6"><label class="form-label" for="banner-image">Ảnh <?= $editBanner ? '(để trống nếu giữ ảnh hiện tại)' : '' ?></label><input class="form-control" id="banner-image" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,.svg,image/jpeg,image/png,image/webp,image/svg+xml" <?= $editBanner ? '' : 'required' ?>></div>
+                <div class="col-md-6">
+                    <label class="form-label" for="banner-image">Ảnh banner</label>
+                    <?php if (!empty($editBanner['image_url'])): ?><img class="admin-banner-thumb d-block mb-2" src="<?= e(asset($editBanner['image_url'])) ?>" alt="Ảnh banner hiện tại" data-image-current><?php endif; ?>
+                    <input class="form-control" id="banner-image" name="image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" data-image-preview>
+                    <img class="admin-banner-thumb mt-2" data-image-preview-target alt="Xem trước ảnh banner" hidden>
+                    <?php if (!empty($editBanner['image_url'])): ?>
+                        <input type="checkbox" class="d-none" name="remove_image" value="1" data-image-clear>
+                        <button class="btn btn-sm btn-outline-danger mt-2" type="button" data-image-clear-button aria-pressed="false">Xóa ảnh hiện tại</button>
+                    <?php endif; ?>
+                    <small class="form-text text-secondary d-block">Có thể để trống để dùng hình minh họa mặc định. Nên dùng ảnh ngang tối thiểu 1600 px, tỷ lệ khoảng 16:6 (ví dụ 1600 × 600 px).</small>
+                </div>
                 <div class="col-12"><label class="form-label" for="banner-description">Mô tả ngắn</label><input class="form-control" id="banner-description" name="description" maxlength="300" value="<?= e($editBanner['description'] ?? '') ?>"></div>
                 <div class="col-md-4"><label class="form-label" for="banner-button">Nhãn nút</label><input class="form-control" id="banner-button" name="button_label" maxlength="80" value="<?= e($editBanner['button_label'] ?? '') ?>" placeholder="Xem sản phẩm"></div>
                 <div class="col-md-8"><label class="form-label" for="banner-link">Liên kết tùy chọn</label><input class="form-control" id="banner-link" name="link_url" maxlength="500" value="<?= e($editBanner['link_url'] ?? '') ?>" placeholder="/san-pham"></div>
@@ -30,7 +40,7 @@
         <tbody>
         <?php foreach ($banners as $banner): ?>
             <tr>
-                <td><img class="admin-banner-thumb" src="<?= e(asset($banner['image_url'])) ?>" alt=""></td>
+                <td><img class="admin-banner-thumb" src="<?= e(asset($banner['image_url'] ?: '/img/banner-fresh.svg')) ?>" alt="<?= e('Ảnh banner ' . $banner['title']) ?>"></td>
                 <td><strong><?= e($banner['title']) ?></strong><br><span class="small text-secondary"><?= e($banner['description'] ?: 'Không có mô tả') ?></span></td>
                 <td><?= (int) $banner['sort_order'] ?></td>
                 <td><?= $banner['status'] === 'active' ? 'Đang hiện' : 'Đang ẩn' ?></td>
@@ -45,3 +55,4 @@
         </tbody>
     </table></div>
 </section>
+<script src="<?= e(asset('/js/admin-image-preview.js')) ?>" defer></script>

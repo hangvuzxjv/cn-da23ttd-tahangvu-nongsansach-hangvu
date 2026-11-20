@@ -18,7 +18,12 @@ $formatVoucherMoney = static fn (mixed $amount): string => number_format((float)
         <h1 class="h2 mb-1">Quản lý voucher</h1>
         <p class="text-muted mb-0">Tìm, theo dõi và chỉnh sửa mã giảm giá.</p>
     </div>
-    <?php if ($canManage): ?><a class="btn btn-success" href="<?= e(url('/admin/vouchers/create')) ?>">Tạo voucher</a><?php endif; ?>
+    <?php if ($canManage): ?>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-outline-success" href="<?= e(url('/admin/vouchers/missions')) ?>">Thưởng nhiệm vụ</a>
+            <a class="btn btn-success" href="<?= e(url('/admin/vouchers/create')) ?>">Tạo voucher</a>
+        </div>
+    <?php endif; ?>
 </div>
 <?php if (!empty($success)): ?><div class="alert alert-success"><?= e($success) ?></div><?php endif; ?>
 <?php if (!empty($error)): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>

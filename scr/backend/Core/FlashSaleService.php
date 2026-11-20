@@ -253,11 +253,11 @@ final class FlashSaleService
                     fsi.sold_quantity, fsi.per_user_limit, fsi.sort_order,
                     p.name AS product_name, p.slug AS product_slug, p.price AS regular_price,
                     region.name AS region_name,
-                    p.unit,
+                    p.unit, p.sale_unit, p.pack_size, p.pack_size_unit,
                     COALESCE(NULLIF(p.sale_price, 0), p.price) AS normal_price,
                     COALESCE(stock.available, 0) AS available_stock,
                     COALESCE(user_purchases.quantity, 0) AS user_purchased,
-                    COALESCE(pi.image_url, '/img/product-placeholder.svg') AS image_url
+                    COALESCE(pi.image_url, '/public/images/no-image.svg') AS image_url
              FROM flash_sales fs
              JOIN flash_sale_items fsi ON fsi.flash_sale_id = fs.id
              JOIN products p ON p.id = fsi.product_id AND p.status = 'active' AND p.deleted_at IS NULL
@@ -691,10 +691,33 @@ final class FlashSaleService
                  GROUP BY b.product_id
              ) stock ON stock.product_id = p.id
              WHERE p.status = 'active' AND p.deleted_at IS NULL
-               AND (p.name LIKE :name_search OR p.sku LIKE :sku_search)
+               AND (
+                   REPLACE(REPLACE(
+                       p.name COLLATE utf8mb4_unicode_ci,
+                       _utf8mb4'đ' COLLATE utf8mb4_unicode_ci,
+                       _utf8mb4'd' COLLATE utf8mb4_unicode_ci
+                   ), _utf8mb4'Đ' COLLATE utf8mb4_unicode_ci, _utf8mb4'd' COLLATE utf8mb4_unicode_ci)
+                       COLLATE utf8mb4_unicode_ci LIKE :name_search COLLATE utf8mb4_unicode_ci ESCAPE '='
+                   OR REPLACE(REPLACE(
+                       p.sku COLLATE utf8mb4_unicode_ci,
+                       _utf8mb4'đ' COLLATE utf8mb4_unicode_ci,
+                       _utf8mb4'd' COLLATE utf8mb4_unicode_ci
+                   ), _utf8mb4'Đ' COLLATE utf8mb4_unicode_ci, _utf8mb4'd' COLLATE utf8mb4_unicode_ci)
+                       COLLATE utf8mb4_unicode_ci LIKE :sku_search COLLATE utf8mb4_unicode_ci ESCAPE '='
+               )
              ORDER BY p.name, p.id LIMIT 30"
         );
-        $term = '%' . mb_substr($search, 0, 100, 'UTF-8') . '%';
+        $normalized = str_replace(
+            ['đ', 'Đ'],
+            'd',
+            app_utf8_substr($search, 0, 100)
+        );
+        $escaped = str_replace(
+            ['=', '%', '_'],
+            ['==', '=%', '=_'],
+            $normalized
+        );
+        $term = '%' . $escaped . '%';
         $query->execute(['name_search' => $term, 'sku_search' => $term]);
         return $query->fetchAll();
     }

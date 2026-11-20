@@ -25,6 +25,7 @@ $router->get('/gio-hang', [CheckoutController::class, 'cart']);
 $router->post('/gio-hang/them', [CheckoutController::class, 'addToCart'], ['csrf']);
 $router->post('/gio-hang/cap-nhat', [CheckoutController::class, 'updateCart'], ['csrf']);
 $router->get('/tai-khoan/yeu-thich', [CustomerFeaturesController::class, 'wishlist'], ['auth']);
+$router->get('/tai-khoan/nhiem-vu', [CustomerFeaturesController::class, 'missions'], ['auth']);
 $router->post('/yeu-thich/chuyen-doi', [CustomerFeaturesController::class, 'toggleWishlist'], ['auth', 'csrf']);
 $router->post('/danh-gia', [CustomerFeaturesController::class, 'saveReview'], ['auth', 'csrf']);
 $router->get('/thanh-toan', [CheckoutController::class, 'checkout'], ['auth']);
@@ -46,12 +47,15 @@ $router->post('/tai-khoan/don-hang/{id}/tra-hang', [OrderReturnsController::clas
 $router->get('/tai-khoan/yeu-cau-tra-hang/{id}', [OrderReturnsController::class, 'show'], ['auth']);
 $router->post('/tai-khoan/yeu-cau-tra-hang/{id}/huy', [OrderReturnsController::class, 'cancel'], ['auth', 'csrf']);
 $router->get('/tai-khoan/yeu-cau-tra-hang/{id}/anh/{imageId}', [OrderReturnsController::class, 'customerImage'], ['auth']);
-$router->get('/ho-tro', [SupportTicketsController::class, 'index'], ['permission:support.access']);
-$router->get('/ho-tro/tao', [SupportTicketsController::class, 'createForm'], ['permission:support.access']);
-$router->post('/ho-tro/tao', [SupportTicketsController::class, 'create'], ['permission:support.access', 'csrf']);
-$router->get('/ho-tro/{id}', [SupportTicketsController::class, 'show'], ['permission:support.access']);
-$router->post('/ho-tro/{id}/tra-loi', [SupportTicketsController::class, 'reply'], ['permission:support.access', 'csrf']);
-$router->post('/ho-tro/{id}/dong', [SupportTicketsController::class, 'close'], ['permission:support.access', 'csrf']);
+$router->get('/ho-tro', static function (): void {
+    redirect('/lien-he');
+});
+$router->get('/ho-tro/tao', static function (): void {
+    redirect('/lien-he');
+});
+$router->get('/ho-tro/{id}', static function (): void {
+    redirect('/lien-he');
+});
 $router->get('/_health', static function (): Response {
     $connected = false;
     try {
@@ -78,8 +82,14 @@ $router->get('/login', [AuthController::class, 'showLogin']);
 $router->post('/login', [AuthController::class, 'login'], ['csrf']);
 $router->get('/register', [AuthController::class, 'showRegister']);
 $router->post('/register', [AuthController::class, 'register'], ['csrf']);
+$router->get('/verify-email-otp', [AuthController::class, 'showRegistrationOtp']);
+$router->post('/verify-email-otp', [AuthController::class, 'verifyRegistrationOtp'], ['csrf']);
+$router->post('/verify-email-otp/resend', [AuthController::class, 'resendRegistrationOtp'], ['csrf']);
 $router->get('/forgot-password', [AuthController::class, 'showForgotPassword']);
 $router->post('/forgot-password', [AuthController::class, 'forgotPassword'], ['csrf']);
+$router->get('/forgot-password/code', [AuthController::class, 'showPasswordResetOtp']);
+$router->post('/forgot-password/code', [AuthController::class, 'verifyPasswordResetOtp'], ['csrf']);
+$router->post('/forgot-password/code/resend', [AuthController::class, 'resendPasswordResetOtp'], ['csrf']);
 $router->get('/reset-password/{slug}', [AuthController::class, 'showResetPassword']);
 $router->post('/reset-password/{slug}', [AuthController::class, 'resetPassword'], ['csrf']);
 $router->get('/verify-email/{slug}', [AuthController::class, 'verifyEmail']);
@@ -166,6 +176,8 @@ $router->post('/admin/payments/{id}/refund', [CommerceAdminController::class, 'r
 $router->post('/admin/payments/{id}/delivery-failure-refund', [CommerceAdminController::class, 'markDeliveryFailureRefunded'], ['permission:orders.manage', 'csrf']);
 $router->get('/admin/payments/{id}', [CommerceAdminController::class, 'payment'], ['permission:orders.view']);
 $router->get('/admin/vouchers', [CommerceAdminController::class, 'vouchers'], ['permission:vouchers.view']);
+$router->get('/admin/vouchers/missions', [CommerceAdminController::class, 'voucherMissionSettings'], ['permission:vouchers.manage']);
+$router->post('/admin/vouchers/missions', [CommerceAdminController::class, 'saveVoucherMissionSettings'], ['permission:vouchers.manage', 'csrf']);
 $router->get('/admin/vouchers/create', [CommerceAdminController::class, 'createVoucher'], ['permission:vouchers.view']);
 $router->get('/admin/vouchers/{id}/edit', [CommerceAdminController::class, 'editVoucher'], ['permission:vouchers.view']);
 $router->get('/admin/vouchers/{id}/gift', [CommerceAdminController::class, 'voucherGift'], ['permission:vouchers.manage']);
@@ -177,6 +189,8 @@ $router->post('/admin/vouchers/{id}/duplicate', [CommerceAdminController::class,
 $router->post('/admin/vouchers/{id}/delete', [CommerceAdminController::class, 'deleteVoucher'], ['permission:vouchers.manage', 'csrf']);
 $router->post('/admin/vouchers/{id}', [CommerceAdminController::class, 'saveVoucher'], ['permission:vouchers.manage', 'csrf']);
 $router->get('/admin/shipping', [CommerceAdminController::class, 'shipping'], ['permission:shipping.view']);
+$router->post('/admin/shipping/defaults', [CommerceAdminController::class, 'saveShippingDefaults'], ['permission:shipping.manage', 'csrf']);
+$router->post('/admin/shipping/bulk', [CommerceAdminController::class, 'bulkSaveShipping'], ['permission:shipping.manage', 'csrf']);
 $router->post('/admin/shipping', [CommerceAdminController::class, 'saveShipping'], ['permission:shipping.manage', 'csrf']);
 $router->post('/admin/shipping/{id}', [CommerceAdminController::class, 'saveShipping'], ['permission:shipping.manage', 'csrf']);
 $router->post('/admin/shipping/{id}/delete', [CommerceAdminController::class, 'deleteShipping'], ['permission:shipping.manage', 'csrf']);
@@ -222,6 +236,7 @@ $router->post('/admin/categories', [CatalogAdminController::class, 'storeCategor
 $router->post('/admin/categories/{id}/update', [CatalogAdminController::class, 'updateCategory'], ['permission:categories.manage', 'csrf']);
 $router->post('/admin/categories/{id}/delete', [CatalogAdminController::class, 'deleteCategory'], ['permission:categories.manage', 'csrf']);
 $router->get('/admin/products', [CatalogAdminController::class, 'products'], ['permission:products.view']);
+$router->get('/admin/products/missing-images', [CatalogAdminController::class, 'productsMissingImages'], ['permission:products.view']);
 $router->get('/admin/products/new', [CatalogAdminController::class, 'newProduct'], ['permission:products.manage']);
 $router->post('/admin/products', [CatalogAdminController::class, 'storeProduct'], ['permission:products.manage', 'csrf']);
 $router->get('/admin/products/{id}/edit', [CatalogAdminController::class, 'editProduct'], ['permission:products.manage']);

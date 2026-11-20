@@ -4,6 +4,9 @@ $sourceLabels = [
     'first_order' => 'Cảm ơn đơn đầu',
     'claimed' => 'Đã lưu từ Kho voucher',
     'admin_gift' => 'Được tặng',
+    'review_reward' => 'Thưởng đánh giá',
+    'monthly_milestone' => 'Thưởng mốc chi tiêu',
+    'referral' => 'Thưởng giới thiệu',
 ];
 $tabLabels = [
     'available' => 'Có thể dùng',

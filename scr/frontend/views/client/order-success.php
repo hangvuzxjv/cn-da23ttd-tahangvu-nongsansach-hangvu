@@ -9,7 +9,19 @@
 <?php if ($emailWarning): ?><div class="alert alert-warning order-confirmation-card"><?= e($emailWarning) ?></div><?php endif; ?>
 <div class="card order-confirmation-card">
     <div class="card-body">
-        <?php foreach ($items as $item): ?><div class="d-flex justify-content-between border-bottom py-2"><span><?php if (!empty($item['flash_sale_item_id'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?><?= e($item['product_name']) ?> × <?= (int) $item['quantity'] ?> <?= e($item['unit']) ?><span class="d-block small text-secondary"><?= number_format((float) $item['unit_price'], 0, ',', '.') ?> ₫ / <?= e($item['unit']) ?></span></span><strong><?= number_format((float) $item['line_total'], 0, ',', '.') ?> ₫</strong></div><?php endforeach; ?>
+        <?php foreach ($items as $item): ?>
+            <?php $estimatedWeight = ProductUnitFormatter::approximateWeightLabel((string) $item['unit'], (int) $item['quantity']); ?>
+            <div class="d-flex justify-content-between gap-3 border-bottom py-2">
+                <div class="d-flex align-items-start gap-2">
+                    <img src="<?= e(asset($item['image_url'] ?: '/public/images/no-image.svg')) ?>"<?= product_image_fallback_attributes() ?> alt="<?= e($item['product_name']) ?>" width="56" height="56" class="rounded object-fit-cover flex-shrink-0">
+                    <span><?php if (!empty($item['flash_sale_item_id'])): ?><span class="badge text-bg-danger">Flash Sale</span> <?php endif; ?><?= e($item['product_name']) ?> · <?= e($item['unit']) ?>
+                        <span class="d-block small text-secondary"><?= (int) $item['quantity'] ?> × <?= number_format((float) $item['unit_price'], 0, ',', '.') ?> ₫</span>
+                        <?php if ($estimatedWeight !== null): ?><span class="d-block small text-secondary"><?= e($estimatedWeight) ?></span><?php endif; ?>
+                    </span>
+                </div>
+                <strong><?= number_format((float) $item['line_total'], 0, ',', '.') ?> ₫</strong>
+            </div>
+        <?php endforeach; ?>
         <div class="d-flex justify-content-between pt-3"><span>Tạm tính</span><span><?= number_format((float) $order['subtotal'], 0, ',', '.') ?> ₫</span></div>
         <div class="d-flex justify-content-between"><span>Giảm giá</span><span>-<?= number_format((float) $order['discount_amount'], 0, ',', '.') ?> ₫</span></div>
         <div class="d-flex justify-content-between"><span>Phí vận chuyển</span><span><?= number_format((float) $order['shipping_fee'], 0, ',', '.') ?> ₫</span></div>

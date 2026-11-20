@@ -13,12 +13,23 @@
 <p class="text-secondary">Tổng <?= (int) $total ?> lần thay đổi. Nhật ký kho chỉ ghi thêm; số lượng thể hiện mức tăng hoặc giảm.</p>
 <div class="table-responsive"><table class="table table-striped">
     <thead><tr><th>Thời điểm</th><th>Sản phẩm / lô <span class="small text-secondary" title="Lô là một đợt hàng có mã riêng để truy xuất." aria-label="Giải thích về lô" tabindex="0">?</span></th><th>Loại thay đổi</th><th>Lần thay đổi</th><th>Số dư sau lần thay đổi</th><th>Tham chiếu</th><th>Người thực hiện</th><th>Lý do</th></tr></thead><tbody>
-    <?php foreach ($rows as $row): ?><tr>
-        <td><?= e($row['created_at']) ?></td><td><?= e($row['product_name']) ?><br><code><?= e($row['batch_code'] ?? '—') ?></code></td>
-        <td><?= e(InventoryLabels::movement($row['movement_type'], $row['reference_type'] ?? null)) ?></td><td class="<?= (int) $row['quantity'] < 0 ? 'text-danger' : 'text-success' ?>"><?= (int) $row['quantity'] ?></td>
-        <td><?= (int) $row['balance_after'] ?></td><td><?= e((InventoryLabels::reference($row['reference_type'] ?? null) ?: '—') . ($row['reference_id'] ? ' #' . $row['reference_id'] : '')) ?></td>
-        <td><?= e($row['performed_by_name'] ?? 'Hệ thống') ?></td><td><?= e($row['notes']) ?></td>
-    </tr><?php endforeach; ?>
+    <?php foreach ($rows as $row): ?>
+        <?php
+        $saleUnit = trim((string) ($row['sale_unit'] ?? ''));
+        $unitName = mb_strtolower($saleUnit !== '' ? $saleUnit : (string) $row['unit'], 'UTF-8');
+        $unitLabel = ProductUnitFormatter::shortLabel(
+            $saleUnit !== '' ? $saleUnit : (string) $row['unit'],
+            $saleUnit !== '' && $row['pack_size'] !== null ? (float) $row['pack_size'] : null,
+            $saleUnit !== '' ? ($row['pack_size_unit'] ?? null) : null
+        );
+        ?>
+        <tr>
+            <td><?= e($row['created_at']) ?></td><td><?= e($row['product_name']) ?><small class="d-block text-secondary"><?= e($unitLabel) ?></small><code><?= e($row['batch_code'] ?? '—') ?></code></td>
+            <td><?= e(InventoryLabels::movement($row['movement_type'], $row['reference_type'] ?? null)) ?></td><td class="<?= (int) $row['quantity'] < 0 ? 'text-danger' : 'text-success' ?>"><?= (int) $row['quantity'] ?> <?= e($unitName) ?></td>
+            <td><?= (int) $row['balance_after'] ?> <?= e($unitName) ?></td><td><?= e((InventoryLabels::reference($row['reference_type'] ?? null) ?: '—') . ($row['reference_id'] ? ' #' . $row['reference_id'] : '')) ?></td>
+            <td><?= e($row['performed_by_name'] ?? 'Hệ thống') ?></td><td><?= e($row['notes']) ?></td>
+        </tr>
+    <?php endforeach; ?>
     <?php if (!$rows): ?><tr><td colspan="8" class="text-secondary">Chưa có lần thay đổi phù hợp.</td></tr><?php endif; ?>
     </tbody>
 </table></div>

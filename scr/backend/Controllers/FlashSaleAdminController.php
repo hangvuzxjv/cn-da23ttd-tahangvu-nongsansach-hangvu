@@ -76,9 +76,21 @@ final class FlashSaleAdminController extends Controller
 
     public function products(): Response
     {
-        return $this->jsonOperation(function (): array {
-            return ['products' => (new FlashSaleService())->searchProducts((string) ($_GET['q'] ?? ''))];
-        }, 'Đã tìm sản phẩm.');
+        try {
+            return Response::json(
+                true,
+                'Đã tìm sản phẩm.',
+                ['products' => (new FlashSaleService())->searchProducts((string) ($_GET['q'] ?? ''))]
+            );
+        } catch (Throwable $exception) {
+            app_log_exception('Admin Flash Sale product search failed', $exception);
+            return Response::json(
+                false,
+                'Tìm kiếm tạm thời gặp sự cố, vui lòng thử lại',
+                [],
+                503
+            );
+        }
     }
 
     public function save(): Response
